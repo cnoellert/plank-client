@@ -17,6 +17,7 @@ private slots:
     void enforcesHostDisplayPolicy();
     void validatesRequestedLayoutGeometry();
     void matchesOneClientDisplay();
+    void matchesPrimaryInDesktopOrder();
     void matchesTwoClientDisplaysLeftToRight();
     void rejectsUnsupportedClientLayouts();
     void parsesFixedCapture();
@@ -27,6 +28,9 @@ private slots:
     void matchesMacFullscreenViewport();
     void matchesMultipleNativeFullscreenViewports();
     void buildsMacDisplayRequest();
+    void matchesLinuxRetinaSizes();
+    void parsesNegotiatedMatchedModes();
+    void rejectsUnsafeMatchedModes();
 };
 
 void TestOutputTopology::presentationOutputCountDuringTransitions()
@@ -45,6 +49,89 @@ void TestOutputTopology::presentationOutputCountDuringTransitions()
     topology.outputs.clear();
     QCOMPARE(topology.outputCountForLayout("physical"), 0);
     QCOMPARE(topology.outputCountForLayout("unresolved"), 0);
+}
+
+void TestOutputTopology::matchesLinuxRetinaSizes()
+{
+    const NvClientDisplay retina {QRect(-2056, 43, 2056, 1286), QSize(3456, 2234), QSize(4112, 2572)};
+    const NvClientDisplay standard {QRect(0, 0, 2560, 1440), QSize(2560, 1440), QSize(2560, 1440)};
+    QCOMPARE(NvOutputTopology::linuxMatchedDisplaySize(retina, true), QSize(2056, 1286));
+    QCOMPARE(NvOutputTopology::linuxMatchedDisplaySize(retina, false), QSize(4112, 2572));
+    QCOMPARE(NvOutputTopology::linuxMatchedDisplaySize(standard, true), QSize(2560, 1440));
+    QString layout, error;
+    QStringList modes;
+    QVector<NvClientDisplay> displays {standard, retina};
+    for (auto& display : displays) display.nativeSize = NvOutputTopology::linuxMatchedDisplaySize(display, true);
+    QVERIFY(!NvOutputTopology::resolveClientDisplayLayout(displays, layout, modes, &error));
+    QVERIFY(NvOutputTopology::resolveClientDisplayLayout(displays, layout, modes, &error, true));
+    QCOMPARE(modes, QStringList({"2056x1286", "2560x1440"}));
+    QCOMPARE(NvOutputTopology::virtualCanvasSize(layout, modes, true), QSize(4616, 1440));
+    NvClientDisplay odd {QRect(0, 0, 1710, 1107), QSize(3456, 2234), QSize(3420, 2214)};
+    QCOMPARE(NvOutputTopology::linuxMatchedDisplaySize(odd, true), QSize(1710, 1106));
+    QCOMPARE(NvOutputTopology::linuxMatchedDisplaySize(odd, false), QSize(3420, 2214));
+}
+
+void TestOutputTopology::matchesPrimaryInDesktopOrder()
+{
+    QFile file(QString::fromUtf8(qgetenv("PLANK_REPO_ROOT")) + "/tests/protocol/output-topology-v13-primary.json");
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    NvOutputTopology topology;
+    QVERIFY(NvOutputTopology::fromJson(QJsonDocument::fromJson(file.readAll()).object(), topology));
+    QVERIFY(topology.featureFlags & NvOutputTopology::MatchedPrimaryOutputFeature);
+    QVERIFY(!topology.outputs[0].primary);
+    QVERIFY(topology.outputs[1].primary);
+    QString layout, error;
+    QStringList modes;
+    int primary = -1;
+    QVector<NvClientDisplay> displays = {
+        {QRect(0, 0, 2560, 1440), QSize(2560, 1440), {}, true},
+        {QRect(-2056, 0, 2056, 1286), QSize(4112, 2572), {}, false}
+    };
+    QVERIFY(NvOutputTopology::resolveClientDisplayLayout(displays, layout, modes, &error, true, &primary));
+    QCOMPARE(primary, 1);
+    QCOMPARE(modes, QStringList({"4112x2572", "2560x1440"}));
+    displays[0].primary = false;
+    displays[1].primary = true;
+    QVERIFY(NvOutputTopology::resolveClientDisplayLayout(displays, layout, modes, &error, true, &primary));
+    QCOMPARE(primary, 0);
+    displays[0].primary = true;
+    QVERIFY(!NvOutputTopology::resolveClientDisplayLayout(displays, layout, modes, &error, true, &primary));
+    displays[0].primary = displays[1].primary = false;
+    QVERIFY(!NvOutputTopology::resolveClientDisplayLayout(displays, layout, modes, &error, true, &primary));
+    // Older hosts can still match dimensions without primary negotiation.
+    QVERIFY(NvOutputTopology::resolveClientDisplayLayout(displays, layout, modes, &error, true));
+}
+
+void TestOutputTopology::parsesNegotiatedMatchedModes()
+{
+    constexpr int ClipboardSyncFeature = 0x400000;
+    QVERIFY((NvOutputTopology::MatchedDisplayModesFeature & ClipboardSyncFeature) == 0);
+    QFile file(QString::fromUtf8(qgetenv("PLANK_REPO_ROOT")) + "/tests/protocol/output-topology-v13-matched.json");
+    QVERIFY(file.open(QIODevice::ReadOnly));
+    auto document = QJsonDocument::fromJson(file.readAll()).object();
+    NvOutputTopology topology;
+    QVERIFY(NvOutputTopology::fromJson(document, topology));
+    QVERIFY(topology.matchesRequestedHostLayout("dual-horizontal", {"2056x1286", "2560x1440"}));
+    const int matchedFlags = document["feature_flags"].toInt();
+    QVERIFY(matchedFlags & NvOutputTopology::MatchedDisplayModesFeature);
+    QVERIFY(!(matchedFlags & ClipboardSyncFeature));
+    // Clipboard alone must not authorize a non-preset physical display mode.
+    document["feature_flags"] = (matchedFlags & ~NvOutputTopology::MatchedDisplayModesFeature) |
+            ClipboardSyncFeature;
+    QVERIFY(!NvOutputTopology::fromJson(document, topology));
+}
+
+void TestOutputTopology::rejectsUnsafeMatchedModes()
+{
+    for (const auto mode : {"02056x1286", "2056x1287", "2056x1286\n", "8194x2160", "320x198", "320x200;id"}) {
+        QVERIFY(!NvOutputTopology::virtualModeSize(mode, true).isValid());
+    }
+    QString layout, error;
+    QStringList modes;
+    QVERIFY(!NvOutputTopology::resolveClientDisplayLayout({
+        {QRect(0, 0, 5120, 2160), QSize(5120, 2160)},
+        {QRect(5120, 0, 5120, 2160), QSize(5120, 2160)}}, layout, modes, &error, true));
+    QVERIFY(modes.isEmpty());
 }
 
 void TestOutputTopology::matchesMultipleNativeFullscreenViewports()
@@ -516,7 +603,7 @@ void TestOutputTopology::rejectsUnsupportedClientLayouts()
     };
     QVERIFY(!NvOutputTopology::resolveClientDisplayLayout(
                 unsupportedDisplay, layout, modes, &error));
-    QVERIFY(error.contains(QStringLiteral("not a qualified PLANK virtual mode")));
+    QVERIFY(error.contains(QStringLiteral("not supported")));
 }
 
 QTEST_APPLESS_MAIN(TestOutputTopology)

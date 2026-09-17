@@ -119,8 +119,12 @@ QStringList NvOutputTopology::qualifiedVirtualModes()
             QStringLiteral("5120x2160")};
 }
 
-QSize NvOutputTopology::virtualModeSize(const QString& mode)
+QSize NvOutputTopology::virtualModeSize(const QString& mode, bool allowMatchedModes)
 {
+    if (allowMatchedModes) {
+        const QSize size = macDisplayModeSize(mode);
+        return size.width() >= 320 && size.height() >= 200 ? size : QSize();
+    }
     const QStringList parts = mode.split(QLatin1Char('x'));
     if (!qualifiedVirtualModes().contains(mode) || parts.size() != 2) {
         return QSize();
@@ -129,9 +133,9 @@ QSize NvOutputTopology::virtualModeSize(const QString& mode)
 }
 
 QSize NvOutputTopology::virtualCanvasSize(const QString& hostLayout,
-                                          const QStringList& virtualModes)
+                                          const QStringList& virtualModes, bool allowMatchedModes)
 {
-    const QSize first = virtualModeSize(virtualModes.value(0));
+    const QSize first = virtualModeSize(virtualModes.value(0), allowMatchedModes);
     if (hostLayout == SingleHostLayout) {
         return first;
     }
@@ -139,7 +143,7 @@ QSize NvOutputTopology::virtualCanvasSize(const QString& hostLayout,
         return QSize();
     }
 
-    const QSize second = virtualModeSize(virtualModes.value(1));
+    const QSize second = virtualModeSize(virtualModes.value(1), allowMatchedModes);
     if (!second.isValid()) {
         return QSize();
     }
@@ -219,8 +223,10 @@ bool NvOutputTopology::fromJson(const QJsonObject& object,
         }
         return false;
     }
+    const bool matchedModes = parsed.startupLayoutKind == PhysicalHostLayout &&
+            (parsed.featureFlags & MatchedDisplayModesFeature);
     for (const QJsonValue& mode : layout.value("virtual_modes").toArray()) {
-        if (!mode.isString() || !qualifiedVirtualModes().contains(mode.toString())) {
+        if (!mode.isString() || !virtualModeSize(mode.toString(), matchedModes).isValid()) {
             if (error != nullptr) {
                 *error = QStringLiteral("Invalid host virtual mode");
             }
@@ -313,7 +319,7 @@ bool NvOutputTopology::fromJson(const QJsonObject& object,
                 (parsed.virtualLayout &&
                  (parsed.outputs.size() >= parsed.virtualModes.size() ||
                   output.configuredMode != parsed.virtualModes[parsed.outputs.size()] ||
-                  virtualModeSize(output.configuredMode) != QSize(output.width, output.height))) ||
+                  virtualModeSize(output.configuredMode, matchedModes) != QSize(output.width, output.height))) ||
                 (!parsed.virtualLayout && !output.configuredMode.isEmpty())) {
             if (error != nullptr) {
                 *error = QStringLiteral("Invalid composite source rectangle or output provenance");
@@ -521,10 +527,12 @@ QString NvOutputTopology::resolveMacClientDisplayMode(const QVector<NvClientDisp
 bool NvOutputTopology::resolveClientDisplayLayout(QVector<NvClientDisplay> displays,
                                                   QString& hostLayout,
                                                   QStringList& virtualModes,
-                                                  QString* error)
+                                                  QString* error, bool allowMatchedModes,
+                                                  int* primaryOutput)
 {
     hostLayout.clear();
     virtualModes.clear();
+    if (primaryOutput) *primaryOutput = -1;
     if (displays.size() < 1 || displays.size() > 2) {
         if (error != nullptr) {
             *error = QStringLiteral("Match client displays requires exactly one or two active client monitors.");
@@ -553,9 +561,9 @@ bool NvOutputTopology::resolveClientDisplayLayout(QVector<NvClientDisplay> displ
     for (const NvClientDisplay& display : displays) {
         const QString mode = QStringLiteral("%1x%2")
                 .arg(display.nativeSize.width()).arg(display.nativeSize.height());
-        if (!qualifiedVirtualModes().contains(mode)) {
+        if (!virtualModeSize(mode, allowMatchedModes).isValid()) {
             if (error != nullptr) {
-                *error = QStringLiteral("Client monitor resolution %1 is not a qualified PLANK virtual mode.")
+                *error = QStringLiteral("Client monitor resolution %1 is not supported by this Host display policy.")
                         .arg(mode);
             }
             hostLayout.clear();
@@ -564,7 +572,39 @@ bool NvOutputTopology::resolveClientDisplayLayout(QVector<NvClientDisplay> displ
         }
         virtualModes.append(mode);
     }
+    if (displays.size() == 2 && displays[0].nativeSize.width() + displays[1].nativeSize.width() > MaximumVirtualCanvasWidth) {
+        if (error) *error = QStringLiteral("Matched display canvas exceeds 8192 pixels in width.");
+        virtualModes.clear();
+        return false;
+    }
     hostLayout = displays.size() == 1 ? QString::fromLatin1(SingleHostLayout) :
                                        QString::fromLatin1(DualHorizontalHostLayout);
+    if (primaryOutput) {
+        for (int index = 0; index < displays.size(); ++index) {
+            if (!displays[index].primary) continue;
+            if (*primaryOutput != -1) {
+                *primaryOutput = -1;
+                break;
+            }
+            *primaryOutput = index;
+        }
+        if (*primaryOutput == -1) {
+            if (error) *error = QStringLiteral("Unable to identify one primary client display. Please reconnect.");
+            hostLayout.clear();
+            virtualModes.clear();
+            return false;
+        }
+    }
     return true;
+}
+
+QSize NvOutputTopology::linuxMatchedDisplaySize(const NvClientDisplay& display, bool desktopSize)
+{
+    // Odd logical dimensions cannot be encoded exactly. Inset at most one row
+    // or column; never round a backing-pixel mode up beyond the drawable.
+    QSize size = desktopSize ? display.bounds.size() :
+        (display.backingSize.isValid() ? display.backingSize : display.nativeSize);
+    size.setWidth(size.width() & ~1);
+    size.setHeight(size.height() & ~1);
+    return virtualModeSize(QStringLiteral("%1x%2").arg(size.width()).arg(size.height()), true);
 }

@@ -1861,10 +1861,15 @@ bool Session::snapshotClientDisplays()
     m_ClientDisplays.clear();
 #ifdef Q_OS_DARWIN
     bool matchMacDesktop;
+    bool matchLinuxDesktop;
+    bool retinaDesktopSize;
     {
         QReadLocker lock(&m_Computer->lock);
         matchMacDesktop = m_PlankCaptureSource == StreamingPreferences::PLANK_CAPTURE_SCREENCAPTUREKIT &&
             m_Computer->plankHostLayout == NvOutputTopology::MatchClientHostLayout;
+        matchLinuxDesktop = m_PlankCaptureSource != StreamingPreferences::PLANK_CAPTURE_SCREENCAPTUREKIT &&
+            m_Computer->plankHostLayout == NvOutputTopology::MatchClientHostLayout;
+        retinaDesktopSize = m_Computer->plankRetinaSize == 0;
     }
 #endif
     const int targetIndex = getTargetDisplayIndex();
@@ -1873,6 +1878,7 @@ bool Session::snapshotClientDisplays()
     for (int index = 0; index < displayCount; ++index) {
         ClientDisplaySnapshot snapshot;
         snapshot.displayId = StreamUtils::getDisplayId(index);
+        snapshot.primary = snapshot.displayId == SDL_GetPrimaryDisplay();
         SDL_DisplayMode nativeMode;
         SDL_Rect safeArea;
         if (snapshot.displayId == 0 ||
@@ -1887,18 +1893,26 @@ bool Session::snapshotClientDisplays()
         }
         snapshot.nativeSize = QSize(nativeMode.w, nativeMode.h);
 #ifdef Q_OS_DARWIN
-        if (matchMacDesktop) {
+        if (matchMacDesktop || matchLinuxDesktop) {
             SDL_DisplayMode currentMode;
             SDL_Rect matchedBounds;
             if (!StreamUtils::getMacCurrentDisplayModeForBounds(snapshot.logicalBounds,
-                    &currentMode, &matchedBounds, m_IsFullScreen &&
+                    &currentMode, &matchedBounds, (matchLinuxDesktop || m_IsFullScreen) &&
                     MacDisplayGeometry::useNativeFullscreen(displayCount))) return false;
             snapshot.macMatchedBounds = QRect(matchedBounds.x, matchedBounds.y,
                                              matchedBounds.w, matchedBounds.h);
             snapshot.macBackingSize = QSize(currentMode.w, currentMode.h);
             // Presentation tiles must share the matched backing-pixel canvas,
             // not mix differently scaled panel-native pixel dimensions.
-            snapshot.nativeSize = snapshot.macBackingSize;
+            snapshot.nativeSize = matchLinuxDesktop ? NvOutputTopology::linuxMatchedDisplaySize(
+                {snapshot.macMatchedBounds, snapshot.nativeSize, snapshot.macBackingSize}, retinaDesktopSize) :
+                snapshot.macBackingSize;
+            if (!snapshot.nativeSize.isValid()) return false;
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                "PLANK matched output %u: workspace=%dx%d backing=%dx%d requested=%dx%d Retina-size=%s",
+                snapshot.displayId, matchedBounds.w, matchedBounds.h,
+                currentMode.w, currentMode.h, snapshot.nativeSize.width(), snapshot.nativeSize.height(),
+                retinaDesktopSize ? "desktop" : "pixels");
         }
 #endif
         m_ClientDisplays.append(snapshot);
@@ -2179,6 +2193,8 @@ bool Session::configurePlankHostLayout()
     QSize authenticatedDesktopSize;
     QSizeF authenticatedLogicalSize;
     bool hostRejectsRequestedLayout = false;
+    bool matchedModes = false;
+    bool matchedPrimary = false;
     {
         QReadLocker lock(&m_Computer->lock);
         layoutPolicy = m_Computer->plankHostLayout;
@@ -2188,6 +2204,10 @@ bool Session::configurePlankHostLayout()
         authenticatedDesktopSize = QSize(m_Computer->outputTopology.desktopWidth,
                                          m_Computer->outputTopology.desktopHeight);
         authenticatedLogicalSize = m_Computer->outputTopology.captureLogicalBounds.size();
+        matchedModes = m_Computer->outputTopology.startupLayoutKind == NvOutputTopology::PhysicalHostLayout &&
+            (m_Computer->outputTopology.featureFlags & NvOutputTopology::MatchedDisplayModesFeature);
+        matchedPrimary = matchedModes &&
+            (m_Computer->outputTopology.featureFlags & NvOutputTopology::MatchedPrimaryOutputFeature);
         const bool hostPolicyKnown = m_Computer->outputTopology.displayPolicyKnown();
         hostRejectsRequestedLayout = hostPolicyKnown &&
                 !m_Computer->outputTopology.allowsBookmarkHostLayout(layoutPolicy);
@@ -2202,6 +2222,7 @@ bool Session::configurePlankHostLayout()
 
     m_ResolvedHostLayout.clear();
     m_ResolvedVirtualModes.clear();
+    m_ResolvedPrimaryOutput = -1;
     if (scalingMode != NvOutputTopology::NativeScalingMode &&
             scalingMode != NvOutputTopology::ScaledSpanMode) {
         const QString error = tr("The bookmark contains an unsupported client scaling mode.");
@@ -2217,7 +2238,7 @@ bool Session::configurePlankHostLayout()
                                    display.logicalBounds.y,
                                    display.logicalBounds.w,
                                    display.logicalBounds.h),
-                             display.nativeSize, display.macBackingSize});
+                             display.nativeSize, display.macBackingSize, display.primary});
         }
 
         QString error;
@@ -2233,7 +2254,8 @@ bool Session::configurePlankHostLayout()
             m_ResolvedHostLayout = QStringLiteral("fixed");
         }
         else if (!NvOutputTopology::resolveClientDisplayLayout(
-                    displays, m_ResolvedHostLayout, m_ResolvedVirtualModes, &error)) {
+                    displays, m_ResolvedHostLayout, m_ResolvedVirtualModes, &error, matchedModes,
+                    matchedPrimary ? &m_ResolvedPrimaryOutput : nullptr)) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s", qPrintable(error));
             emit displayLaunchError(error);
             return false;
@@ -2271,10 +2293,10 @@ bool Session::configurePlankHostLayout()
     }
 
     SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
-                "PLANK host layout: policy=%s resolved=%s modes=%s scaling=%s",
+                "PLANK host layout: policy=%s resolved=%s modes=%s scaling=%s primary-index=%d",
                 qPrintable(layoutPolicy), qPrintable(m_ResolvedHostLayout),
                 qPrintable(m_ResolvedVirtualModes.join(',')),
-                qPrintable(m_ResolvedScalingMode));
+                qPrintable(m_ResolvedScalingMode), m_ResolvedPrimaryOutput);
     return true;
 }
 
@@ -2312,7 +2334,7 @@ QSize Session::configurePlankDisplayMode()
     if (m_ResolvedHostLayout != NvOutputTopology::PhysicalHostLayout &&
             m_ResolvedHostLayout != QStringLiteral("fixed")) {
         nativeCanvasResolution = NvOutputTopology::virtualCanvasSize(
-                    m_ResolvedHostLayout, m_ResolvedVirtualModes);
+                    m_ResolvedHostLayout, m_ResolvedVirtualModes, true);
     }
 
     QSize selectedResolution;
@@ -2758,7 +2780,8 @@ bool Session::startConnectionAsync(bool reconnecting,
                           plankTransportToken,
                           acceptedCaptureSource,
                           acceptedEncoderBackend,
-                          acceptedEncodingMode);
+                          acceptedEncodingMode,
+                          m_ResolvedPrimaryOutput);
         };
         try {
             startApp();
@@ -2784,10 +2807,10 @@ bool Session::startConnectionAsync(bool reconnecting,
                 constexpr int CancellationPollMs = 50;
                 bool started = false;
 
-                if (m_PlankUsername.isEmpty() ||
-                        m_PlankPassword.isEmpty()) {
-                    throw;
-                }
+                // A failed local setup can consume the one-session credential
+                // handoff while leaving its bearer token valid. The current
+                // worker can complete this transition with that token; only
+                // a replacement worker requires fresh credentials.
                 m_WaitingForSessionCleanup.store(true);
                 emit sessionCleanupWaitChanged(
                             true,
@@ -2808,6 +2831,23 @@ bool Session::startConnectionAsync(bool reconnecting,
                     if (m_ConnectionStartCancelled.load()) break;
 
                     if (authenticationRefreshRequired) {
+                        if (m_PlankUsername.isEmpty() ||
+                                m_PlankPassword.isEmpty()) {
+                            {
+                                QWriteLocker lock(&m_Computer->lock);
+                                m_Computer->sessionToken.fill(QChar('\0'));
+                                m_Computer->sessionToken.clear();
+                                m_Computer->authorizationState = NvComputer::AS_UNAUTHORIZED;
+                            }
+                            if (m_ComputerManager != nullptr) {
+                                m_ComputerManager->clientSideAttributeUpdated(m_Computer);
+                            }
+                            qInfo() << "PLANK replacement display worker requires a new sign-in";
+                            m_WaitingForSessionCleanup.store(false);
+                            emit sessionCleanupWaitChanged(false, QString());
+                            throw GfeHttpResponseException(
+                                        401, "The Host display session changed. Please sign in again.");
+                        }
                         try {
                             {
                                 QWriteLocker lock(&m_Computer->lock);
