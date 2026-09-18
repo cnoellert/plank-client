@@ -20,7 +20,6 @@ private slots:
     void validatesRequestedLayoutGeometry();
     void matchesOneClientDisplay();
     void matchesPrimaryInDesktopOrder();
-    void ordersVirtualPrimaryConnectorFromClientDesktop();
     void matchesTwoClientDisplaysLeftToRight();
     void rejectsUnsupportedClientLayouts();
     void parsesFixedCapture();
@@ -103,34 +102,6 @@ void TestOutputTopology::matchesPrimaryInDesktopOrder()
     QVERIFY(!NvOutputTopology::resolveClientDisplayLayout(displays, layout, modes, &error, true, &primary));
     // Older hosts can still match dimensions without primary negotiation.
     QVERIFY(NvOutputTopology::resolveClientDisplayLayout(displays, layout, modes, &error, true));
-}
-
-void TestOutputTopology::ordersVirtualPrimaryConnectorFromClientDesktop()
-{
-    QFile fixture(QString::fromUtf8(qgetenv("PLANK_REPO_ROOT")) +
-                  "/tests/protocol/output-topology-v13-virtual-primary.json");
-    QVERIFY(fixture.open(QIODevice::ReadOnly));
-    NvOutputTopology topology;
-    QVERIFY(NvOutputTopology::fromJson(QJsonDocument::fromJson(fixture.readAll()).object(), topology));
-    QVERIFY(topology.featureFlags & NvOutputTopology::VirtualPrimaryConnectorFeature);
-    QVERIFY(topology.matchesRequestedHostLayout("dual-horizontal", {"1920x1200", "2560x1440"}));
-    QCOMPARE(topology.outputs[0].id, QStringLiteral("x11:DP-2"));
-    QCOMPARE(topology.outputs[1].id, QStringLiteral("x11:DP-0"));
-    QVERIFY(topology.outputs[1].primary);
-    const NvClientDisplay eizo {QRect(1920, 0, 2560, 1440), QSize(2560, 1440), {}, true};
-    const NvClientDisplay macbook {QRect(0, 0, 1920, 1200), QSize(3456, 2234), {}, false};
-    QCOMPARE(NvOutputTopology::clientPrimaryIndex({eizo, macbook}), 1);
-    QCOMPARE(NvOutputTopology::clientPrimaryIndex({macbook, eizo}), 1);
-    auto leftPrimary = macbook;
-    leftPrimary.primary = true;
-    QCOMPARE(NvOutputTopology::clientPrimaryIndex({eizo, leftPrimary}), -1);
-    auto noPrimary = eizo;
-    noPrimary.primary = false;
-    QCOMPARE(NvOutputTopology::clientPrimaryIndex({noPrimary, macbook}), -1);
-    QVERIFY(NvOutputTopology::VirtualPrimaryConnectorFeature &
-            NvOutputTopology::SupportedFeatureFlags);
-    QVERIFY(!(NvOutputTopology::VirtualPrimaryConnectorFeature &
-              NvOutputTopology::MatchedPrimaryOutputFeature));
 }
 
 void TestOutputTopology::parsesNegotiatedMatchedModes()

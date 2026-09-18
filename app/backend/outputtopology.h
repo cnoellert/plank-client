@@ -64,10 +64,8 @@ struct NvOutputTopology
     static const int ClipboardSyncFeature = 0x400000;
     static const int MatchedDisplayModesFeature = 0x1000000;
     static const int MatchedPrimaryOutputFeature = 0x800000;
-    static const int VirtualPrimaryConnectorFeature = 0x2000000;
     static_assert((MatchedDisplayModesFeature & ClipboardSyncFeature) == 0);
     static_assert((MatchedPrimaryOutputFeature & ClipboardSyncFeature) == 0);
-    static_assert((VirtualPrimaryConnectorFeature & ClipboardSyncFeature) == 0);
     // Only advertise a clipboard receiver/sender when this client implements
     // it. Linux must not cause the host to read or transmit unused clipboard data.
 #ifdef Q_OS_MACOS
@@ -99,9 +97,8 @@ struct NvOutputTopology
                                              AuthenticatedDesktopStageFeature |
                                              WorkerInstanceFeature |
                                              MatchedDisplayModesFeature |
-                                             MatchedPrimaryOutputFeature |
-                                             VirtualPrimaryConnectorFeature |
-                                             PlatformClipboardSyncFeature;
+    MatchedPrimaryOutputFeature |
+    PlatformClipboardSyncFeature;
     static const char* NativeScalingMode;
     static const char* ScaledSpanMode;
     static const char* MatchClientHostLayout;
@@ -123,7 +120,6 @@ struct NvOutputTopology
                                            QStringList& virtualModes,
                                            QString* error = nullptr, bool allowMatchedModes = false,
                                            int* primaryOutput = nullptr);
-    static int clientPrimaryIndex(QVector<NvClientDisplay> displays);
     static QSize linuxMatchedDisplaySize(const NvClientDisplay& display, bool desktopSize);
     static QStringList qualifiedVirtualModes();
     static QString resolveMacClientDisplayMode(const QVector<NvClientDisplay>& displays,

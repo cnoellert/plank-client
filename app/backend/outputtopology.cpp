@@ -586,7 +586,14 @@ bool NvOutputTopology::resolveClientDisplayLayout(QVector<NvClientDisplay> displ
     hostLayout = displays.size() == 1 ? QString::fromLatin1(SingleHostLayout) :
                                        QString::fromLatin1(DualHorizontalHostLayout);
     if (primaryOutput) {
-        *primaryOutput = clientPrimaryIndex(displays);
+        for (int index = 0; index < displays.size(); ++index) {
+            if (!displays[index].primary) continue;
+            if (*primaryOutput != -1) {
+                *primaryOutput = -1;
+                break;
+            }
+            *primaryOutput = index;
+        }
         if (*primaryOutput == -1) {
             if (error) *error = QStringLiteral("Unable to identify one primary client display. Please reconnect.");
             hostLayout.clear();
@@ -595,21 +602,6 @@ bool NvOutputTopology::resolveClientDisplayLayout(QVector<NvClientDisplay> displ
         }
     }
     return true;
-}
-
-int NvOutputTopology::clientPrimaryIndex(QVector<NvClientDisplay> displays)
-{
-    std::sort(displays.begin(), displays.end(), [](const auto& left, const auto& right) {
-        return std::make_tuple(left.bounds.x(), left.bounds.y()) <
-                std::make_tuple(right.bounds.x(), right.bounds.y());
-    });
-    int primary = -1;
-    for (int index = 0; index < displays.size(); ++index) {
-        if (!displays[index].primary) continue;
-        if (primary != -1) return -1;
-        primary = index;
-    }
-    return primary;
 }
 
 QSize NvOutputTopology::linuxMatchedDisplaySize(const NvClientDisplay& display, bool desktopSize)
