@@ -549,7 +549,7 @@ void TestOutputTopology::gatesRetinaSizingToMatchedPhysicalHosts()
     topology.startupLayoutKind = NvOutputTopology::SingleHostLayout;
     QVERIFY(!topology.physicalMatchedModesAvailable());
     topology.startupLayoutKind = NvOutputTopology::PhysicalHostLayout;
-    topology.featureFlags = NvOutputTopology::VirtualPrimaryConnectorFeature;
+    topology.featureFlags = NvOutputTopology::MatchedPrimaryOutputFeature;
     QVERIFY(!topology.physicalMatchedModesAvailable());
 }
 
