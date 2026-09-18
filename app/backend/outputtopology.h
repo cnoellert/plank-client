@@ -64,6 +64,7 @@ struct NvOutputTopology
     // 0x400000 is allocated to clipboard synchronization.
     static const int MatchedDisplayModesFeature = 0x1000000;
     static const int MatchedPrimaryOutputFeature = 0x800000;
+    static const int VirtualPrimaryConnectorFeature = 0x2000000;
     static const int FixedCaptureFlags = FixedCaptureFeature | OutputTopologyFeature |
             TopologyGenerationFeature | HostLayoutMetadataFeature | CompositeSourceRegionsFeature |
             MacDesktopPreparationFeature | MacEncodingProfileFeature;
@@ -88,7 +89,8 @@ struct NvOutputTopology
                                              AuthenticatedDesktopStageFeature |
                                              WorkerInstanceFeature |
                                              MatchedDisplayModesFeature |
-                                             MatchedPrimaryOutputFeature;
+                                             MatchedPrimaryOutputFeature |
+                                             VirtualPrimaryConnectorFeature;
     static const char* NativeScalingMode;
     static const char* ScaledSpanMode;
     static const char* MatchClientHostLayout;
@@ -110,6 +112,7 @@ struct NvOutputTopology
                                            QStringList& virtualModes,
                                            QString* error = nullptr, bool allowMatchedModes = false,
                                            int* primaryOutput = nullptr);
+    static int clientPrimaryIndex(QVector<NvClientDisplay> displays);
     static QSize linuxMatchedDisplaySize(const NvClientDisplay& display, bool desktopSize);
     static QStringList qualifiedVirtualModes();
     static QString resolveMacClientDisplayMode(const QVector<NvClientDisplay>& displays,

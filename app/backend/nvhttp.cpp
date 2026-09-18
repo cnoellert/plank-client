@@ -233,7 +233,8 @@ NvHTTP::startApp(QString verb,
         if ((plankFeatureFlags & NvOutputTopology::HostLayoutBindingFeature) != 0 &&
                 !hostLayout.isEmpty()) {
             if (primaryOutput >= 0 &&
-                    (plankFeatureFlags & NvOutputTopology::MatchedPrimaryOutputFeature)) {
+                    (plankFeatureFlags & (NvOutputTopology::MatchedPrimaryOutputFeature |
+                                          NvOutputTopology::VirtualPrimaryConnectorFeature))) {
                 plankOutputArguments += "&plankPrimaryOutput=" + QString::number(primaryOutput);
             }
             plankOutputArguments +=

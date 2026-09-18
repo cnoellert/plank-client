@@ -2195,6 +2195,7 @@ bool Session::configurePlankHostLayout()
     bool hostRejectsRequestedLayout = false;
     bool matchedModes = false;
     bool matchedPrimary = false;
+    bool virtualPrimary = false;
     {
         QReadLocker lock(&m_Computer->lock);
         layoutPolicy = m_Computer->plankHostLayout;
@@ -2208,6 +2209,9 @@ bool Session::configurePlankHostLayout()
             (m_Computer->outputTopology.featureFlags & NvOutputTopology::MatchedDisplayModesFeature);
         matchedPrimary = matchedModes &&
             (m_Computer->outputTopology.featureFlags & NvOutputTopology::MatchedPrimaryOutputFeature);
+        virtualPrimary = m_Computer->outputTopology.startupLayoutKind == NvOutputTopology::SingleHostLayout &&
+            (m_Computer->outputTopology.featureFlags & NvOutputTopology::VirtualPrimaryConnectorFeature);
+        matchedPrimary = matchedPrimary || virtualPrimary;
         const bool hostPolicyKnown = m_Computer->outputTopology.displayPolicyKnown();
         hostRejectsRequestedLayout = hostPolicyKnown &&
                 !m_Computer->outputTopology.allowsBookmarkHostLayout(layoutPolicy);
@@ -2283,6 +2287,19 @@ bool Session::configurePlankHostLayout()
         m_ResolvedVirtualModes.append(virtualMode1);
         if (layoutPolicy == NvOutputTopology::DualHorizontalHostLayout) {
             m_ResolvedVirtualModes.append(virtualMode2);
+            if (virtualPrimary) {
+                QVector<NvClientDisplay> displays;
+                for (const auto& display : std::as_const(m_ClientDisplays)) {
+                    displays.append({QRect(display.logicalBounds.x, display.logicalBounds.y,
+                                           display.logicalBounds.w, display.logicalBounds.h),
+                                     display.nativeSize, display.macBackingSize, display.primary});
+                }
+                m_ResolvedPrimaryOutput = NvOutputTopology::clientPrimaryIndex(displays);
+                if (m_ResolvedPrimaryOutput < 0) {
+                    emit displayLaunchError(tr("Unable to identify one primary client display. Please reconnect."));
+                    return false;
+                }
+            }
         }
     }
     else {
