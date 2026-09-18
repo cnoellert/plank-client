@@ -135,6 +135,16 @@ int ComputerModel::plankRetinaSizeChoice(int computerIndex) const
     return computer->plankRetinaSize;
 }
 
+bool ComputerModel::plankPhysicalMatchedModesAvailable(int computerIndex) const
+{
+    Q_ASSERT(computerIndex >= 0 && computerIndex < m_Computers.count());
+    NvComputer* computer = m_Computers[computerIndex];
+    QReadLocker lock(&computer->lock);
+    return computer->state == NvComputer::CS_ONLINE &&
+            computer->authorizationState == NvComputer::AS_AUTHORIZED &&
+            computer->outputTopology.physicalMatchedModesAvailable();
+}
+
 int ComputerModel::plankScalingChoice(int computerIndex) const
 {
     Q_ASSERT(computerIndex >= 0 && computerIndex < m_Computers.count());

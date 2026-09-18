@@ -1971,7 +1971,8 @@ bool Session::snapshotClientDisplays()
         matchMacDesktop = m_PlankCaptureSource == StreamingPreferences::PLANK_CAPTURE_SCREENCAPTUREKIT &&
             m_Computer->plankHostLayout == NvOutputTopology::MatchClientHostLayout;
         matchLinuxDesktop = m_PlankCaptureSource != StreamingPreferences::PLANK_CAPTURE_SCREENCAPTUREKIT &&
-            m_Computer->plankHostLayout == NvOutputTopology::MatchClientHostLayout;
+            m_Computer->plankHostLayout == NvOutputTopology::MatchClientHostLayout &&
+            m_Computer->outputTopology.physicalMatchedModesAvailable();
         retinaDesktopSize = m_Computer->plankRetinaSize == 0;
     }
 #endif
@@ -2308,8 +2309,7 @@ bool Session::configurePlankHostLayout()
         authenticatedDesktopSize = QSize(m_Computer->outputTopology.desktopWidth,
                                          m_Computer->outputTopology.desktopHeight);
         authenticatedLogicalSize = m_Computer->outputTopology.captureLogicalBounds.size();
-        matchedModes = m_Computer->outputTopology.startupLayoutKind == NvOutputTopology::PhysicalHostLayout &&
-            (m_Computer->outputTopology.featureFlags & NvOutputTopology::MatchedDisplayModesFeature);
+        matchedModes = m_Computer->outputTopology.physicalMatchedModesAvailable();
         matchedPrimary = matchedModes &&
             (m_Computer->outputTopology.featureFlags & NvOutputTopology::MatchedPrimaryOutputFeature);
         virtualPrimary = m_Computer->outputTopology.startupLayoutKind == NvOutputTopology::SingleHostLayout &&

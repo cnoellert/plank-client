@@ -45,6 +45,8 @@ public:
 
     Q_INVOKABLE int plankRetinaSizeChoice(int computerIndex) const;
 
+    Q_INVOKABLE bool plankPhysicalMatchedModesAvailable(int computerIndex) const;
+
     Q_INVOKABLE int plankScalingChoice(int computerIndex) const;
 
     Q_INVOKABLE int plankVideoProfile(int computerIndex) const;

@@ -404,6 +404,12 @@ bool NvOutputTopology::displayPolicyKnown() const
             !allowedLayoutKinds.isEmpty();
 }
 
+bool NvOutputTopology::physicalMatchedModesAvailable() const
+{
+    return displayPolicyKnown() && startupLayoutKind == PhysicalHostLayout &&
+            (featureFlags & MatchedDisplayModesFeature) != 0;
+}
+
 bool NvOutputTopology::allowsBookmarkHostLayout(const QString& layout) const
 {
     if (featureFlags == FixedCaptureFlags) return layout == QStringLiteral("fixed") || layout == MatchClientHostLayout;

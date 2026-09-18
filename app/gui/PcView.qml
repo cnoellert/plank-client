@@ -404,6 +404,7 @@ CenteredGridView {
         property int scalingIndex: 1
         property int hostLayoutIndex: 0
         property int hostDisplayPolicy: -1
+        property bool hostMatchedModesAvailable: false
         property int virtualMode1Index: 9
         property int virtualMode2Index: 1
         property var virtualModeChoices: ComputerManager.plankVirtualModeChoices()
@@ -475,6 +476,7 @@ CenteredGridView {
             editScalingChoice.currentIndex = scalingIndex
             editRetinaSize.currentIndex = retinaSizeIndex
             hostDisplayPolicy = computerModel.plankHostDisplayPolicy(pcIndex)
+            hostMatchedModesAvailable = computerModel.plankPhysicalMatchedModesAvailable(pcIndex)
             editCaptureSource.selectCaptureSource(originalCaptureSource)
             editHostLayout.currentIndex = hostLayoutIndex
             editVirtualMode1.currentIndex = virtualMode1Index
@@ -505,6 +507,7 @@ CenteredGridView {
             editAddressText.clear()
             editNicknameText.clear()
             hostDisplayPolicy = -1
+            hostMatchedModesAvailable = false
             originalProfileBitratesKbps = []
             profileBitratesKbps = []
         }
@@ -681,7 +684,8 @@ CenteredGridView {
             PlankComboBox {
                 id: editRetinaSize
                 Layout.fillWidth: true
-                visible: Qt.platform.os === "osx" && editCaptureSource.captureSource !== 2 && editHostLayout.currentIndex === 0
+                visible: Qt.platform.os === "osx" && editCaptureSource.captureSource !== 2 &&
+                         editHostLayout.currentIndex === 0 && editBookmarkDialog.hostMatchedModesAvailable
                 model: [qsTr("macOS desktop size"), qsTr("Retina pixel detail")]
             }
             Label {

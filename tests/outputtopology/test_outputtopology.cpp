@@ -16,6 +16,7 @@ private slots:
     void rejectsConfiguredModeMismatch();
     void acceptsTallCinemaModes();
     void enforcesHostDisplayPolicy();
+    void gatesRetinaSizingToMatchedPhysicalHosts();
     void validatesRequestedLayoutGeometry();
     void matchesOneClientDisplay();
     void matchesPrimaryInDesktopOrder();
@@ -557,6 +558,28 @@ void TestOutputTopology::enforcesHostDisplayPolicy()
     QVERIFY(topology.allowsBookmarkHostLayout(QStringLiteral("match-client")));
     QVERIFY(topology.allowsBookmarkHostLayout(QStringLiteral("single")));
     QVERIFY(topology.allowsBookmarkHostLayout(QStringLiteral("dual-horizontal")));
+}
+
+void TestOutputTopology::gatesRetinaSizingToMatchedPhysicalHosts()
+{
+    NvOutputTopology topology;
+    QVERIFY(!topology.physicalMatchedModesAvailable());
+    topology.schemaVersion = NvOutputTopology::ProtocolVersion;
+    topology.layoutKind = NvOutputTopology::PhysicalHostLayout;
+    topology.startupLayoutKind = NvOutputTopology::PhysicalHostLayout;
+    topology.allowedLayoutKinds = {
+        QString::fromLatin1(NvOutputTopology::PhysicalHostLayout),
+        QString::fromLatin1(NvOutputTopology::SingleHostLayout),
+        QString::fromLatin1(NvOutputTopology::DualHorizontalHostLayout)
+    };
+    QVERIFY(!topology.physicalMatchedModesAvailable());
+    topology.featureFlags = NvOutputTopology::MatchedDisplayModesFeature;
+    QVERIFY(topology.physicalMatchedModesAvailable());
+    topology.startupLayoutKind = NvOutputTopology::SingleHostLayout;
+    QVERIFY(!topology.physicalMatchedModesAvailable());
+    topology.startupLayoutKind = NvOutputTopology::PhysicalHostLayout;
+    topology.featureFlags = NvOutputTopology::VirtualPrimaryConnectorFeature;
+    QVERIFY(!topology.physicalMatchedModesAvailable());
 }
 
 void TestOutputTopology::validatesRequestedLayoutGeometry()

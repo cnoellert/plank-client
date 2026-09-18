@@ -134,6 +134,7 @@ struct NvOutputTopology
     static QSize virtualCanvasSize(const QString& hostLayout,
                                    const QStringList& virtualModes, bool allowMatchedModes = false);
     bool displayPolicyKnown() const;
+    bool physicalMatchedModesAvailable() const;
     bool allowsBookmarkHostLayout(const QString& layout) const;
     // Requested layouts may still be transitioning from the authenticated one.
     int outputCountForLayout(const QString& resolvedLayout) const;
