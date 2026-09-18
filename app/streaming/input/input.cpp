@@ -8,6 +8,7 @@
 #include "utils.h"
 #ifdef Q_OS_MACOS
 #include "streaming/macquitshortcut.h"
+#include "streaming/mackeyboardcapture.h"
 #include "streaming/macwindow.h"
 #endif
 
@@ -109,19 +110,24 @@ SdlInputHandler::SdlInputHandler(StreamingPreferences& prefs,
     m_SpecialKeyCombos[KeyComboToggleKeyboardGrab].enabled =
             WMUtils::isRunningDesktopEnvironment();
 #ifdef Q_OS_MACOS
-    m_MacQuitShortcut = std::make_unique<MacQuitShortcut>([this] {
-        if (!isSystemKeyCaptureActive())
-            return false;
-        for (const auto& output : m_PresentationLayout.outputs) {
-            // SDL focus notifications may still be queued. A local Qt dialog
-            // must never inherit the stream's shortcut ownership.
-            if (MacWindow::hasKeyboardFocus(output.window))
-                return true;
-        }
-        return false;
-    });
+    auto ownsKeyboard = [this] { return isSystemKeyCaptureActive(); };
+    m_MacQuitShortcut = std::make_unique<MacQuitShortcut>(ownsKeyboard);
+    m_MacKeyboardCapture = std::make_unique<MacKeyboardCapture>(
+        ownsKeyboard, [this] { raiseAllKeys(); });
 #endif
 }
+
+#ifdef Q_OS_MACOS
+bool SdlInputHandler::hasMacStreamKeyboardFocus() const
+{
+    // SDL focus notifications may still be queued. A local Qt dialog must
+    // never inherit the stream's shortcut ownership or forward its typing.
+    for (const auto& output : m_PresentationLayout.outputs) {
+        if (MacWindow::hasKeyboardFocus(output.window)) return true;
+    }
+    return false;
+}
+#endif
 
 void SdlInputHandler::setStreamDimensions(int streamWidth, int streamHeight)
 {
@@ -144,6 +150,7 @@ QSize SdlInputHandler::streamDimensions() const
 SdlInputHandler::~SdlInputHandler()
 {
 #ifdef Q_OS_MACOS
+    m_MacKeyboardCapture.reset();
     m_MacQuitShortcut.reset();
 #endif
 #ifdef HAVE_MAC_RAW_WACOM
@@ -612,6 +619,7 @@ void SdlInputHandler::notifyMouseLeave()
 void SdlInputHandler::notifyFocusLost()
 {
 #ifdef Q_OS_MACOS
+    m_MacKeyboardCapture->refresh();
     m_MacQuitShortcut->refresh();
 #endif
     activateCompositorCursor();
@@ -635,6 +643,7 @@ void SdlInputHandler::notifyFocusLost()
 void SdlInputHandler::notifyFocusGained()
 {
 #ifdef Q_OS_MACOS
+    m_MacKeyboardCapture->refresh();
     m_MacQuitShortcut->refresh();
 #endif
 #ifdef HAVE_MAC_RAW_WACOM
@@ -759,12 +768,15 @@ void SdlInputHandler::updateKeyboardGrabState()
     // Don't close the window on Alt+F4 when keyboard grab is enabled
     SDL_SetHint(SDL_HINT_WINDOWS_CLOSE_ON_ALT_F4, shouldGrab ? "0" : "1");
 
+#ifndef Q_OS_MACOS
     for (const auto& output : m_PresentationLayout.outputs) {
         SDL_SetWindowKeyboardGrab(output.window, shouldGrab ? true : false);
     }
+#endif
 
     m_KeyboardCaptureActive = shouldGrab;
 #ifdef Q_OS_MACOS
+    m_MacKeyboardCapture->refresh();
     m_MacQuitShortcut->refresh();
 #endif
 }
@@ -787,7 +799,13 @@ bool SdlInputHandler::isSystemKeyCaptureActive()
     bool fullscreen = false;
     for (const auto& output : m_PresentationLayout.outputs) {
         const Uint32 windowFlags = SDL_GetWindowFlags(output.window);
+#ifdef Q_OS_MACOS
+        // AppKit can return to a fullscreen Space before SDL's cached focus
+        // flags recover. Do not require both native and cached focus to agree.
+        focused = focused || MacWindow::hasKeyboardFocus(output.window);
+#else
         focused = focused || (windowFlags & SDL_WINDOW_INPUT_FOCUS);
+#endif
         fullscreen = fullscreen || (windowFlags & SDL_WINDOW_FULLSCREEN);
     }
     if (!focused || !m_KeyboardCaptureActive) {

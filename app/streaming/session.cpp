@@ -1519,6 +1519,7 @@ int Session::plankTransportNativeInputSender(void* context, uint8_t type,
 bool Session::clipboardSyncEnabled() const
 {
     return m_Computer != nullptr &&
+            (!(m_Computer->plankFeatureFlags & NvOutputTopology::FixedCaptureFeature) || m_MacClipboardNegotiated) &&
             (m_Computer->plankFeatureFlags & NvOutputTopology::ClipboardSyncFeature) != 0;
 }
 
@@ -2895,6 +2896,7 @@ bool Session::startConnectionAsync(bool reconnecting,
                     m_Computer->authorizationState = NvComputer::AS_UNAUTHORIZED;
                 }
                 macLaunch = http->startMacPreview(topology, pin, m_StreamConfig.bitrate, quicUdpPayloadMtu);
+                m_MacClipboardNegotiated = macLaunch.clipboard;
                 plankTransportPort = http->controlPort();
                 plankTransportCertificateSha256 = pin;
                 plankTransportToken = QString::fromLatin1(macLaunch.transportToken);
@@ -4303,7 +4305,8 @@ void Session::execInternal()
             m_PlankToolbar->setRenderedStats(
                         m_CurrentRenderedFps.load(std::memory_order_relaxed),
                         m_CurrentVideoMbps.load(std::memory_order_relaxed),
-                        currentVideoFecLoss().before);
+                        currentVideoFecLoss().before,
+                        currentNetworkRttMs());
             const auto action = m_PlankToolbar->update(
                         SDL_GetTicks(), !m_Reconnecting.load());
             if (action == PlankToolbar::Action::Disconnect) {
@@ -4386,6 +4389,11 @@ void Session::execInternal()
         const bool reconnectCompletion =
                 event.type == SDL_EVENT_USER &&
                 event.user.code == SDL_CODE_PLANK_REPLANK_COMPLETE;
+#ifdef Q_OS_MACOS
+        if (m_InputHandler->handleCapturedMacKeyEvent(event)) {
+            continue;
+        }
+#endif
         if (m_Reconnecting.load() &&
                 event.type != SDL_EVENT_QUIT && !reconnectCompletion) {
             // Cursor shapes, host-authoritative Wacom positions, and toolbar
