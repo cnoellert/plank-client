@@ -14,6 +14,7 @@ private slots:
     void preservesMouseMotionBarriers_data();
     void preservesMouseMotionBarriers();
     void exactDualOutputSlices();
+    void manualHostModesOverrideRetinaPanelBoundary();
     void letterboxedDualOutputSlices();
     void mapsEachWindowIntoOneStreamCanvas();
     void preservesMappingWithScaledLogicalWindows();
@@ -58,6 +59,34 @@ void TestPlankPresentation::exactDualOutputSlices()
     QVERIFY(right.visible);
     QCOMPARE(right.sourceRect, QRectF(2560, 0, 2560, 2160));
     QCOMPARE(right.destinationRect, QRect(0, 0, 2560, 2160));
+}
+
+void TestPlankPresentation::manualHostModesOverrideRetinaPanelBoundary()
+{
+    // The laptop panel is 3456 pixels wide, but its Host output is 1920.
+    const QSize stream(4480, 1440);
+    const auto canvas = PlankPresentation::horizontalCanvas(
+        {QSize(1920, 1200), QSize(2560, 1440)});
+    QCOMPARE(canvas.size(), 2);
+    QCOMPARE(canvas[0], QRect(0, 0, 1920, 1200));
+    QCOMPARE(canvas[1], QRect(1920, 0, 2560, 1440));
+
+    const auto laptop = PlankPresentation::sliceForDrawable(
+        stream, stream, canvas[0], QSize(4112, 2572));
+    const auto external = PlankPresentation::sliceForDrawable(
+        stream, stream, canvas[1], QSize(2560, 1440));
+    QCOMPARE(laptop.sourceRect, QRectF(0, 0, 1920, 1200));
+    QCOMPARE(laptop.destinationRect, QRect(0, 0, 4112, 2572));
+    QCOMPARE(external.sourceRect, QRectF(1920, 0, 2560, 1440));
+    QCOMPARE(external.destinationRect, QRect(0, 0, 2560, 1440));
+
+    QPointF streamPoint;
+    QVERIFY(PlankPresentation::mapWindowPointToStream(
+        QPointF(2056, 600), QSize(4112, 2572), stream, stream,
+        canvas[0], streamPoint, false));
+    QCOMPARE(streamPoint, QPointF(960, 600 * 1200.0 / 2572.0));
+    QVERIFY(PlankPresentation::horizontalCanvas(
+        {QSize(1920, 1200), QSize()}).isEmpty());
 }
 
 void TestPlankPresentation::letterboxedDualOutputSlices()

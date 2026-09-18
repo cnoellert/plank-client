@@ -2384,6 +2384,34 @@ bool Session::configurePlankLaunchGeometry()
                     m_UseMultiDisplayPresentation ? 2 : 1);
     }
 
+    // A manual dual-output stream has an exact Host pixel boundary. In native
+    // scaling, each fullscreen window must display its corresponding Host
+    // output even when its Mac panel has a different native pixel width.
+    // Keep the same canvas rectangles for rendering and pointer mapping.
+    if (m_UseMultiDisplayPresentation &&
+            m_ResolvedHostLayout == NvOutputTopology::DualHorizontalHostLayout &&
+            m_ResolvedScalingMode == NvOutputTopology::NativeScalingMode &&
+            m_ResolvedVirtualModes.size() == m_ClientDisplays.size()) {
+        QVector<QSize> hostOutputSizes;
+        for (const QString& mode : std::as_const(m_ResolvedVirtualModes)) {
+            hostOutputSizes.append(NvOutputTopology::virtualModeSize(mode, true));
+        }
+        const auto hostCanvas = PlankPresentation::horizontalCanvas(hostOutputSizes);
+        if (hostCanvas.size() != m_ClientDisplays.size()) {
+            emit displayLaunchError(tr("The Host output sizes are invalid for two-screen presentation."));
+            return false;
+        }
+        for (int i = 0; i < m_ClientDisplays.size(); ++i) {
+            m_ClientDisplays[i].canvasRect = hostCanvas.at(i);
+            SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
+                        "PLANK presentation output %d: host-canvas=%dx%d%+d%+d client-panel=%dx%d",
+                        i, hostCanvas[i].width(), hostCanvas[i].height(),
+                        hostCanvas[i].x(), hostCanvas[i].y(),
+                        m_ClientDisplays[i].nativeSize.width(),
+                        m_ClientDisplays[i].nativeSize.height());
+        }
+    }
+
     const QSize resolution = configurePlankDisplayMode();
     if (!resolution.isValid()) {
         return false;

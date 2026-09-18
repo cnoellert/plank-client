@@ -36,6 +36,10 @@ struct PlankPresentationSlice
 class PlankPresentation
 {
 public:
+    // Construct a shared canvas from the Host output sizes, in display order.
+    // Client panel pixel widths may differ from the streamed output widths.
+    static QVector<QRect> horizontalCanvas(const QVector<QSize>& outputSizes);
+
     // Leave the native fullscreen Space before hiding a secondary surface.
     static bool setSecondaryFullscreen(SDL_Window* window, bool fullscreen);
 
