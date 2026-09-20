@@ -110,3 +110,12 @@ Portofino currently has Apple command-line tools, but no full Xcode selection,
 visionOS SDK, simulator runtime, or target Qt build. Source separation and
 preflight checks can be reviewed here; compilation and runtime claims remain
 blocked until those tools are installed.
+
+Portofino runs macOS 15.7.4. Apple lists Xcode 26.2 as compatible with macOS
+15.6 and newer, with the visionOS 26.2 SDK and device support from visionOS 1
+through 26.2. It is the newest documented Xcode line that can run on this Mac;
+newer Xcode 26.5 and 26.6 releases require macOS 26.2. Install Xcode 26.2 from
+Apple Developer Downloads, select it with `xcode-select`, and install its
+visionOS platform component before building Qt.
+
+- [Apple Xcode system requirements](https://developer.apple.com/xcode/system-requirements)
