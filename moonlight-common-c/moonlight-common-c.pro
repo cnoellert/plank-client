@@ -43,8 +43,15 @@ win32 {
     INCLUDEPATH += $$PWD/../libs/windows/include
     DEFINES += HAS_QOS_FLOWID=1 HAS_PQOS_FLOWID=1
 }
-macx:!disable-prebuilts {
+macx:!visionos:!disable-prebuilts {
     INCLUDEPATH += $$PWD/../libs/mac/include
+}
+visionos {
+    PLANK_VISIONOS_DEPS = $$(PLANK_VISIONOS_DEPS)
+    isEmpty(PLANK_VISIONOS_DEPS) {
+        error("PLANK_VISIONOS_DEPS must point to target-built dependencies")
+    }
+    INCLUDEPATH += $$PLANK_VISIONOS_DEPS/include
 }
 unix:if(!macx|disable-prebuilts) {
     CONFIG += link_pkgconfig

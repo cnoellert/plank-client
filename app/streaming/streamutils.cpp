@@ -3,7 +3,7 @@
 #include <Qt>
 #include <QDir>
 
-#ifdef Q_OS_DARWIN
+#ifdef Q_OS_MACOS
 #include <ApplicationServices/ApplicationServices.h>
 #include "macwindow.h"
 #include "macdisplaygeometry.h"
@@ -178,7 +178,7 @@ int StreamUtils::getDisplayRefreshRate(SDL_Window* window)
     return qRound(mode->refresh_rate);
 }
 
-#ifdef Q_OS_DARWIN
+#ifdef Q_OS_MACOS
 bool StreamUtils::getMacCurrentDisplayMode(Uint32 displayId, SDL_DisplayMode* mode, SDL_Rect* bounds, bool fullscreen)
 {
     SDL_zerop(mode);
@@ -283,7 +283,7 @@ bool StreamUtils::getMacNativeDisplayMode(Uint32 displayId, SDL_DisplayMode* mod
 
 bool StreamUtils::getNativeDesktopMode(int displayIndex, SDL_DisplayMode* mode, SDL_Rect* safeArea)
 {
-#ifdef Q_OS_DARWIN
+#ifdef Q_OS_MACOS
     CGDirectDisplayID displayIds[16];
     uint32_t count = 0;
     if (CGGetActiveDisplayList(16, displayIds, &count) != kCGErrorSuccess ||

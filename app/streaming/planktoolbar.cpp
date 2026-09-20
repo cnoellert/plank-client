@@ -15,7 +15,7 @@
 #include <QPainterPath>
 #include <QtMath>
 
-#ifdef Q_OS_DARWIN
+#ifdef Q_OS_MACOS
 #include "macwindow.h"
 #endif
 
@@ -373,7 +373,7 @@ void PlankToolbar::notifyWindowChanged()
         m_ToolbarLeft = PlankToolbarLogic::logicalLeftFromPosition(
                     oldHorizontalPosition, m_WindowWidth, m_Width);
     }
-#ifdef Q_OS_DARWIN
+#ifdef Q_OS_MACOS
     m_ToolbarLeft = MacWindow::unobscuredToolbarLeft(m_Window, m_ToolbarLeft, m_Width);
 #endif
     if (!m_PointerInitialized) {

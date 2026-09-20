@@ -27,20 +27,33 @@ unix:contains(CONFIG, plank-transport) {
     PLANK_CARGO = $$(CARGO)
     isEmpty(PLANK_CARGO): PLANK_CARGO = cargo
     PLANK_TRANSPORT_CARGO_TARGET_DIR = $$OUT_PWD/plank-transport-cargo
-    PLANK_TRANSPORT_LIBRARY = $$PLANK_TRANSPORT_CARGO_TARGET_DIR/release/libplank_transport.a
+    PLANK_TRANSPORT_CARGO_ARGS =
+    visionos {
+        PLANK_RUST_TARGET = $$(PLANK_RUST_TARGET)
+        isEmpty(PLANK_RUST_TARGET) {
+            error("PLANK_RUST_TARGET must name the visionOS device or simulator Rust target")
+        }
+        !equals(PLANK_RUST_TARGET, aarch64-apple-visionos):!equals(PLANK_RUST_TARGET, aarch64-apple-visionos-sim) {
+            error("Unsupported visionOS Rust target: $$PLANK_RUST_TARGET")
+        }
+        PLANK_TRANSPORT_CARGO_ARGS = --target $$PLANK_RUST_TARGET
+        PLANK_TRANSPORT_LIBRARY = $$PLANK_TRANSPORT_CARGO_TARGET_DIR/$$PLANK_RUST_TARGET/release/libplank_transport.a
+    }
+    !visionos: PLANK_TRANSPORT_LIBRARY = $$PLANK_TRANSPORT_CARGO_TARGET_DIR/release/libplank_transport.a
 
     plank_transport.target = $$PLANK_TRANSPORT_LIBRARY
     plank_transport.depends = FORCE
     plank_transport.commands = \
         CARGO_TARGET_DIR=$$shell_quote($$PLANK_TRANSPORT_CARGO_TARGET_DIR) \
-        $$shell_quote($$PLANK_CARGO) build --locked --offline --release \
+        $$shell_quote($$PLANK_CARGO) build --locked --offline --release $$PLANK_TRANSPORT_CARGO_ARGS \
         --manifest-path $$shell_quote($$PLANK_TRANSPORT_DIR/Cargo.toml)
     QMAKE_EXTRA_TARGETS += plank_transport
     PRE_TARGETDEPS += $$PLANK_TRANSPORT_LIBRARY
     QMAKE_CLEAN += $$PLANK_TRANSPORT_CARGO_TARGET_DIR
 
     INCLUDEPATH += $$PLANK_TRANSPORT_DIR/include
-    LIBS += $$PLANK_TRANSPORT_LIBRARY -ldl -lpthread -lm
+    LIBS += $$PLANK_TRANSPORT_LIBRARY -lpthread -lm
+    !visionos: LIBS += -ldl
     !macx: LIBS += -lrt
     macx: LIBS += -framework Security -framework SystemConfiguration
     DEFINES += PLANK_TRANSPORT=1
@@ -93,13 +106,29 @@ win32 {
     INCLUDEPATH += $$PWD/../libs/windows/include
     LIBS += ws2_32.lib winmm.lib dxva2.lib ole32.lib gdi32.lib user32.lib d3d9.lib dwmapi.lib dbghelp.lib
 }
-macx:!disable-prebuilts {
+macx:!visionos:!disable-prebuilts {
     !exists($$PWD/../libs/mac) {
         error("Missing dependencies. Please run 'python3 setup-deps.py' to fetch prebuilt libraries.")
     }
 
     INCLUDEPATH += $$PWD/../libs/mac/include $$PWD/../libs/mac/include/SDL3
     LIBS += -L$$PWD/../libs/mac/lib
+}
+visionos {
+    DEFINES += PLANK_VISIONOS=1
+
+    PLANK_VISIONOS_DEPS = $$(PLANK_VISIONOS_DEPS)
+    isEmpty(PLANK_VISIONOS_DEPS) {
+        error("PLANK_VISIONOS_DEPS must point to target-built dependencies")
+    }
+    !exists($$PLANK_VISIONOS_DEPS/include/SDL3/SDL.h) {
+        error("SDL3 visionOS headers are missing from PLANK_VISIONOS_DEPS")
+    }
+
+    INCLUDEPATH += $$PLANK_VISIONOS_DEPS/include $$PLANK_VISIONOS_DEPS/include/SDL3
+    LIBS += -L$$PLANK_VISIONOS_DEPS/lib \
+        -lssl -lcrypto -lavcodec -lavutil -lswscale -lswresample \
+        -lopus -lSDL3 -lSDL3_ttf
 }
 
 unix:if(!macx|disable-prebuilts) {
@@ -207,9 +236,11 @@ macx {
         CONFIG += libplacebo
     }
 
-    LIBS += -lobjc -framework VideoToolbox -framework AVFoundation -framework CoreVideo -framework CoreGraphics -framework CoreMedia -framework AppKit -framework Metal -framework QuartzCore
+    LIBS += -lobjc -framework VideoToolbox -framework AVFoundation -framework CoreVideo -framework CoreGraphics -framework CoreMedia -framework Metal -framework QuartzCore
     CONFIG += ffmpeg
 }
+macx:!visionos: LIBS += -framework AppKit
+visionos: LIBS += -framework UIKit
 
 SOURCES += \
     backend/nvaddress.cpp \
@@ -245,7 +276,7 @@ SOURCES += \
     backend/systemproperties.cpp \
     wm.cpp
 
-macx: HEADERS += macapplication.h
+macx:!visionos: HEADERS += macapplication.h
 
 HEADERS += \
     streaming/video/packedbt709.h \
@@ -457,6 +488,15 @@ win32:!winrt {
 macx {
     message(VideoToolbox renderer selected)
 
+    SOURCES += \
+        streaming/video/ffmpeg-renderers/vt_base.mm \
+        streaming/video/ffmpeg-renderers/vt_metal.mm
+
+    HEADERS += streaming/video/ffmpeg-renderers/vt.h
+}
+macx:!visionos {
+    message(macOS desktop integration selected)
+
     DEFINES += HAVE_MAC_RAW_WACOM
     SOURCES += streaming/input/macrawwacom.cpp
     HEADERS += streaming/input/macrawwacom.h streaming/input/macrawwacomlogic.h streaming/input/macrawwacomasync.h
@@ -465,9 +505,7 @@ macx {
     SOURCES += \
         streaming/macquitshortcut.mm \
         streaming/mackeyboardcapture.mm \
-        streaming/macwindow.mm \
-        streaming/video/ffmpeg-renderers/vt_base.mm \
-        streaming/video/ffmpeg-renderers/vt_metal.mm
+        streaming/macwindow.mm
 
     HEADERS += \
         streaming/macquitshortcut.h \
@@ -475,7 +513,6 @@ macx {
         streaming/input/sdl-darwin-scancodes.h \
         streaming/macwindow.h \
         streaming/macdisplaygeometry.h \
-        streaming/video/ffmpeg-renderers/vt.h \
         streaming/macclipboardsync.h \
         streaming/clipboardpolltimer.h \
         streaming/plankclipboard.h
@@ -623,7 +660,7 @@ win32 {
     CONFIG -= embed_manifest_exe
     QMAKE_LFLAGS += /MANIFEST:embed /MANIFESTINPUT:$${PWD}/plank-client.exe.manifest
 }
-macx {
+macx:!visionos {
     # One SDK27-built arm64 application for macOS15 and newer, not separate
     # reduced-capability and modern editions. New APIs need availability guards.
     isEmpty(PLANK_MAC_CLIENT_MIN_MACOS): PLANK_MAC_CLIENT_MIN_MACOS = 15.0
@@ -650,9 +687,20 @@ macx {
         QMAKE_RPATHDIR += @executable_path/../Frameworks
     }
 }
+visionos {
+    isEmpty(PLANK_VISIONOS_MIN_VERSION): PLANK_VISIONOS_MIN_VERSION = 2.0
+    QMAKE_APPLE_DEVICE_ARCHS = arm64
+    QMAKE_XCODE_ATTRIBUTE_XROS_DEPLOYMENT_TARGET = $$PLANK_VISIONOS_MIN_VERSION
+    QMAKE_XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER = la.instinctual.PLANK.Client.visionOS
+    QMAKE_INFO_PLIST = $$PWD/Info-visionos.plist
+}
 
 isEmpty(PLANK_VERSION) {
     PLANK_VERSION = development
 }
 VERSION = "$$section(PLANK_VERSION, -, 0, 0)"
+visionos {
+    QMAKE_XCODE_ATTRIBUTE_CURRENT_PROJECT_VERSION = $$VERSION
+    QMAKE_XCODE_ATTRIBUTE_MARKETING_VERSION = $$VERSION
+}
 DEFINES += PLANK_VERSION_STR=\\\"$$PLANK_VERSION\\\"

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QtSystemDetection>
 #include <SDL3/SDL.h>
 
 class StreamUtils
@@ -38,7 +39,7 @@ public:
     static
     bool getNativeDesktopMode(int displayIndex, SDL_DisplayMode* mode, SDL_Rect* safeArea);
 
-#ifdef __APPLE__
+#ifdef Q_OS_MACOS
     static bool getMacNativeDisplayMode(Uint32 displayId, SDL_DisplayMode* mode, SDL_Rect* safeArea);
     static bool getMacCurrentDisplayMode(Uint32 displayId, SDL_DisplayMode* mode, SDL_Rect* bounds, bool fullscreen);
     static bool getMacCurrentDisplayModeForBounds(const SDL_Rect& bounds, SDL_DisplayMode* mode, SDL_Rect* matchedBounds, bool fullscreen);

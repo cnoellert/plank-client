@@ -16,7 +16,7 @@
 #ifdef Q_OS_MACOS
 #include "macapplication.h"
 #endif
-#ifdef Q_OS_DARWIN
+#ifdef Q_OS_MACOS
 #include "streaming/macwindow.h"
 #include "streaming/macdisplaygeometry.h"
 #endif
@@ -1599,7 +1599,7 @@ void Session::clearPlankReconnectCredentials()
 
 bool Session::initialize()
 {
-#ifdef Q_OS_DARWIN
+#ifdef Q_OS_MACOS
     // SDL 3.4.2 caches allow_spaces in Cocoa_VideoInit, so use CoreGraphics
     // before SDL video initialization. Setting the hint before window creation
     // alone is too late. Match Client and the presenter share this policy.
@@ -1645,7 +1645,7 @@ bool Session::initialize()
         return false;
     }
 
-#ifdef Q_OS_DARWIN
+#ifdef Q_OS_MACOS
     if (m_ClientDisplays.size() != macDisplayCount) {
         SDL_QuitSubSystem(SDL_INIT_VIDEO);
         emit displayLaunchError(tr("The Mac display layout changed during setup. Please connect again."));
@@ -1963,7 +1963,7 @@ int Session::getTargetDisplayIndex() const
 bool Session::snapshotClientDisplays()
 {
     m_ClientDisplays.clear();
-#ifdef Q_OS_DARWIN
+#ifdef Q_OS_MACOS
     bool matchMacDesktop;
     {
         QReadLocker lock(&m_Computer->lock);
@@ -1990,7 +1990,7 @@ bool Session::snapshotClientDisplays()
             return false;
         }
         snapshot.nativeSize = QSize(nativeMode.w, nativeMode.h);
-#ifdef Q_OS_DARWIN
+#ifdef Q_OS_MACOS
         if (matchMacDesktop) {
             SDL_DisplayMode currentMode;
             SDL_Rect matchedBounds;
@@ -4456,7 +4456,7 @@ void Session::execInternal()
             }
             break;
 
-#ifdef Q_OS_DARWIN
+#ifdef Q_OS_MACOS
         case SDL_EVENT_WINDOW_ENTER_FULLSCREEN:
         case SDL_EVENT_WINDOW_LEAVE_FULLSCREEN:
             if (SDL_Window* window = windowForEvent(event.window.windowID)) {
@@ -4481,7 +4481,7 @@ void Session::execInternal()
             if (eventWindow == nullptr) {
                 break;
             }
-#ifdef Q_OS_DARWIN
+#ifdef Q_OS_MACOS
             if (event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
                 MacWindow::logGeometry(eventWindow);
             }

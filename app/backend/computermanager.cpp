@@ -10,7 +10,7 @@
 #include <QCoreApplication>
 #include <QGuiApplication>
 #include <QScreen>
-#ifdef Q_OS_DARWIN
+#ifdef Q_OS_MACOS
 #include "streaming/streamutils.h"
 #include "streaming/macdisplaygeometry.h"
 #include <ApplicationServices/ApplicationServices.h>
@@ -784,7 +784,7 @@ void ComputerManager::authenticateHost(NvComputer* computer, QString username,
         // pixels alone lose the user's Retina "Looks like" setting.
         Q_ASSERT(QThread::currentThread() == qApp->thread());
         QVector<NvClientDisplay> displays;
-#ifdef Q_OS_DARWIN
+#ifdef Q_OS_MACOS
         CGDirectDisplayID ids[16];
         uint32_t count = 0;
         if (CGGetActiveDisplayList(16, ids, &count) == kCGErrorSuccess) {
