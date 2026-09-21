@@ -7,6 +7,8 @@ set(CMAKE_Swift_LANGUAGE_VERSION 6)
 add_executable(PlankVision MACOSX_BUNDLE
     Bridge/PlankTransportBridge.c
     Bridge/PlankTransportBridge.h
+    Bridge/PlankVideoDecoder.c
+    Bridge/PlankVideoDecoder.h
     Sources/PlankVisionApp.swift
     Sources/Models/HostBookmark.swift
     Sources/Services/HostDiscovery.swift
@@ -58,6 +60,24 @@ if(PLANK_TRANSPORT_DIR)
         "-framework SystemConfiguration"
     )
     target_compile_definitions(PlankVision PRIVATE PLANK_NATIVE_TRANSPORT=1)
+endif()
+
+set(PLANK_FFMPEG_DIR "" CACHE PATH "Path to the visionOS FFmpeg installation")
+if(PLANK_FFMPEG_DIR)
+    target_include_directories(PlankVision PRIVATE "${PLANK_FFMPEG_DIR}/include")
+    target_link_libraries(PlankVision PRIVATE
+        "${PLANK_FFMPEG_DIR}/lib/libavcodec.a"
+        "${PLANK_FFMPEG_DIR}/lib/libswscale.a"
+        "${PLANK_FFMPEG_DIR}/lib/libswresample.a"
+        "${PLANK_FFMPEG_DIR}/lib/libavutil.a"
+        "-framework AudioToolbox"
+        "-framework VideoToolbox"
+        "-framework CoreFoundation"
+        "-framework CoreMedia"
+        "-framework CoreVideo"
+        "-lz"
+        "-liconv"
+    )
 endif()
 
 set_target_properties(PlankVision PROPERTIES

@@ -1,3 +1,4 @@
+import CoreGraphics
 import SwiftUI
 
 struct HostDetailView: View {
@@ -8,6 +9,32 @@ struct HostDetailView: View {
     @State private var password = ""
 
     var body: some View {
+        ZStack {
+            if let frame = client.latestFrame,
+               let image = makeImage(from: frame) {
+                Image(decorative: image, scale: 1)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .background(.black)
+                    .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                    .overlay(alignment: .topLeading) {
+                        Label("Live · frame \(frame.frameNumber)", systemImage: "dot.radiowaves.left.and.right")
+                            .font(.headline.monospacedDigit())
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(.ultraThinMaterial, in: Capsule())
+                            .padding(20)
+                    }
+            } else {
+                connectionPanel
+            }
+        }
+        .padding(48)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .navigationTitle(host.name)
+    }
+
+    private var connectionPanel: some View {
         VStack(spacing: 28) {
             Image(systemName: "display.2")
                 .font(.system(size: 64, weight: .light))
@@ -82,9 +109,6 @@ struct HostDetailView: View {
                 }
             }
         }
-        .padding(48)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .navigationTitle(host.name)
     }
 
     @ViewBuilder
@@ -119,6 +143,9 @@ struct HostDetailView: View {
                 Text(probe.negotiationSummary)
                     .foregroundStyle(.secondary)
             }
+        case let .streaming(identity, _, frameNumber):
+            Label("Live video from \(identity.name) · frame \(frameNumber)", systemImage: "dot.radiowaves.left.and.right")
+                .foregroundStyle(.green)
         case let .failed(message):
             Label(message, systemImage: "exclamationmark.triangle")
                 .foregroundStyle(.orange)
@@ -133,5 +160,28 @@ struct HostDetailView: View {
                 .frame(minWidth: 120)
         }
         .buttonStyle(.borderedProminent)
+    }
+
+    private func makeImage(from frame: PlankRenderedFrame) -> CGImage? {
+        guard let provider = CGDataProvider(data: frame.pixels as CFData),
+              let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else {
+            return nil
+        }
+        let bitmapInfo = CGBitmapInfo.byteOrder32Little.union(
+            CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue)
+        )
+        return CGImage(
+            width: frame.width,
+            height: frame.height,
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            bytesPerRow: frame.bytesPerRow,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo,
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: false,
+            intent: .defaultIntent
+        )
     }
 }

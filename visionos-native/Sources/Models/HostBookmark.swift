@@ -68,6 +68,14 @@ struct PlankFrameProbe: Equatable, Sendable {
     let negotiationSummary: String
 }
 
+struct PlankRenderedFrame: Equatable, Sendable {
+    let pixels: Data
+    let width: Int
+    let height: Int
+    let bytesPerRow: Int
+    let frameNumber: UInt64
+}
+
 struct DiscoveredHost: Identifiable, Hashable, Sendable {
     let serviceName: String
     let endpointDescription: String

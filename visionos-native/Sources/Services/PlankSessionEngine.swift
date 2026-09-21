@@ -15,11 +15,12 @@ enum PlankSessionError: LocalizedError, Sendable {
 }
 
 struct PlankSessionEngine: Sendable {
-    func probeFirstFrame(
+    func stream(
         host: String,
         topology: PlankTopology,
-        launch: PlankLaunchCredentials
-    ) async throws -> PlankFrameProbe {
+        launch: PlankLaunchCredentials,
+        onFrame: @escaping @Sendable (PlankRenderedFrame) -> Void
+    ) async throws {
         try await Task.detached(priority: .userInitiated) {
             var error = [CChar](repeating: 0, count: 512)
             let transport = host.withCString { hostPointer in
@@ -89,9 +90,19 @@ struct PlankSessionEngine: Sendable {
                 throw PlankSessionError.invalidNegotiation
             }
 
+            guard let decoder = plank_video_decoder_create(&error, error.count) else {
+                throw PlankSessionError.transport(String(cString: error))
+            }
+            defer { plank_video_decoder_destroy(decoder) }
+
             var payload = [UInt8](repeating: 0, count: 4 * 1024 * 1024)
+            var pixels = [UInt8](
+                repeating: 0,
+                count: topology.desktopWidth * topology.desktopHeight * 4
+            )
             var frame = PlankVisionVideoFrame()
-            for _ in 0..<4 {
+            var decodedFrames: UInt64 = 0
+            while !Task.isCancelled {
                 var payloadSize = 0
                 let result = plank_vision_transport_receive_video(
                     transport, &frame, &payload, payload.count, &payloadSize, 3000
@@ -105,14 +116,42 @@ struct PlankSessionEngine: Sendable {
                 guard result == PLANK_VISION_TRANSPORT_OK, payloadSize > 0 else {
                     throw PlankSessionError.transport("The native video receiver stopped unexpectedly.")
                 }
-                return PlankFrameProbe(
-                    byteCount: payloadSize,
-                    frameNumber: frame.frame_number,
-                    isKeyFrame: (frame.flags & 1) != 0,
-                    negotiationSummary: "HEVC 10-bit 4:4:4, \(topology.desktopWidth)×\(topology.desktopHeight) at 60 fps"
-                )
+
+                var decodedWidth: UInt32 = 0
+                var decodedHeight: UInt32 = 0
+                var decodedStride: UInt32 = 0
+                let decodeResult = payload.withUnsafeBytes { encodedBytes in
+                    pixels.withUnsafeMutableBytes { pixelBytes in
+                        plank_video_decoder_decode(
+                            decoder,
+                            encodedBytes.bindMemory(to: UInt8.self).baseAddress,
+                            payloadSize,
+                            pixelBytes.bindMemory(to: UInt8.self).baseAddress,
+                            pixelBytes.count,
+                            &decodedWidth,
+                            &decodedHeight,
+                            &decodedStride,
+                            &error,
+                            error.count
+                        )
+                    }
+                }
+                if decodeResult == PLANK_VIDEO_DECODER_NO_FRAME { continue }
+                guard decodeResult == PLANK_VIDEO_DECODER_FRAME else {
+                    throw PlankSessionError.transport(String(cString: error))
+                }
+                decodedFrames += 1
+                if decodedFrames == 1 || decodedFrames.isMultiple(of: 6) {
+                    let byteCount = Int(decodedStride) * Int(decodedHeight)
+                    onFrame(PlankRenderedFrame(
+                        pixels: Data(pixels.prefix(byteCount)),
+                        width: Int(decodedWidth),
+                        height: Int(decodedHeight),
+                        bytesPerRow: Int(decodedStride),
+                        frameNumber: frame.frame_number
+                    ))
+                }
             }
-            throw PlankSessionError.noVideo
         }.value
     }
 }

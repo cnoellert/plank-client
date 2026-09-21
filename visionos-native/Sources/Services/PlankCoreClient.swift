@@ -9,12 +9,14 @@ enum ConnectionPhase: Equatable, Sendable {
     case authenticated(PlankHostIdentity, PlankAuthentication)
     case startingSession(PlankHostIdentity, PlankAuthentication)
     case frameReceived(PlankHostIdentity, PlankAuthentication, PlankFrameProbe)
+    case streaming(PlankHostIdentity, PlankAuthentication, UInt64)
     case failed(String)
 }
 
 @MainActor
 final class PlankCoreClient: ObservableObject {
     @Published private(set) var phase: ConnectionPhase = .idle
+    @Published private(set) var latestFrame: PlankRenderedFrame?
 
     private var httpClient: PlankHTTPClient?
     private var lastIdentity: PlankHostIdentity?
@@ -62,12 +64,17 @@ final class PlankCoreClient: ObservableObject {
                 topology: topology,
                 applicationID: desktop.id
             )
-            let probe = try await PlankSessionEngine().probeFirstFrame(
+            try await PlankSessionEngine().stream(
                 host: connectedHost.address.trimmingCharacters(in: CharacterSet(charactersIn: "[]")),
                 topology: topology,
                 launch: launch
-            )
-            phase = .frameReceived(identity, authentication, probe)
+            ) { [weak self] frame in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    self.latestFrame = frame
+                    self.phase = .streaming(identity, authentication, frame.frameNumber)
+                }
+            }
         } catch {
             phase = .failed(Self.message(for: error))
         }
@@ -101,6 +108,7 @@ final class PlankCoreClient: ObservableObject {
         httpClient = nil
         lastIdentity = nil
         connectedHost = nil
+        latestFrame = nil
         phase = .idle
     }
 

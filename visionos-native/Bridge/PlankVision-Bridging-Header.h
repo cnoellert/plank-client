@@ -2,5 +2,6 @@
 #define PLANK_VISION_BRIDGING_HEADER_H
 
 #include "PlankTransportBridge.h"
+#include "PlankVideoDecoder.h"
 
 #endif
