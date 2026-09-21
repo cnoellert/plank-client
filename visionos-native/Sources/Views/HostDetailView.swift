@@ -24,6 +24,16 @@ struct HostDetailView: View {
 
             status
 
+            if case .authenticated = client.phase {
+                Button {
+                    Task { await client.startSession() }
+                } label: {
+                    Label("Start Session", systemImage: "play.rectangle.fill")
+                        .frame(minWidth: 160)
+                }
+                .buttonStyle(.borderedProminent)
+            }
+
             if case .needsCredentials = client.phase {
                 VStack(spacing: 14) {
                     TextField("Username", text: $username)
@@ -97,6 +107,16 @@ struct HostDetailView: View {
                 Text(authentication.desktopStage == "greeter" ?
                      "The Linux desktop is unlocking. Streaming session startup is next." :
                      "The Host accepted this client. Streaming session startup is next.")
+                    .foregroundStyle(.secondary)
+            }
+        case let .startingSession(identity, _):
+            ProgressView("Starting secure stream from \(identity.name)…")
+        case let .frameReceived(identity, _, probe):
+            VStack(spacing: 8) {
+                Label("Live video reached Vision Pro", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                Text("\(identity.name) sent frame \(probe.frameNumber), \(probe.byteCount.formatted()) bytes")
+                Text(probe.negotiationSummary)
                     .foregroundStyle(.secondary)
             }
         case let .failed(message):

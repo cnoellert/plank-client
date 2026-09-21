@@ -7,6 +7,8 @@ enum ConnectionPhase: Equatable, Sendable {
     case needsCredentials(PlankHostIdentity)
     case authenticating(PlankHostIdentity)
     case authenticated(PlankHostIdentity, PlankAuthentication)
+    case startingSession(PlankHostIdentity, PlankAuthentication)
+    case frameReceived(PlankHostIdentity, PlankAuthentication, PlankFrameProbe)
     case failed(String)
 }
 
@@ -16,6 +18,7 @@ final class PlankCoreClient: ObservableObject {
 
     private var httpClient: PlankHTTPClient?
     private var lastIdentity: PlankHostIdentity?
+    private var connectedHost: HostBookmark?
 
     func connect(to host: HostBookmark) async {
         phase = .probing
@@ -27,10 +30,45 @@ final class PlankCoreClient: ObservableObject {
             }
             httpClient = client
             lastIdentity = identity
+            connectedHost = host
             phase = .needsCredentials(identity)
         } catch {
             httpClient = nil
             lastIdentity = nil
+            phase = .failed(Self.message(for: error))
+        }
+    }
+
+    func startSession() async {
+        guard let httpClient,
+              let identity = lastIdentity,
+              let connectedHost,
+              case let .authenticated(_, authentication) = phase else {
+            phase = .failed("The workstation session is no longer ready.")
+            return
+        }
+
+        phase = .startingSession(identity, authentication)
+        do {
+            async let topologyRequest = httpClient.fetchTopology()
+            async let applicationsRequest = httpClient.fetchApplications()
+            let (topology, applications) = try await (topologyRequest, applicationsRequest)
+            guard let desktop = applications.first(where: {
+                $0.title.localizedCaseInsensitiveCompare("Desktop") == .orderedSame
+            }) ?? applications.first else {
+                throw PlankHTTPError.invalidResponse("The Host has no Desktop application.")
+            }
+            let launch = try await httpClient.launchDesktop(
+                topology: topology,
+                applicationID: desktop.id
+            )
+            let probe = try await PlankSessionEngine().probeFirstFrame(
+                host: connectedHost.address.trimmingCharacters(in: CharacterSet(charactersIn: "[]")),
+                topology: topology,
+                launch: launch
+            )
+            phase = .frameReceived(identity, authentication, probe)
+        } catch {
             phase = .failed(Self.message(for: error))
         }
     }
@@ -62,6 +100,7 @@ final class PlankCoreClient: ObservableObject {
     func reset() {
         httpClient = nil
         lastIdentity = nil
+        connectedHost = nil
         phase = .idle
     }
 

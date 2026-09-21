@@ -22,6 +22,9 @@ enum PlankHTTPError: LocalizedError, Sendable {
 }
 
 private final class PlankTrustDelegate: NSObject, URLSessionDelegate, @unchecked Sendable {
+    private let lock = NSLock()
+    private var pinnedCertificate: Data?
+
     func urlSession(
         _ session: URLSession,
         didReceive challenge: URLAuthenticationChallenge,
@@ -29,7 +32,25 @@ private final class PlankTrustDelegate: NSObject, URLSessionDelegate, @unchecked
     ) {
         guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
               let trust = challenge.protectionSpace.serverTrust,
-              Self.isQualifiedPlankTrust(trust) else {
+              Self.isQualifiedPlankTrust(trust),
+              let certificate = SecTrustCopyCertificateChain(trust) as? [SecCertificate],
+              let leaf = certificate.first else {
+            completionHandler(.cancelAuthenticationChallenge, nil)
+            return
+        }
+
+        let certificateData = SecCertificateCopyData(leaf) as Data
+        lock.lock()
+        let accepted: Bool
+        if let pinnedCertificate {
+            accepted = pinnedCertificate == certificateData
+        } else {
+            pinnedCertificate = certificateData
+            accepted = true
+        }
+        lock.unlock()
+
+        guard accepted else {
             completionHandler(.cancelAuthenticationChallenge, nil)
             return
         }
@@ -55,6 +76,41 @@ private final class PlankTrustDelegate: NSObject, URLSessionDelegate, @unchecked
         var error: CFError?
         return SecTrustEvaluateWithError(trust, &error) &&
             SecTrustGetCertificateCount(trust) == 1
+    }
+}
+
+private final class AppListParser: NSObject, XMLParserDelegate {
+    private(set) var applications: [PlankApplication] = []
+    private var title: String?
+    private var identifier: Int?
+    private var currentElement: String?
+    private var currentText = ""
+
+    func parser(_ parser: XMLParser, didStartElement elementName: String,
+                namespaceURI: String?, qualifiedName qName: String?,
+                attributes attributeDict: [String: String] = [:]) {
+        if elementName == "App" {
+            title = nil
+            identifier = nil
+        }
+        currentElement = elementName
+        currentText = ""
+    }
+
+    func parser(_ parser: XMLParser, foundCharacters string: String) {
+        currentText += string
+    }
+
+    func parser(_ parser: XMLParser, didEndElement elementName: String,
+                namespaceURI: String?, qualifiedName qName: String?) {
+        let value = currentText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if elementName == "AppTitle" { title = value }
+        if elementName == "ID" { identifier = Int(value) }
+        if elementName == "App", let title, let identifier {
+            applications.append(PlankApplication(id: identifier, title: title))
+        }
+        currentElement = nil
+        currentText = ""
     }
 }
 
@@ -214,10 +270,129 @@ final class PlankHTTPClient: @unchecked Sendable {
         throw PlankHTTPError.invalidResponse("The Host sign-in exceeded its challenge limit.")
     }
 
+    func fetchTopology() async throws -> PlankTopology {
+        let data = try await authorizedRequest(path: "plank/topology")
+        guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let schemaVersion = object["schema_version"] as? Int,
+              let featureFlags = object["feature_flags"] as? Int,
+              let generation = object["generation"] as? String,
+              let desktop = object["desktop"] as? [String: Any],
+              let width = desktop["width"] as? Int,
+              let height = desktop["height"] as? Int,
+              let layout = object["layout"] as? [String: Any],
+              let kind = layout["kind"] as? String,
+              let virtualModes = layout["virtual_modes"] as? [String],
+              schemaVersion == 13, width > 0, height > 0 else {
+            throw PlankHTTPError.invalidResponse("The Host returned malformed display information.")
+        }
+        return PlankTopology(
+            schemaVersion: schemaVersion,
+            featureFlags: featureFlags,
+            generation: generation,
+            desktopWidth: width,
+            desktopHeight: height,
+            layout: .init(kind: kind, virtualModes: virtualModes)
+        )
+    }
+
+    func fetchApplications() async throws -> [PlankApplication] {
+        let data = try await authorizedRequest(path: "applist")
+        let delegate = AppListParser()
+        let parser = XMLParser(data: data)
+        parser.delegate = delegate
+        guard parser.parse(), !delegate.applications.isEmpty else {
+            throw PlankHTTPError.invalidResponse("The Host returned no launchable applications.")
+        }
+        return delegate.applications
+    }
+
+    func launchDesktop(topology: PlankTopology, applicationID: Int) async throws -> PlankLaunchCredentials {
+        let encodingMode = "hevc-10-444-nvenc"
+        let udpPayloadMTU: UInt32 = 1200
+        var query: [URLQueryItem] = [
+            .init(name: "appid", value: String(applicationID)),
+            .init(name: "mode", value: "\(topology.desktopWidth)x\(topology.desktopHeight)x60"),
+            .init(name: "additionalStates", value: "1"),
+            .init(name: "hdrMode", value: "1"),
+            .init(name: "clientHdrCapVersion", value: "0"),
+            .init(name: "clientHdrCapSupportedFlagsInUint32", value: "0"),
+            .init(name: "clientHdrCapMetaDataId", value: "1"),
+            .init(name: "clientHdrCapDisplayData", value: "0x0x0x0x0x0x0x0x0x0x0"),
+            .init(name: "localAudioPlayMode", value: "1"),
+            .init(name: "surroundAudioInfo", value: "196610"),
+            .init(name: "remoteControllersBitmap", value: "0"),
+            .init(name: "gcmap", value: "0"),
+            .init(name: "gcpersist", value: "0"),
+            .init(name: "plankProtocolVersion", value: String(topology.schemaVersion)),
+            .init(name: "plankFeatureFlags", value: String(topology.featureFlags)),
+            .init(name: "plankDisplayMode", value: "scaled-span"),
+            .init(name: "plankCaptureSource", value: "nvfbc"),
+            .init(name: "plankEncoderBackend", value: "nvenc-direct"),
+            .init(name: "plankEncodingMode", value: encodingMode),
+            .init(name: "plankQuicUdpPayloadMtu", value: String(udpPayloadMTU)),
+            .init(name: "plankHostLayout", value: topology.layout.kind),
+            .init(name: "plankTopologyGeneration", value: topology.generation),
+        ]
+        for (index, mode) in topology.layout.virtualModes.prefix(2).enumerated() {
+            query.append(.init(name: "plankVirtualMode\(index + 1)", value: mode))
+        }
+
+        let data = try await authorizedRequest(path: "launch", query: query, timeout: 120)
+        let parserDelegate = ServerInfoParser()
+        let parser = XMLParser(data: data)
+        parser.delegate = parserDelegate
+        guard parser.parse(), parserDelegate.statusCode == 200 else {
+            throw PlankHTTPError.rejected(
+                parserDelegate.statusCode ?? 500,
+                parserDelegate.statusMessage
+            )
+        }
+        let values = parserDelegate.values
+        guard let portValue = UInt16(values["PlankTransportPort"] ?? ""), portValue > 0,
+              let certificate = values["PlankTransportCertificateSha256"], certificate.count == 64,
+              let token = values["PlankTransportToken"], token.count == 64,
+              values["PlankEncodingMode"] == encodingMode,
+              UInt32(values["PlankQuicUdpPayloadMtu"] ?? "") == udpPayloadMTU else {
+            throw PlankHTTPError.invalidResponse("The Host returned invalid streaming credentials.")
+        }
+        return PlankLaunchCredentials(
+            transportPort: portValue,
+            certificateSHA256: certificate,
+            transportToken: token,
+            udpPayloadMTU: udpPayloadMTU,
+            encodingMode: encodingMode
+        )
+    }
+
     private func request(path: String) async throws -> Data {
         let url = baseURL.appending(path: path)
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
+        let (data, response) = try await session.data(for: request)
+        try validateHTTP(response)
+        return data
+    }
+
+    private func authorizedRequest(
+        path: String,
+        query: [URLQueryItem] = [],
+        timeout: TimeInterval? = nil
+    ) async throws -> Data {
+        guard let sessionToken, !sessionToken.isEmpty else {
+            throw PlankHTTPError.invalidResponse("The workstation session is not authenticated.")
+        }
+        guard var components = URLComponents(
+            url: baseURL.appending(path: path),
+            resolvingAgainstBaseURL: false
+        ) else {
+            throw PlankHTTPError.invalidAddress
+        }
+        if !query.isEmpty { components.queryItems = query }
+        guard let url = components.url else { throw PlankHTTPError.invalidAddress }
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(sessionToken)", forHTTPHeaderField: "Authorization")
+        if let timeout { request.timeoutInterval = timeout }
         let (data, response) = try await session.data(for: request)
         try validateHTTP(response)
         return data

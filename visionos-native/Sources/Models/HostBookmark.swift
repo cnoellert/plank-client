@@ -34,6 +34,40 @@ struct PlankAuthentication: Equatable, Sendable {
     let desktopStage: String
 }
 
+struct PlankApplication: Equatable, Sendable {
+    let id: Int
+    let title: String
+}
+
+struct PlankTopology: Equatable, Sendable {
+    struct Layout: Equatable, Sendable {
+        let kind: String
+        let virtualModes: [String]
+    }
+
+    let schemaVersion: Int
+    let featureFlags: Int
+    let generation: String
+    let desktopWidth: Int
+    let desktopHeight: Int
+    let layout: Layout
+}
+
+struct PlankLaunchCredentials: Equatable, Sendable {
+    let transportPort: UInt16
+    let certificateSHA256: String
+    let transportToken: String
+    let udpPayloadMTU: UInt32
+    let encodingMode: String
+}
+
+struct PlankFrameProbe: Equatable, Sendable {
+    let byteCount: Int
+    let frameNumber: UInt64
+    let isKeyFrame: Bool
+    let negotiationSummary: String
+}
+
 struct DiscoveredHost: Identifiable, Hashable, Sendable {
     let serviceName: String
     let endpointDescription: String

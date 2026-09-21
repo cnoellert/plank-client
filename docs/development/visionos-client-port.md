@@ -59,7 +59,13 @@ The native target currently provides:
 - persistent manual bookmarks;
 - `_nvstream._tcp` Bonjour discovery;
 - native add, remove and settings surfaces;
-- a visible connection state boundary for the upcoming core integration;
+- TLS 1.3 Host identity validation with certificate continuity pinning;
+- native Linux username/password authentication and session-token handling;
+- authenticated topology, application-list and Desktop launch requests;
+- a native Rust transport bridge with bounded negotiation, frame receive and
+  graceful disconnect handling;
+- a first-frame probe that proves encoded desktop video reaches visionOS
+  before decoder integration;
 - signed device and simulator builds from the same source.
 
 The app compiles with Xcode 27 and the visionOS 27 SDK while targeting visionOS
@@ -77,7 +83,8 @@ cmake -G Xcode \
   -B build/visionos-native-xcode \
   -DCMAKE_SYSTEM_NAME=visionOS \
   -DCMAKE_OSX_SYSROOT=xros \
-  -DCMAKE_OSX_DEPLOYMENT_TARGET=26.0
+  -DCMAKE_OSX_DEPLOYMENT_TARGET=26.0 \
+  -DPLANK_TRANSPORT_DIR=/path/to/plank/protocol/plank-transport
 
 xcodebuild \
   -project build/visionos-native-xcode/PlankVision.xcodeproj \
@@ -97,18 +104,20 @@ cmake -G Xcode \
   -DCMAKE_SYSTEM_NAME=visionOS \
   -DCMAKE_OSX_SYSROOT=xrsimulator \
   -DCMAKE_OSX_DEPLOYMENT_TARGET=26.0 \
-  -DCMAKE_OSX_ARCHITECTURES=arm64
+  -DCMAKE_OSX_ARCHITECTURES=arm64 \
+  -DPLANK_TRANSPORT_DIR=/path/to/plank/protocol/plank-transport
 ```
 
 ## Implementation sequence
 
-1. Extract a Qt-free pairing and host-session facade from the current client.
-2. Connect discovery and saved hosts to real host identity and pairing state.
-3. Bridge the session lifecycle into the native app.
-4. Present decoded frames through a native Metal surface.
-5. Translate visionOS focus, pointer, keyboard and controller events into the
+1. Qualify the native launch, transport negotiation and first-frame probe on a
+   physical Apple Vision Pro.
+2. Decode the received 10-bit 4:4:4 HEVC frames through the existing FFmpeg
+   path and present them on a native Metal surface.
+3. Add audio receive and native output.
+4. Translate visionOS focus, pointer, keyboard and controller events into the
    existing remote-input path.
-6. Qualify reconnect, sleep/wake, audio route changes, resize, sustained frame
+5. Qualify reconnect, sleep/wake, audio route changes, resize, sustained frame
    pacing and thermal behavior on the physical headset.
 
 Streaming is not considered implemented until the native target connects to a
