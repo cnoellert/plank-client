@@ -6,7 +6,7 @@ struct AddHostView: View {
 
     @State private var name = ""
     @State private var address = ""
-    @State private var port = "47989"
+    @State private var port = "28989"
 
     private var parsedPort: UInt16? { UInt16(port) }
     private var canSave: Bool {
@@ -28,7 +28,7 @@ struct AddHostView: View {
                 }
 
                 Section {
-                    Text("The default PLANK host port is 47989.")
+                    Text("The default PLANK host port is 28989.")
                         .foregroundStyle(.secondary)
                 }
             }
@@ -54,4 +54,3 @@ struct AddHostView: View {
         .frame(minWidth: 540, minHeight: 420)
     }
 }
-

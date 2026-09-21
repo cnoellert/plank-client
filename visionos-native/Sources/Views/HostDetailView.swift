@@ -4,6 +4,8 @@ struct HostDetailView: View {
     let host: HostBookmark
     @ObservedObject var store: HostStore
     @StateObject private var client = PlankCoreClient()
+    @State private var username = ""
+    @State private var password = ""
 
     var body: some View {
         VStack(spacing: 28) {
@@ -22,24 +24,52 @@ struct HostDetailView: View {
 
             status
 
-            HStack(spacing: 16) {
-                Button(role: .destructive) {
-                    store.remove(host)
-                } label: {
-                    Label("Remove", systemImage: "trash")
-                }
+            if case .needsCredentials = client.phase {
+                VStack(spacing: 14) {
+                    TextField("Username", text: $username)
+                        .textContentType(.username)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    SecureField("Password", text: $password)
+                        .textContentType(.password)
 
-                Button {
-                    Task {
-                        await client.connect(to: host)
-                        store.markConnected(host)
+                    Button {
+                        let suppliedPassword = password
+                        password = ""
+                        Task {
+                            await client.authenticate(
+                                username: username,
+                                password: suppliedPassword
+                            )
+                            if case .authenticated = client.phase {
+                                store.markConnected(host)
+                            }
+                        }
+                    } label: {
+                        Label("Sign In", systemImage: "person.badge.key.fill")
+                            .frame(minWidth: 140)
                     }
-                } label: {
-                    Label("Connect", systemImage: "play.fill")
-                        .frame(minWidth: 120)
+                    .buttonStyle(.borderedProminent)
+                    .disabled(username.isEmpty || password.isEmpty)
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(client.phase == .preparing)
+                .frame(maxWidth: 420)
+            } else {
+                HStack(spacing: 16) {
+                    Button(role: .destructive) {
+                        store.remove(host)
+                    } label: {
+                        Label("Remove", systemImage: "trash")
+                    }
+
+                    switch client.phase {
+                    case .idle:
+                        connectButton("Connect", systemImage: "play.fill")
+                    case .failed:
+                        connectButton("Try Again", systemImage: "arrow.clockwise")
+                    default:
+                        EmptyView()
+                    }
+                }
             }
         }
         .padding(48)
@@ -53,15 +83,35 @@ struct HostDetailView: View {
         case .idle:
             Text("Ready")
                 .foregroundStyle(.secondary)
-        case .preparing:
-            ProgressView("Preparing connection…")
-        case .needsCoreIntegration:
-            Label("Native interface ready; streaming connection is next", systemImage: "hammer")
-                .foregroundStyle(.orange)
+        case .probing:
+            ProgressView("Contacting workstation…")
+        case let .needsCredentials(identity):
+            Label("Connected securely to \(identity.name)", systemImage: "lock.shield.fill")
+                .foregroundStyle(.green)
+        case let .authenticating(identity):
+            ProgressView("Signing in to \(identity.name)…")
+        case let .authenticated(identity, authentication):
+            VStack(spacing: 8) {
+                Label("Signed in to \(identity.name)", systemImage: "checkmark.seal.fill")
+                    .foregroundStyle(.green)
+                Text(authentication.desktopStage == "greeter" ?
+                     "The Linux desktop is unlocking. Streaming session startup is next." :
+                     "The Host accepted this client. Streaming session startup is next.")
+                    .foregroundStyle(.secondary)
+            }
         case let .failed(message):
             Label(message, systemImage: "exclamationmark.triangle")
-                .foregroundStyle(.red)
+                .foregroundStyle(.orange)
         }
     }
-}
 
+    private func connectButton(_ title: String, systemImage: String) -> some View {
+        Button {
+            Task { await client.connect(to: host) }
+        } label: {
+            Label(title, systemImage: systemImage)
+                .frame(minWidth: 120)
+        }
+        .buttonStyle(.borderedProminent)
+    }
+}

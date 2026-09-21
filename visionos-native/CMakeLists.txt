@@ -9,6 +9,7 @@ add_executable(PlankVision MACOSX_BUNDLE
     Sources/Models/HostBookmark.swift
     Sources/Services/HostDiscovery.swift
     Sources/Services/HostStore.swift
+    Sources/Services/PlankHTTPClient.swift
     Sources/Services/PlankCoreClient.swift
     Sources/Views/AddHostView.swift
     Sources/Views/HostBrowserView.swift
@@ -30,4 +31,3 @@ set_target_properties(PlankVision PROPERTIES
     XCODE_ATTRIBUTE_SWIFT_STRICT_CONCURRENCY "complete"
     XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "7"
 )
-

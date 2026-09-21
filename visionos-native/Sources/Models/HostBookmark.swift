@@ -11,7 +11,7 @@ struct HostBookmark: Identifiable, Codable, Hashable, Sendable {
         id: UUID = UUID(),
         name: String,
         address: String,
-        port: UInt16 = 47989,
+        port: UInt16 = 28989,
         lastConnectedAt: Date? = nil
     ) {
         self.id = id
@@ -22,10 +22,21 @@ struct HostBookmark: Identifiable, Codable, Hashable, Sendable {
     }
 }
 
+struct PlankHostIdentity: Equatable, Sendable {
+    let name: String
+    let uniqueID: String
+    let version: String
+    let supportsAuthentication: Bool
+}
+
+struct PlankAuthentication: Equatable, Sendable {
+    let sessionToken: String
+    let desktopStage: String
+}
+
 struct DiscoveredHost: Identifiable, Hashable, Sendable {
     let serviceName: String
     let endpointDescription: String
 
     var id: String { serviceName }
 }
-

@@ -52,7 +52,17 @@ final class HostStore: ObservableObject {
               let decoded = try? JSONDecoder().decode([HostBookmark].self, from: data) else {
             return
         }
-        hosts = decoded
+        var migrated = false
+        hosts = decoded.map { host in
+            guard host.port == 47989 else { return host }
+            var corrected = host
+            corrected.port = 28989
+            migrated = true
+            return corrected
+        }
+        if migrated {
+            save()
+        }
     }
 
     private func sortAndSave() {
@@ -65,4 +75,3 @@ final class HostStore: ObservableObject {
         defaults.set(data, forKey: storageKey)
     }
 }
-
