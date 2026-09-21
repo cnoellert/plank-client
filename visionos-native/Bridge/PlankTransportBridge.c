@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <unistd.h>
 
 #if PLANK_NATIVE_TRANSPORT
@@ -65,7 +66,7 @@ static int approve_expected_peer_certificate(
         snprintf(actual_sha256 + index * 2, 3, "%02x", digest[index]);
     }
     actual_sha256[sizeof(actual_sha256) - 1] = '\0';
-    if (expected_sha256 == NULL || strcmp(actual_sha256, expected_sha256) != 0) {
+    if (expected_sha256 == NULL || strcasecmp(actual_sha256, expected_sha256) != 0) {
         set_error(error, error_capacity,
                   "The Host transport certificate changed after sign-in");
         return -1;
