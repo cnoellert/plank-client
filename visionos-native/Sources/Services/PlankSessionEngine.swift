@@ -50,7 +50,7 @@ struct PlankSessionEngine: Sendable {
                     "fps_x100": 6000,
                     "slices_per_frame": 1,
                     "reference_frames": 1,
-                    "encoder_csc_mode": 5,
+                    "encoder_csc_mode": 7,
                     "codec": 1,
                     "ten_bit": true,
                     "chroma": 1,

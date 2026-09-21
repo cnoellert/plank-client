@@ -243,7 +243,13 @@ int32_t plank_vision_transport_negotiate(
     *response_size = response.payload_size;
     if (response.status != PLANK_TRANSPORT_SETUP_STATUS_OK ||
             response.type == PLANK_TRANSPORT_SETUP_ERROR) {
-        set_error(error, error_capacity, "The Host rejected native session negotiation");
+        if (response.payload_size > 0 && error != NULL && error_capacity > 0) {
+            snprintf(error, error_capacity, "Host rejected session: %.*s",
+                     (int)response.payload_size, (const char *)response.payload);
+        } else {
+            set_error(error, error_capacity,
+                      "The Host rejected native session negotiation");
+        }
         return PLANK_VISION_TRANSPORT_ERROR;
     }
     return PLANK_VISION_TRANSPORT_OK;
