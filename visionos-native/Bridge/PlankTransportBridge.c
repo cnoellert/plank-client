@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #if PLANK_NATIVE_TRANSPORT
 #include <plank_transport.h>
@@ -64,6 +65,7 @@ PlankVisionTransport *plank_vision_transport_connect(
     config.handshake_timeout_ms = 10000;
     config.idle_timeout_ms = 30000;
     config.keep_alive_interval_ms = 5000;
+    config.session_mode = PLANK_TRANSPORT_SESSION_SETUP;
     config.max_udp_payload_size = maximum_udp_payload;
     config.remote_address = remote_address;
     config.server_name = "plank";
@@ -76,7 +78,20 @@ PlankVisionTransport *plank_vision_transport_connect(
         result = plank_transport_native_endpoint_start(transport->endpoint);
     }
     if (result == PLANK_TRANSPORT_OK) {
-        result = plank_transport_native_endpoint_wait_ready(transport->endpoint, 12000);
+        const unsigned int attempts = 1200;
+        unsigned int attempt = 0;
+        for (; attempt < attempts; ++attempt) {
+            const uint32_t state = plank_transport_native_endpoint_state(
+                transport->endpoint);
+            if (state == PLANK_TRANSPORT_STATE_SETUP_READY) break;
+            if (state == PLANK_TRANSPORT_STATE_FAILED ||
+                    state == PLANK_TRANSPORT_STATE_STOPPED) {
+                result = PLANK_TRANSPORT_ERROR_RUNTIME;
+                break;
+            }
+            usleep(10000);
+        }
+        if (attempt == attempts) result = PLANK_TRANSPORT_TIMEOUT;
     }
     if (result != PLANK_TRANSPORT_OK) {
         if (transport->endpoint != NULL) {
@@ -155,6 +170,18 @@ int32_t plank_vision_transport_negotiate(
     if (response.status != PLANK_TRANSPORT_SETUP_STATUS_OK ||
             response.type == PLANK_TRANSPORT_SETUP_ERROR) {
         set_error(error, error_capacity, "The Host rejected native session negotiation");
+        return PLANK_VISION_TRANSPORT_ERROR;
+    }
+    if (plank_transport_native_endpoint_authorize_session(transport->endpoint) !=
+            PLANK_TRANSPORT_OK ||
+        plank_transport_native_endpoint_wait_ready(transport->endpoint, 12000) !=
+            PLANK_TRANSPORT_OK) {
+        plank_transport_native_endpoint_last_error(
+            transport->endpoint, error, error_capacity);
+        if (error != NULL && error[0] == '\0') {
+            set_error(error, error_capacity,
+                      "The native transport did not enter its live session");
+        }
         return PLANK_VISION_TRANSPORT_ERROR;
     }
     return PLANK_VISION_TRANSPORT_OK;
