@@ -137,16 +137,19 @@ PlankVisionTransport *plank_vision_transport_connect(
     if (result == PLANK_TRANSPORT_OK) {
         const unsigned int attempts = 1200;
         unsigned int attempt = 0;
+        int peer_certificate_approved = 0;
         for (; attempt < attempts; ++attempt) {
             const uint32_t state = plank_transport_native_endpoint_state(
                 transport->endpoint);
-            if (state == PLANK_TRANSPORT_STATE_PEER_VALIDATION) {
+            if (state == PLANK_TRANSPORT_STATE_PEER_VALIDATION &&
+                    !peer_certificate_approved) {
                 if (approve_expected_peer_certificate(
                         transport->endpoint, certificate_sha256,
                         error, error_capacity) != 0) {
                     result = PLANK_TRANSPORT_ERROR_RUNTIME;
                     break;
                 }
+                peer_certificate_approved = 1;
             }
             if (state == PLANK_TRANSPORT_STATE_SETUP_READY) break;
             if (state == PLANK_TRANSPORT_STATE_FAILED ||
