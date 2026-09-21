@@ -17,10 +17,13 @@ enum ConnectionPhase: Equatable, Sendable {
 final class PlankCoreClient: ObservableObject {
     @Published private(set) var phase: ConnectionPhase = .idle
     @Published private(set) var latestFrame: PlankRenderedFrame?
+    @Published private(set) var remoteCursor: PlankRemoteCursor?
 
     private var httpClient: PlankHTTPClient?
     private var lastIdentity: PlankHostIdentity?
     private var connectedHost: HostBookmark?
+    private let inputQueue = PlankInputQueue()
+    private var streamTask: Task<Void, Never>?
 
     func connect(to host: HostBookmark) async {
         phase = .probing
@@ -41,7 +44,7 @@ final class PlankCoreClient: ObservableObject {
         }
     }
 
-    func startSession() async {
+    func startSession() {
         guard let httpClient,
               let identity = lastIdentity,
               let connectedHost,
@@ -50,7 +53,25 @@ final class PlankCoreClient: ObservableObject {
             return
         }
 
+        streamTask?.cancel()
         phase = .startingSession(identity, authentication)
+        streamTask = Task { [weak self] in
+            guard let self else { return }
+            await runSession(
+                httpClient: httpClient,
+                identity: identity,
+                authentication: authentication,
+                connectedHost: connectedHost
+            )
+        }
+    }
+
+    private func runSession(
+        httpClient: PlankHTTPClient,
+        identity: PlankHostIdentity,
+        authentication: PlankAuthentication,
+        connectedHost: HostBookmark
+    ) async {
         do {
             async let topologyRequest = httpClient.fetchTopology()
             async let applicationsRequest = httpClient.fetchApplications()
@@ -67,17 +88,73 @@ final class PlankCoreClient: ObservableObject {
             try await PlankSessionEngine().stream(
                 host: connectedHost.address.trimmingCharacters(in: CharacterSet(charactersIn: "[]")),
                 topology: topology,
-                launch: launch
+                launch: launch,
+                inputQueue: inputQueue
             ) { [weak self] frame in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     self.latestFrame = frame
                     self.phase = .streaming(identity, authentication, frame.frameNumber)
                 }
+            } onCursor: { [weak self] cursor in
+                Task { @MainActor [weak self] in
+                    self?.remoteCursor = cursor
+                }
             }
         } catch {
+            guard !Task.isCancelled else { return }
             phase = .failed(Self.message(for: error))
         }
+    }
+
+    func disconnectSession() {
+        let resumable: (PlankHostIdentity, PlankAuthentication)?
+        switch phase {
+        case let .startingSession(identity, authentication),
+             let .frameReceived(identity, authentication, _),
+             let .streaming(identity, authentication, _):
+            resumable = (identity, authentication)
+        case let .authenticated(identity, authentication):
+            resumable = (identity, authentication)
+        default:
+            resumable = nil
+        }
+        streamTask?.cancel()
+        streamTask = nil
+        inputQueue.removeAll()
+        latestFrame = nil
+        remoteCursor = nil
+        if let resumable {
+            phase = .authenticated(resumable.0, resumable.1)
+        } else {
+            phase = .idle
+        }
+    }
+
+    func movePointer(x: Int, y: Int, width: Int, height: Int) {
+        guard width > 1, height > 1 else { return }
+        let maximumX = min(width - 1, Int(UInt16.max))
+        let maximumY = min(height - 1, Int(UInt16.max))
+        inputQueue.append(.pointer(
+            x: UInt16(clamping: x),
+            y: UInt16(clamping: y),
+            maximumX: UInt16(maximumX),
+            maximumY: UInt16(maximumY)
+        ))
+    }
+
+    func setLeftButton(pressed: Bool) {
+        inputQueue.append(.button(number: 1, pressed: pressed))
+    }
+
+    func sendText(_ text: String) {
+        guard let data = text.data(using: .utf8), !data.isEmpty else { return }
+        inputQueue.append(.text(data))
+    }
+
+    func pressKey(code: UInt16, modifiers: UInt8 = 0) {
+        inputQueue.append(.key(code: code, pressed: true, modifiers: modifiers))
+        inputQueue.append(.key(code: code, pressed: false, modifiers: modifiers))
     }
 
     func authenticate(username: String, password: String) async {
@@ -105,10 +182,14 @@ final class PlankCoreClient: ObservableObject {
     }
 
     func reset() {
+        streamTask?.cancel()
+        streamTask = nil
+        inputQueue.removeAll()
         httpClient = nil
         lastIdentity = nil
         connectedHost = nil
         latestFrame = nil
+        remoteCursor = nil
         phase = .idle
     }
 

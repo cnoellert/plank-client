@@ -76,6 +76,14 @@ struct PlankRenderedFrame: Equatable, Sendable {
     let frameNumber: UInt64
 }
 
+struct PlankRemoteCursor: Equatable, Sendable {
+    let x: Int
+    let y: Int
+    let frameWidth: Int
+    let frameHeight: Int
+    let sequence: UInt64
+}
+
 struct DiscoveredHost: Identifiable, Hashable, Sendable {
     let serviceName: String
     let endpointDescription: String

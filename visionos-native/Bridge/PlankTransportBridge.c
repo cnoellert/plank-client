@@ -10,6 +10,8 @@
 #if PLANK_NATIVE_TRANSPORT
 #include <plank_transport.h>
 #include <plank_transport_control.h>
+#include <plank_transport_event.h>
+#include <plank_transport_input.h>
 #include <plank_transport_setup.h>
 #endif
 
@@ -287,6 +289,157 @@ int32_t plank_vision_transport_receive_video(
     frame->frame_number = info.frame_number;
     frame->pts_90khz = info.pts;
     frame->host_processing_latency = info.host_processing_latency;
+    return PLANK_VISION_TRANSPORT_OK;
+#endif
+}
+
+int32_t plank_vision_transport_send_mouse_position(
+    PlankVisionTransport *transport,
+    uint16_t x,
+    uint16_t y,
+    uint16_t maximum_x,
+    uint16_t maximum_y) {
+#if !PLANK_NATIVE_TRANSPORT
+    (void)transport; (void)x; (void)y; (void)maximum_x; (void)maximum_y;
+    return PLANK_VISION_TRANSPORT_UNAVAILABLE;
+#else
+    if (transport == NULL || transport->endpoint == NULL ||
+            maximum_x == 0 || maximum_y == 0 ||
+            x > maximum_x || y > maximum_y) {
+        return PLANK_VISION_TRANSPORT_ERROR;
+    }
+    uint8_t payload[PLANK_TRANSPORT_INPUT_ABSOLUTE_MOUSE_SIZE];
+    plank_transport_input_encode_absolute_mouse(
+        payload, x, y, maximum_x, maximum_y);
+    return plank_transport_native_input_send(
+        transport->endpoint, PLANK_TRANSPORT_INPUT_ABSOLUTE_MOUSE,
+        payload, sizeof(payload)) == PLANK_TRANSPORT_OK ?
+        PLANK_VISION_TRANSPORT_OK : PLANK_VISION_TRANSPORT_ERROR;
+#endif
+}
+
+int32_t plank_vision_transport_send_mouse_button(
+    PlankVisionTransport *transport,
+    uint8_t button,
+    uint8_t pressed) {
+#if !PLANK_NATIVE_TRANSPORT
+    (void)transport; (void)button; (void)pressed;
+    return PLANK_VISION_TRANSPORT_UNAVAILABLE;
+#else
+    if (transport == NULL || transport->endpoint == NULL || button == 0) {
+        return PLANK_VISION_TRANSPORT_ERROR;
+    }
+    const uint8_t payload[PLANK_TRANSPORT_INPUT_MOUSE_BUTTON_SIZE] = {
+        button,
+        pressed ? PLANK_TRANSPORT_INPUT_ACTION_PRESS :
+                  PLANK_TRANSPORT_INPUT_ACTION_RELEASE,
+    };
+    return plank_transport_native_input_send(
+        transport->endpoint, PLANK_TRANSPORT_INPUT_MOUSE_BUTTON,
+        payload, sizeof(payload)) == PLANK_TRANSPORT_OK ?
+        PLANK_VISION_TRANSPORT_OK : PLANK_VISION_TRANSPORT_ERROR;
+#endif
+}
+
+int32_t plank_vision_transport_send_key(
+    PlankVisionTransport *transport,
+    uint16_t key_code,
+    uint8_t pressed,
+    uint8_t modifiers) {
+#if !PLANK_NATIVE_TRANSPORT
+    (void)transport; (void)key_code; (void)pressed; (void)modifiers;
+    return PLANK_VISION_TRANSPORT_UNAVAILABLE;
+#else
+    if (transport == NULL || transport->endpoint == NULL) {
+        return PLANK_VISION_TRANSPORT_ERROR;
+    }
+    uint8_t payload[PLANK_TRANSPORT_INPUT_KEYBOARD_SIZE];
+    plank_transport_input_write_u16(payload, key_code);
+    payload[2] = pressed ? PLANK_TRANSPORT_INPUT_ACTION_PRESS :
+                           PLANK_TRANSPORT_INPUT_ACTION_RELEASE;
+    payload[3] = modifiers;
+    payload[4] = 0;
+    return plank_transport_native_input_send(
+        transport->endpoint, PLANK_TRANSPORT_INPUT_KEYBOARD,
+        payload, sizeof(payload)) == PLANK_TRANSPORT_OK ?
+        PLANK_VISION_TRANSPORT_OK : PLANK_VISION_TRANSPORT_ERROR;
+#endif
+}
+
+int32_t plank_vision_transport_send_utf8(
+    PlankVisionTransport *transport,
+    const uint8_t *text,
+    size_t text_size) {
+#if !PLANK_NATIVE_TRANSPORT
+    (void)transport; (void)text; (void)text_size;
+    return PLANK_VISION_TRANSPORT_UNAVAILABLE;
+#else
+    if (transport == NULL || transport->endpoint == NULL || text == NULL ||
+            text_size == 0 || text_size > PLANK_TRANSPORT_INPUT_MAX_PAYLOAD_SIZE) {
+        return PLANK_VISION_TRANSPORT_ERROR;
+    }
+    return plank_transport_native_input_send(
+        transport->endpoint, PLANK_TRANSPORT_INPUT_UTF8_TEXT,
+        text, text_size) == PLANK_TRANSPORT_OK ?
+        PLANK_VISION_TRANSPORT_OK : PLANK_VISION_TRANSPORT_ERROR;
+#endif
+}
+
+static uint16_t read_le16(const uint8_t *input) {
+    return (uint16_t)(input[0] | ((uint16_t)input[1] << 8));
+}
+
+static uint32_t read_le32(const uint8_t *input) {
+    return (uint32_t)input[0] |
+           ((uint32_t)input[1] << 8) |
+           ((uint32_t)input[2] << 16) |
+           ((uint32_t)input[3] << 24);
+}
+
+static uint64_t read_le64(const uint8_t *input) {
+    return (uint64_t)read_le32(input) |
+           ((uint64_t)read_le32(input + 4) << 32);
+}
+
+int32_t plank_vision_transport_receive_cursor_position(
+    PlankVisionTransport *transport,
+    PlankVisionCursorPosition *position,
+    uint32_t timeout_ms) {
+#if !PLANK_NATIVE_TRANSPORT
+    (void)transport; (void)position; (void)timeout_ms;
+    return PLANK_VISION_TRANSPORT_UNAVAILABLE;
+#else
+    if (transport == NULL || transport->endpoint == NULL || position == NULL) {
+        return PLANK_VISION_TRANSPORT_ERROR;
+    }
+    uint8_t packet[PLANK_TRANSPORT_EVENT_MAX_PACKET_SIZE];
+    size_t packet_size = 0;
+    const int32_t result = plank_transport_native_data_receive(
+        transport->endpoint, packet, sizeof(packet), &packet_size, timeout_ms);
+    if (result == PLANK_TRANSPORT_TIMEOUT) return PLANK_VISION_TRANSPORT_TIMEOUT;
+    if (result != PLANK_TRANSPORT_OK) return PLANK_VISION_TRANSPORT_ERROR;
+
+    PlankTransportEventPacket event = {0};
+    if (plank_transport_event_decode(packet, packet_size, &event) != 0 ||
+            event.type != PLANK_TRANSPORT_EVENT_CURSOR_POSITION ||
+            event.payload_size != 32) {
+        return PLANK_VISION_TRANSPORT_TIMEOUT;
+    }
+    const uint8_t *payload = event.payload;
+    if (read_le32(payload) != 0x504c4350u || read_le16(payload + 4) != 1 ||
+            read_le16(payload + 6) != 0) {
+        return PLANK_VISION_TRANSPORT_ERROR;
+    }
+    position->sequence = read_le64(payload + 8);
+    position->x = read_le32(payload + 16);
+    position->y = read_le32(payload + 20);
+    position->frame_width = read_le32(payload + 24);
+    position->frame_height = read_le32(payload + 28);
+    if (position->sequence == 0 || position->frame_width == 0 ||
+            position->frame_height == 0 || position->x >= position->frame_width ||
+            position->y >= position->frame_height) {
+        return PLANK_VISION_TRANSPORT_ERROR;
+    }
     return PLANK_VISION_TRANSPORT_OK;
 #endif
 }

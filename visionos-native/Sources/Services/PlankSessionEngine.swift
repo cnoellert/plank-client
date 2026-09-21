@@ -1,5 +1,42 @@
 import Foundation
 
+enum PlankInputEvent: Sendable {
+    case pointer(x: UInt16, y: UInt16, maximumX: UInt16, maximumY: UInt16)
+    case button(number: UInt8, pressed: Bool)
+    case key(code: UInt16, pressed: Bool, modifiers: UInt8)
+    case text(Data)
+}
+
+final class PlankInputQueue: @unchecked Sendable {
+    private let lock = NSLock()
+    private var events: [PlankInputEvent] = []
+
+    func append(_ event: PlankInputEvent) {
+        lock.lock()
+        if case .pointer = event,
+           case .pointer? = events.last {
+            events[events.count - 1] = event
+        } else {
+            events.append(event)
+        }
+        lock.unlock()
+    }
+
+    func drain() -> [PlankInputEvent] {
+        lock.lock()
+        let drained = events
+        events.removeAll(keepingCapacity: true)
+        lock.unlock()
+        return drained
+    }
+
+    func removeAll() {
+        lock.lock()
+        events.removeAll(keepingCapacity: true)
+        lock.unlock()
+    }
+}
+
 enum PlankSessionError: LocalizedError, Sendable {
     case transport(String)
     case invalidNegotiation
@@ -19,9 +56,11 @@ struct PlankSessionEngine: Sendable {
         host: String,
         topology: PlankTopology,
         launch: PlankLaunchCredentials,
-        onFrame: @escaping @Sendable (PlankRenderedFrame) -> Void
+        inputQueue: PlankInputQueue,
+        onFrame: @escaping @Sendable (PlankRenderedFrame) -> Void,
+        onCursor: @escaping @Sendable (PlankRemoteCursor) -> Void
     ) async throws {
-        try await Task.detached(priority: .userInitiated) {
+        let worker = Task.detached(priority: .userInitiated) {
             var error = [CChar](repeating: 0, count: 512)
             let transport = host.withCString { hostPointer in
                 launch.certificateSHA256.withCString { certificatePointer in
@@ -103,6 +142,34 @@ struct PlankSessionEngine: Sendable {
             var frame = PlankVisionVideoFrame()
             var decodedFrames: UInt64 = 0
             while !Task.isCancelled {
+                for input in inputQueue.drain() {
+                    let inputResult: Int32
+                    switch input {
+                    case let .pointer(x, y, maximumX, maximumY):
+                        inputResult = plank_vision_transport_send_mouse_position(
+                            transport, x, y, maximumX, maximumY
+                        )
+                    case let .button(number, pressed):
+                        inputResult = plank_vision_transport_send_mouse_button(
+                            transport, number, pressed ? 1 : 0
+                        )
+                    case let .key(code, pressed, modifiers):
+                        inputResult = plank_vision_transport_send_key(
+                            transport, code, pressed ? 1 : 0, modifiers
+                        )
+                    case let .text(data):
+                        inputResult = data.withUnsafeBytes { bytes in
+                            plank_vision_transport_send_utf8(
+                                transport,
+                                bytes.bindMemory(to: UInt8.self).baseAddress,
+                                bytes.count
+                            )
+                        }
+                    }
+                    guard inputResult == PLANK_VISION_TRANSPORT_OK else {
+                        throw PlankSessionError.transport("The remote input channel stopped unexpectedly.")
+                    }
+                }
                 var payloadSize = 0
                 let result = plank_vision_transport_receive_video(
                     transport, &frame, &payload, payload.count, &payloadSize, 3000
@@ -115,6 +182,24 @@ struct PlankSessionEngine: Sendable {
                 if result == PLANK_VISION_TRANSPORT_TIMEOUT { continue }
                 guard result == PLANK_VISION_TRANSPORT_OK, payloadSize > 0 else {
                     throw PlankSessionError.transport("The native video receiver stopped unexpectedly.")
+                }
+
+                while true {
+                    var cursor = PlankVisionCursorPosition()
+                    let cursorResult = plank_vision_transport_receive_cursor_position(
+                        transport, &cursor, 0
+                    )
+                    if cursorResult == PLANK_VISION_TRANSPORT_TIMEOUT { break }
+                    guard cursorResult == PLANK_VISION_TRANSPORT_OK else {
+                        throw PlankSessionError.transport("The remote cursor channel stopped unexpectedly.")
+                    }
+                    onCursor(PlankRemoteCursor(
+                        x: Int(cursor.x),
+                        y: Int(cursor.y),
+                        frameWidth: Int(cursor.frame_width),
+                        frameHeight: Int(cursor.frame_height),
+                        sequence: cursor.sequence
+                    ))
                 }
 
                 var decodedWidth: UInt32 = 0
@@ -152,6 +237,11 @@ struct PlankSessionEngine: Sendable {
                     ))
                 }
             }
-        }.value
+        }
+        try await withTaskCancellationHandler {
+            try await worker.value
+        } onCancel: {
+            worker.cancel()
+        }
     }
 }

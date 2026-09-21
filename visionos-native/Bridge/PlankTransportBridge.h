@@ -18,6 +18,14 @@ typedef struct PlankVisionVideoFrame {
     uint16_t host_processing_latency;
 } PlankVisionVideoFrame;
 
+typedef struct PlankVisionCursorPosition {
+    uint32_t x;
+    uint32_t y;
+    uint32_t frame_width;
+    uint32_t frame_height;
+    uint64_t sequence;
+} PlankVisionCursorPosition;
+
 enum {
     PLANK_VISION_TRANSPORT_OK = 0,
     PLANK_VISION_TRANSPORT_TIMEOUT = 1,
@@ -51,6 +59,34 @@ int32_t plank_vision_transport_receive_video(
     uint8_t *payload,
     size_t payload_capacity,
     size_t *payload_size,
+    uint32_t timeout_ms);
+
+int32_t plank_vision_transport_send_mouse_position(
+    PlankVisionTransport *transport,
+    uint16_t x,
+    uint16_t y,
+    uint16_t maximum_x,
+    uint16_t maximum_y);
+
+int32_t plank_vision_transport_send_mouse_button(
+    PlankVisionTransport *transport,
+    uint8_t button,
+    uint8_t pressed);
+
+int32_t plank_vision_transport_send_key(
+    PlankVisionTransport *transport,
+    uint16_t key_code,
+    uint8_t pressed,
+    uint8_t modifiers);
+
+int32_t plank_vision_transport_send_utf8(
+    PlankVisionTransport *transport,
+    const uint8_t *text,
+    size_t text_size);
+
+int32_t plank_vision_transport_receive_cursor_position(
+    PlankVisionTransport *transport,
+    PlankVisionCursorPosition *position,
     uint32_t timeout_ms);
 
 void plank_vision_transport_disconnect(PlankVisionTransport *transport);
