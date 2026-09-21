@@ -1,121 +1,115 @@
-# visionOS Client Port
+# Native visionOS Client
+
+## Product direction
+
+The visionOS client uses a native SwiftUI interface in the visionOS Shared
+Space. PLANK's existing protocol, transport, decoder and input implementations
+remain the intended engine underneath it, but the desktop Qt interface is not
+part of the visionOS product.
+
+The earlier Qt prototype proved that the existing client could build, sign,
+launch, discover hosts and continuously render on a physical Apple Vision Pro.
+It also exposed the wrong product boundary: desktop Qt controls did not behave
+reliably under gaze, pinch, Bluetooth mouse or keyboard input, and navigation
+could change internally without presenting the requested page. Those UI shims
+have been removed from the PLANK worktree.
 
 ## First usable target
 
-The first visionOS release is a native, low-immersion PLANK Client that runs in
-the visionOS Shared Space. It keeps the existing workstation browser, pairing,
-authentication, transport, video, audio, and session UI, then presents one
-remote desktop canvas in a resizable window.
+The first native release should support:
 
-The first release should support:
+- Bonjour discovery and manual workstation bookmarks;
+- pairing, authentication and reconnect through the PLANK core;
+- one remote desktop stream decoded by VideoToolbox and rendered with Metal;
+- host audio;
+- gaze, pinch, Bluetooth keyboard, trackpad, mouse and controller input;
+- held-input release on focus loss, interruption and disconnect;
+- both the visionOS simulator and a physical Apple Vision Pro build.
 
-- discovery, manual bookmarks, pairing, authentication, and reconnect;
-- one remote desktop stream rendered through VideoToolbox and Metal;
-- host audio through SDL;
-- gaze and tap as pointer input through SDL's visionOS backend;
-- Bluetooth keyboard, trackpad, mouse, and controller input supported by SDL;
-- both the visionOS simulator and an Apple Vision Pro device build.
+The first release does not include immersive presentation, Wacom forwarding,
+macOS global shortcuts, Spaces-style fullscreen or one native window per remote
+monitor. Multi-monitor hosts begin with one selected output or one scaled canvas
+inside the PLANK window.
 
-The first release does not include immersive presentation, raw Wacom
-forwarding, macOS global shortcuts, macOS clipboard integration, Spaces-style
-fullscreen, or one native window per remote monitor. Multi-monitor hosts begin
-with one selected output or one scaled canvas in the PLANK window.
+## Architecture
 
-## Why this shape
+`visionos-native/` owns the visionOS application and interface:
 
-Qt 6.11 supports native visionOS applications and documents both simulator and
-device builds. SDL 3 has a visionOS UIKit backend plus Metal, pointer, keyboard,
-game controller, and audio support. PLANK already uses Qt Quick, SDL 3,
-VideoToolbox, Metal, and a Rust static transport library, so the port can retain
-the existing client architecture.
+- SwiftUI host browser, bookmark editor and settings;
+- native window, focus and lifecycle handling;
+- a narrow `PlankCoreClient` boundary for pairing and sessions;
+- platform presentation of errors, authentication and connection state.
 
-The desktop macOS build also contains AppKit, Carbon, ApplicationServices,
-CGDisplay, and IOKit Wacom code. Those APIs are not part of the visionOS target.
-The qmake scopes therefore separate reusable Apple media code from macOS desktop
-integration instead of treating every `macx` build as macOS.
+The reusable core will own:
 
-References:
+- the GameStream/Moonlight protocol path;
+- pairing and host authentication;
+- the transport and session lifecycle;
+- video and audio packet handling;
+- normalized remote input events.
 
-- [Qt: Getting Started With Apple Vision Pro](https://doc.qt.io/qt-6/qt3dxr-quick-start-guide-applevisionpro.html)
-- [Apple: Get started with visionOS](https://developer.apple.com/visionos/get-started/)
-- [SDL platform support](https://github.com/libsdl-org/SDL/blob/main/docs/README-platforms.md)
+Platform rendering and input remain native to visionOS. The bridge must not
+pull Qt object ownership or QML navigation into the native application.
 
-## Build inputs
+## Current implementation
 
-Qt does not publish a binary visionOS package. Build Qt from source for each
-target and keep a matching host Qt build for its build tools.
+The native target currently provides:
 
-| Input | Simulator | Device |
-| --- | --- | --- |
-| Apple SDK | `xrsimulator` | `xros` |
-| Qt platform | `macx-visionos-clang` | `macx-visionos-clang` |
-| Rust target | `aarch64-apple-visionos-sim` | `aarch64-apple-visionos` |
-| PLANK dependencies | built for `xrsimulator` | built for `xros` |
+- a working `NavigationSplitView` workstation browser;
+- persistent manual bookmarks;
+- `_nvstream._tcp` Bonjour discovery;
+- native add, remove and settings surfaces;
+- a visible connection state boundary for the upcoming core integration;
+- signed device and simulator builds from the same source.
 
-Set these paths before configuring PLANK:
+The app compiles with Xcode 27 and the visionOS 27 SDK while targeting visionOS
+26. It has launched successfully in the Apple Vision Pro simulator. A signed
+physical-device build has been produced; installation requires the paired
+headset to remain active and unlocked.
+
+## Build
+
+Device:
 
 ```bash
-export PLANK_QT_HOST_PATH=/path/to/qt-host
-export PLANK_QT_VISIONOS_PATH=/path/to/qt-visionos
-export PLANK_VISIONOS_DEPS=/path/to/visionos-dependency-prefix
-export PLANK_RUST_TARGET=aarch64-apple-visionos-sim
-scripts/check-visionos-toolchain.sh
+cmake -G Xcode \
+  -S visionos-native \
+  -B build/visionos-native-xcode \
+  -DCMAKE_SYSTEM_NAME=visionOS \
+  -DCMAKE_OSX_SYSROOT=xros \
+  -DCMAKE_OSX_DEPLOYMENT_TARGET=26.0
+
+xcodebuild \
+  -project build/visionos-native-xcode/PlankVision.xcodeproj \
+  -scheme PlankVision \
+  -destination 'platform=visionOS,id=00008142-001030AC01F1401C' \
+  -configuration Debug \
+  -allowProvisioningUpdates \
+  build
 ```
 
-`PLANK_VISIONOS_DEPS` must contain target builds of SDL 3, SDL_ttf, OpenSSL,
-FFmpeg, libswresample, and Opus. Existing files under `libs/mac` are macOS
-artifacts and must never be linked into a visionOS app.
+Simulator:
 
-The current qmake files provide the first platform boundary. Qt's documented
-deployment route produces an Xcode project and deploys from Xcode. Once the
-target Qt and dependency builds exist, the configure attempt will determine
-whether the application target should remain on qmake or move to a small CMake
-wrapper while retaining the existing source lists.
+```bash
+cmake -G Xcode \
+  -S visionos-native \
+  -B build/visionos-native-simulator \
+  -DCMAKE_SYSTEM_NAME=visionOS \
+  -DCMAKE_OSX_SYSROOT=xrsimulator \
+  -DCMAKE_OSX_DEPLOYMENT_TARGET=26.0 \
+  -DCMAKE_OSX_ARCHITECTURES=arm64
+```
 
-## Implementation phases
+## Implementation sequence
 
-### 1. Compile and launch
+1. Extract a Qt-free pairing and host-session facade from the current client.
+2. Connect discovery and saved hosts to real host identity and pairing state.
+3. Bridge the session lifecycle into the native app.
+4. Present decoded frames through a native Metal surface.
+5. Translate visionOS focus, pointer, keyboard and controller events into the
+   existing remote-input path.
+6. Qualify reconnect, sleep/wake, audio route changes, resize, sustained frame
+   pacing and thermal behavior on the physical headset.
 
-- Configure for `xrsimulator` without AppKit, Carbon, ApplicationServices, or
-  IOKit sources.
-- Launch the Qt shell in one Shared Space window.
-- Browse and authenticate to a Host.
-
-### 2. Stream and input
-
-- Decode H.264 and HEVC with VideoToolbox.
-- Render the stream with the existing SDL Metal renderer.
-- Play audio and forward gaze/tap plus Bluetooth input.
-- Release held input on focus loss, interruption, and disconnect.
-
-### 3. Device qualification
-
-- Sign and run on Apple Vision Pro.
-- Exercise eye targeting, tap, pinch-drag, and a Bluetooth keyboard/trackpad on
-  the available Apple Vision Pro, rather than treating simulator input as proof.
-- Test local-network discovery and a Tailscale/manual bookmark.
-- Verify reconnect, sleep/wake, audio route changes, window resize, sustained
-  frame pacing, and thermal behavior.
-
-### 4. Later capabilities
-
-- Decide how remote multi-monitor sessions map to visionOS windows.
-- Evaluate clipboard support using visionOS APIs.
-- Evaluate immersive presentation only after the Shared Space client is stable.
-- Revisit tablet input if visionOS exposes a qualified device path.
-
-## Current gate
-
-Portofino currently has Apple command-line tools, but no full Xcode selection,
-visionOS SDK, simulator runtime, or target Qt build. Source separation and
-preflight checks can be reviewed here; compilation and runtime claims remain
-blocked until those tools are installed.
-
-Portofino runs macOS 15.7.4. Apple lists Xcode 26.2 as compatible with macOS
-15.6 and newer, with the visionOS 26.2 SDK and device support from visionOS 1
-through 26.2. It is the newest documented Xcode line that can run on this Mac;
-newer Xcode 26.5 and 26.6 releases require macOS 26.2. Install Xcode 26.2 from
-Apple Developer Downloads, select it with `xcode-select`, and install its
-visionOS platform component before building Qt.
-
-- [Apple Xcode system requirements](https://developer.apple.com/xcode/system-requirements)
+Streaming is not considered implemented until the native target connects to a
+real Host and independently verifies video, audio and input on the headset.
