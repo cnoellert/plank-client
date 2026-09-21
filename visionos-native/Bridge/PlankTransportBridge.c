@@ -1,5 +1,6 @@
 #include "PlankTransportBridge.h"
 
+#include <CommonCrypto/CommonDigest.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,6 +24,61 @@ static void set_error(char *error, size_t capacity, const char *message) {
     if (error == NULL || capacity == 0) return;
     snprintf(error, capacity, "%s", message == NULL ? "Unknown transport error" : message);
 }
+
+#if PLANK_NATIVE_TRANSPORT
+static int approve_expected_peer_certificate(
+    PlankTransportNativeEndpoint *endpoint,
+    const char *expected_sha256,
+    char *error,
+    size_t error_capacity) {
+    size_t certificate_size = 0;
+    int32_t result = plank_transport_native_endpoint_peer_certificate(
+        endpoint, NULL, 0, &certificate_size);
+    if (result != PLANK_TRANSPORT_ERROR_BUFFER_TOO_SMALL ||
+            certificate_size == 0 || certificate_size > 1024 * 1024) {
+        set_error(error, error_capacity,
+                  "The Host did not provide a valid transport certificate");
+        return -1;
+    }
+
+    uint8_t *certificate = malloc(certificate_size);
+    if (certificate == NULL) {
+        set_error(error, error_capacity,
+                  "Unable to inspect the Host transport certificate");
+        return -1;
+    }
+    result = plank_transport_native_endpoint_peer_certificate(
+        endpoint, certificate, certificate_size, &certificate_size);
+    if (result != PLANK_TRANSPORT_OK) {
+        free(certificate);
+        set_error(error, error_capacity,
+                  "Unable to read the Host transport certificate");
+        return -1;
+    }
+
+    unsigned char digest[CC_SHA256_DIGEST_LENGTH];
+    CC_SHA256(certificate, (CC_LONG)certificate_size, digest);
+    free(certificate);
+
+    char actual_sha256[CC_SHA256_DIGEST_LENGTH * 2 + 1];
+    for (size_t index = 0; index < CC_SHA256_DIGEST_LENGTH; ++index) {
+        snprintf(actual_sha256 + index * 2, 3, "%02x", digest[index]);
+    }
+    actual_sha256[sizeof(actual_sha256) - 1] = '\0';
+    if (expected_sha256 == NULL || strcmp(actual_sha256, expected_sha256) != 0) {
+        set_error(error, error_capacity,
+                  "The Host transport certificate changed after sign-in");
+        return -1;
+    }
+    if (plank_transport_native_endpoint_approve_peer_certificate(endpoint) !=
+            PLANK_TRANSPORT_OK) {
+        set_error(error, error_capacity,
+                  "Unable to approve the Host transport certificate");
+        return -1;
+    }
+    return 0;
+}
+#endif
 
 PlankVisionTransport *plank_vision_transport_connect(
     const char *remote_host,
@@ -83,6 +139,14 @@ PlankVisionTransport *plank_vision_transport_connect(
         for (; attempt < attempts; ++attempt) {
             const uint32_t state = plank_transport_native_endpoint_state(
                 transport->endpoint);
+            if (state == PLANK_TRANSPORT_STATE_PEER_VALIDATION) {
+                if (approve_expected_peer_certificate(
+                        transport->endpoint, certificate_sha256,
+                        error, error_capacity) != 0) {
+                    result = PLANK_TRANSPORT_ERROR_RUNTIME;
+                    break;
+                }
+            }
             if (state == PLANK_TRANSPORT_STATE_SETUP_READY) break;
             if (state == PLANK_TRANSPORT_STATE_FAILED ||
                     state == PLANK_TRANSPORT_STATE_STOPPED) {
@@ -95,8 +159,14 @@ PlankVisionTransport *plank_vision_transport_connect(
     }
     if (result != PLANK_TRANSPORT_OK) {
         if (transport->endpoint != NULL) {
-            plank_transport_native_endpoint_last_error(
-                transport->endpoint, error, error_capacity);
+            if (error == NULL || error_capacity == 0 || error[0] == '\0') {
+                plank_transport_native_endpoint_last_error(
+                    transport->endpoint, error, error_capacity);
+            }
+            if (error != NULL && error[0] == '\0') {
+                set_error(error, error_capacity,
+                          "The secure transport setup did not become ready");
+            }
             plank_transport_native_endpoint_stop(transport->endpoint);
             plank_transport_native_endpoint_destroy(transport->endpoint);
         } else {
