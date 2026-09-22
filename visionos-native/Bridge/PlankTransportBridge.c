@@ -1,4 +1,5 @@
 #include "PlankTransportBridge.h"
+#include "PlankAddress.h"
 
 #include <CommonCrypto/CommonDigest.h>
 #include <stdio.h>
@@ -104,10 +105,10 @@ PlankVisionTransport *plank_vision_transport_connect(
     }
 
     char remote_address[512];
-    const char *format = strchr(remote_host, ':') == NULL ? "%s:%u" : "[%s]:%u";
-    if (snprintf(remote_address, sizeof(remote_address), format,
-                 remote_host, (unsigned)remote_port) >= (int)sizeof(remote_address)) {
-        set_error(error, error_capacity, "Native transport address is too long");
+    if (plank_vision_numeric_remote_address(
+            remote_host, remote_port,
+            remote_address, sizeof(remote_address)) != 0) {
+        set_error(error, error_capacity, "Unable to resolve the Host for native transport");
         return NULL;
     }
 

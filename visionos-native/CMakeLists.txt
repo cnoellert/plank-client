@@ -5,6 +5,8 @@ project(PlankVision LANGUAGES Swift C)
 set(CMAKE_Swift_LANGUAGE_VERSION 6)
 
 add_executable(PlankVision MACOSX_BUNDLE
+    Bridge/PlankAddress.c
+    Bridge/PlankAddress.h
     Bridge/PlankTransportBridge.c
     Bridge/PlankTransportBridge.h
     Bridge/PlankVideoDecoder.c
