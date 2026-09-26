@@ -92,7 +92,10 @@ On September 25, 2026, a physical Vision Pro paired with the development NUC
 using five ExpressKeys and forwarded pen movement, tip and side buttons, and
 varying pressure into GNOME Settings and Flame. Focus suspension and recovery
 after a real Relay service restart passed without restarting the desktop.
-The NUC runs the Relay as an unprivileged systemd service.
+The NUC runs the Relay as an unprivileged systemd service. After a full NUC
+reboot and reinstalling the signed Client with link-loss contact release, a
+fresh physical Vision Pro session again confirmed tip clicks and varying
+pressure. A mid-stroke connection loss has not yet been physically tested.
 
 ## Qualification backlog
 
@@ -115,7 +118,7 @@ The NUC runs the Relay as an unprivileged systemd service.
 - Qualify discrete mouse-wheel and continuous trackpad scrolling, including
   direction, rate and horizontal scrolling.
 - Add host audio output and verify sleep, wake and reconnect behavior.
-- Qualify the Wacom Relay across Vision Pro sleep, NUC reboot, longer sessions
+- Qualify the Wacom Relay across Vision Pro sleep, longer sessions
   and tablet hotplug. Add service discovery and Bluetooth LE after the local
   TCP path remains stable.
 
