@@ -95,7 +95,11 @@ after a real Relay service restart passed without restarting the desktop.
 The NUC runs the Relay as an unprivileged systemd service. After a full NUC
 reboot and reinstalling the signed Client with link-loss contact release, a
 fresh physical Vision Pro session again confirmed tip clicks and varying
-pressure. A mid-stroke connection loss has not yet been physically tested.
+pressure. After removing the headset for one minute, pen movement and pressure
+returned immediately on wake. A mid-stroke connection loss has not yet been
+physically tested. In a live USB hotplug check, the Relay reattached the
+tablet without restarting PLANK. Pen movement returned after a couple of
+seconds; clicks and varying pressure followed a few seconds later.
 
 ## Qualification backlog
 
@@ -118,9 +122,9 @@ pressure. A mid-stroke connection loss has not yet been physically tested.
 - Qualify discrete mouse-wheel and continuous trackpad scrolling, including
   direction, rate and horizontal scrolling.
 - Add host audio output and verify sleep, wake and reconnect behavior.
-- Qualify the Wacom Relay across Vision Pro sleep, longer sessions
-  and tablet hotplug. Add service discovery and Bluetooth LE after the local
-  TCP path remains stable.
+- Qualify the Wacom Relay across longer Vision Pro sleeps and sessions,
+  including repeated tablet hotplug cycles. Add service discovery and
+  Bluetooth LE after the local TCP path remains stable.
 
 ## Build
 
