@@ -1,5 +1,6 @@
 #include "PlankTransportBridge.h"
 #include "PlankAddress.h"
+#include "PlankRawHidFrame.h"
 
 #include <CommonCrypto/CommonDigest.h>
 #include <stdio.h>
@@ -342,6 +343,28 @@ int32_t plank_vision_transport_send_mouse_button(
 #endif
 }
 
+int32_t plank_vision_transport_send_scroll(
+    PlankVisionTransport *transport,
+    int16_t amount,
+    uint8_t horizontal) {
+#if !PLANK_NATIVE_TRANSPORT
+    (void)transport; (void)amount; (void)horizontal;
+    return PLANK_VISION_TRANSPORT_UNAVAILABLE;
+#else
+    if (transport == NULL || transport->endpoint == NULL || amount == 0) {
+        return PLANK_VISION_TRANSPORT_ERROR;
+    }
+    uint8_t payload[PLANK_TRANSPORT_INPUT_SCROLL_SIZE];
+    plank_transport_input_write_u16(payload, (uint16_t)amount);
+    const uint8_t type = horizontal ?
+        PLANK_TRANSPORT_INPUT_HORIZONTAL_SCROLL :
+        PLANK_TRANSPORT_INPUT_VERTICAL_SCROLL;
+    return plank_transport_native_input_send(
+        transport->endpoint, type, payload, sizeof(payload)) == PLANK_TRANSPORT_OK ?
+        PLANK_VISION_TRANSPORT_OK : PLANK_VISION_TRANSPORT_ERROR;
+#endif
+}
+
 int32_t plank_vision_transport_send_key(
     PlankVisionTransport *transport,
     uint16_t key_code,
@@ -402,17 +425,43 @@ static uint64_t read_le64(const uint8_t *input) {
            ((uint64_t)read_le32(input + 4) << 32);
 }
 
-int32_t plank_vision_transport_receive_cursor_position(
+int32_t plank_vision_transport_send_raw_hid(
     PlankVisionTransport *transport,
-    PlankVisionCursorPosition *position,
-    uint32_t timeout_ms) {
+    const uint8_t *frame,
+    size_t frame_size) {
 #if !PLANK_NATIVE_TRANSPORT
-    (void)transport; (void)position; (void)timeout_ms;
+    (void)transport; (void)frame; (void)frame_size;
     return PLANK_VISION_TRANSPORT_UNAVAILABLE;
 #else
-    if (transport == NULL || transport->endpoint == NULL || position == NULL) {
+    if (transport == NULL || transport->endpoint == NULL ||
+            !plank_vision_raw_hid_frame_valid(
+                frame, frame_size, PLANK_VISION_RAW_HID_TO_HOST)) {
         return PLANK_VISION_TRANSPORT_ERROR;
     }
+    return plank_transport_native_input_send(
+        transport->endpoint, PLANK_TRANSPORT_INPUT_RAW_HID_WACOM,
+        frame, frame_size) == PLANK_TRANSPORT_OK ?
+        PLANK_VISION_TRANSPORT_OK : PLANK_VISION_TRANSPORT_ERROR;
+#endif
+}
+
+int32_t plank_vision_transport_receive_data_event(
+    PlankVisionTransport *transport,
+    PlankVisionCursorEvent *cursor_event,
+    uint8_t *chunk,
+    size_t chunk_capacity,
+    size_t *chunk_size,
+    uint32_t timeout_ms) {
+#if !PLANK_NATIVE_TRANSPORT
+    (void)transport; (void)cursor_event; (void)chunk; (void)chunk_capacity;
+    (void)chunk_size; (void)timeout_ms;
+    return PLANK_VISION_TRANSPORT_UNAVAILABLE;
+#else
+    if (transport == NULL || transport->endpoint == NULL || cursor_event == NULL ||
+            chunk == NULL || chunk_size == NULL) {
+        return PLANK_VISION_TRANSPORT_ERROR;
+    }
+    *chunk_size = 0;
     uint8_t packet[PLANK_TRANSPORT_EVENT_MAX_PACKET_SIZE];
     size_t packet_size = 0;
     const int32_t result = plank_transport_native_data_receive(
@@ -421,26 +470,78 @@ int32_t plank_vision_transport_receive_cursor_position(
     if (result != PLANK_TRANSPORT_OK) return PLANK_VISION_TRANSPORT_ERROR;
 
     PlankTransportEventPacket event = {0};
-    if (plank_transport_event_decode(packet, packet_size, &event) != 0 ||
-            event.type != PLANK_TRANSPORT_EVENT_CURSOR_POSITION ||
-            event.payload_size != 32) {
+    if (plank_transport_event_decode(packet, packet_size, &event) != 0) {
+        return PLANK_VISION_TRANSPORT_ERROR;
+    }
+    memset(cursor_event, 0, sizeof(*cursor_event));
+    const uint8_t *payload = event.payload;
+    if (event.type == PLANK_TRANSPORT_EVENT_RAW_HID_WACOM) {
+        if (!plank_vision_raw_hid_frame_valid(
+                payload, event.payload_size, PLANK_VISION_RAW_HID_FROM_HOST) ||
+                event.payload_size > chunk_capacity) {
+            return PLANK_VISION_TRANSPORT_ERROR;
+        }
+        cursor_event->type = PLANK_VISION_RAW_HID_EVENT;
+        memcpy(chunk, payload, event.payload_size);
+        *chunk_size = event.payload_size;
+        return PLANK_VISION_TRANSPORT_OK;
+    }
+    if (event.type != PLANK_TRANSPORT_EVENT_CURSOR_POSITION &&
+            event.type != PLANK_TRANSPORT_EVENT_CURSOR_SHAPE) {
         return PLANK_VISION_TRANSPORT_TIMEOUT;
     }
-    const uint8_t *payload = event.payload;
-    if (read_le32(payload) != 0x504c4350u || read_le16(payload + 4) != 1 ||
-            read_le16(payload + 6) != 0) {
+    if (event.type == PLANK_TRANSPORT_EVENT_CURSOR_POSITION) {
+        if (event.payload_size != 32 || read_le32(payload) != 0x504c4350u ||
+                read_le16(payload + 4) != 1 || read_le16(payload + 6) != 0) {
+            return PLANK_VISION_TRANSPORT_ERROR;
+        }
+        cursor_event->type = PLANK_VISION_CURSOR_POSITION;
+        cursor_event->sequence = read_le64(payload + 8);
+        cursor_event->x = read_le32(payload + 16);
+        cursor_event->y = read_le32(payload + 20);
+        cursor_event->frame_width = read_le32(payload + 24);
+        cursor_event->frame_height = read_le32(payload + 28);
+        if (cursor_event->sequence == 0 || cursor_event->frame_width == 0 ||
+                cursor_event->frame_height == 0 ||
+                cursor_event->x >= cursor_event->frame_width ||
+                cursor_event->y >= cursor_event->frame_height) {
+            return PLANK_VISION_TRANSPORT_ERROR;
+        }
+        return PLANK_VISION_TRANSPORT_OK;
+    }
+
+    // The Host sends a bounded ARGB8888 image in ordered 48 KiB chunks.
+    // Validate every peer supplied size before copying into the caller's buffer.
+    if (event.payload_size < 52 || read_le32(payload) != 0x504c4352u ||
+            read_le16(payload + 4) != 1 || read_le16(payload + 6) != 1) {
         return PLANK_VISION_TRANSPORT_ERROR;
     }
-    position->sequence = read_le64(payload + 8);
-    position->x = read_le32(payload + 16);
-    position->y = read_le32(payload + 20);
-    position->frame_width = read_le32(payload + 24);
-    position->frame_height = read_le32(payload + 28);
-    if (position->sequence == 0 || position->frame_width == 0 ||
-            position->frame_height == 0 || position->x >= position->frame_width ||
-            position->y >= position->frame_height) {
+    cursor_event->type = PLANK_VISION_CURSOR_SHAPE;
+    cursor_event->flags = read_le32(payload + 8);
+    cursor_event->generation = read_le64(payload + 12);
+    cursor_event->width = read_le32(payload + 20);
+    cursor_event->height = read_le32(payload + 24);
+    cursor_event->hotspot_x = read_le32(payload + 28);
+    cursor_event->hotspot_y = read_le32(payload + 32);
+    cursor_event->image_size = read_le32(payload + 36);
+    cursor_event->chunk_offset = read_le32(payload + 40);
+    const uint32_t size = read_le32(payload + 44);
+    // The packed header has 48 bytes; no payload beyond its declared chunk.
+    if ((cursor_event->flags & ~7u) != 0 ||
+            cursor_event->width == 0 || cursor_event->height == 0 ||
+            cursor_event->width > 512 || cursor_event->height > 512 ||
+            cursor_event->hotspot_x >= cursor_event->width ||
+            cursor_event->hotspot_y >= cursor_event->height ||
+            cursor_event->image_size !=
+                cursor_event->width * cursor_event->height * 4u ||
+            size == 0 || size > PLANK_VISION_CURSOR_MAX_CHUNK_SIZE ||
+            size > chunk_capacity || event.payload_size != 48u + size ||
+            cursor_event->chunk_offset > cursor_event->image_size ||
+            size > cursor_event->image_size - cursor_event->chunk_offset) {
         return PLANK_VISION_TRANSPORT_ERROR;
     }
+    memcpy(chunk, payload + 48, size);
+    *chunk_size = size;
     return PLANK_VISION_TRANSPORT_OK;
 #endif
 }

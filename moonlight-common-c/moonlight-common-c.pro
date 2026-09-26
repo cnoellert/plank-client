@@ -53,7 +53,7 @@ visionos {
     }
     INCLUDEPATH += $$PLANK_VISIONOS_DEPS/include
 }
-unix:if(!macx|disable-prebuilts) {
+unix:if(!macx|disable-prebuilts):!visionos {
     CONFIG += link_pkgconfig
     PKGCONFIG += openssl
     DEFINES += HAVE_CLOCK_GETTIME=1

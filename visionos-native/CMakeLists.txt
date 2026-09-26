@@ -9,6 +9,8 @@ add_executable(PlankVision MACOSX_BUNDLE
     Bridge/PlankAddress.h
     Bridge/PlankTransportBridge.c
     Bridge/PlankTransportBridge.h
+    Bridge/PlankRawHidFrame.c
+    Bridge/PlankRawHidFrame.h
     Bridge/PlankVideoDecoder.c
     Bridge/PlankVideoDecoder.h
     Sources/PlankVisionApp.swift
@@ -21,6 +23,7 @@ add_executable(PlankVision MACOSX_BUNDLE
     Sources/Views/AddHostView.swift
     Sources/Views/HostBrowserView.swift
     Sources/Views/HostDetailView.swift
+    Sources/Views/RemoteDesktopView.swift
     Sources/Views/SettingsView.swift
 )
 
@@ -60,8 +63,43 @@ if(PLANK_TRANSPORT_DIR)
         "${PLANK_TRANSPORT_LIBRARY}"
         "-framework Security"
         "-framework SystemConfiguration"
+        "-framework GameController"
     )
     target_compile_definitions(PlankVision PRIVATE PLANK_NATIVE_TRANSPORT=1)
+endif()
+
+# The tablet Relay protocol is shared with the dedicated Linux Relay. Supply
+# its source and a visionOS libsodium build until a distributable artifact is pinned.
+set(PLANK_RELAY_SOURCE_DIR "" CACHE PATH "Path to plank-tablet-relay source")
+set(PLANK_RELAY_SODIUM_PREFIX "" CACHE PATH "Path to visionOS libsodium prefix")
+if(PLANK_RELAY_SOURCE_DIR)
+    if(NOT EXISTS "${PLANK_RELAY_SOURCE_DIR}/src/link.c" OR
+       NOT EXISTS "${PLANK_RELAY_SODIUM_PREFIX}/lib/libsodium.a" OR
+       NOT EXISTS "${PLANK_RELAY_SODIUM_PREFIX}/include/sodium.h")
+        message(FATAL_ERROR "Tablet Relay source and visionOS libsodium are required together")
+    endif()
+    add_library(PlankRelayCrypto STATIC
+        "${PLANK_RELAY_SOURCE_DIR}/src/protocol.c"
+        "${PLANK_RELAY_SOURCE_DIR}/src/session.c"
+        "${PLANK_RELAY_SOURCE_DIR}/src/noise.c"
+        "${PLANK_RELAY_SOURCE_DIR}/src/cpace.c"
+        "${PLANK_RELAY_SOURCE_DIR}/src/confirm.c"
+        "${PLANK_RELAY_SOURCE_DIR}/src/link.c"
+        "${PLANK_RELAY_SOURCE_DIR}/src/client_link.c"
+        "${PLANK_RELAY_SOURCE_DIR}/src/client_pair.c"
+    )
+    target_include_directories(PlankRelayCrypto PUBLIC
+        "${PLANK_RELAY_SOURCE_DIR}/src"
+        "${PLANK_RELAY_SODIUM_PREFIX}/include")
+    target_link_libraries(PlankRelayCrypto PUBLIC
+        "${PLANK_RELAY_SODIUM_PREFIX}/lib/libsodium.a")
+    target_link_libraries(PlankVision PRIVATE PlankRelayCrypto)
+    target_compile_definitions(PlankVision PRIVATE PLANK_TABLET_RELAY=1)
+    target_compile_options(PlankVision PRIVATE
+        "$<$<COMPILE_LANGUAGE:Swift>:-DPLANK_TABLET_RELAY>")
+    target_sources(PlankVision PRIVATE
+        Sources/Services/PlankRelayPairing.swift
+        Sources/Services/PlankRelayLiveLink.swift)
 endif()
 
 set(PLANK_FFMPEG_DIR "" CACHE PATH "Path to the visionOS FFmpeg installation")

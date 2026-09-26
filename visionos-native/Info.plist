@@ -30,11 +30,20 @@
     <key>NSBonjourServices</key>
     <array>
         <string>_nvstream._tcp</string>
+        <string>_plank-tablet._tcp</string>
     </array>
     <key>NSLocalNetworkUsageDescription</key>
-    <string>PLANK uses the local network to find and connect to your workstation.</string>
+    <string>PLANK uses the local network to connect to your workstation and a paired tablet Relay.</string>
     <key>UIApplicationSupportsIndirectInputEvents</key>
     <true/>
+    <key>UIApplicationSceneManifest</key>
+    <dict>
+        <key>UIApplicationSupportsMultipleScenes</key>
+        <true/>
+        <key>UIApplicationPreferredDefaultSceneSessionRole</key>
+        <string>UIWindowSceneSessionRoleApplication</string>
+        <key>UISceneConfigurations</key>
+        <dict/>
+    </dict>
 </dict>
 </plist>
-

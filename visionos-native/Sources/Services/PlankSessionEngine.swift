@@ -1,18 +1,42 @@
 import Foundation
 
+enum PlankHostFeature {
+    static let rawHidTablet: UInt32 = 0x04
+    static let rawHidFocusSuspend: UInt32 = 0x20
+    static let tabletRelayRequired = rawHidTablet | rawHidFocusSuspend
+}
+
 enum PlankInputEvent: Sendable {
     case pointer(x: UInt16, y: UInt16, maximumX: UInt16, maximumY: UInt16)
     case button(number: UInt8, pressed: Bool)
+    case scroll(vertical: Int16, horizontal: Int16)
     case key(code: UInt16, pressed: Bool, modifiers: UInt8)
     case text(Data)
+    case rawHid(Data)
 }
 
 final class PlankInputQueue: @unchecked Sendable {
     private let lock = NSLock()
+    private let wakeups: AsyncStream<Void>
+    private let wakeupContinuation: AsyncStream<Void>.Continuation
     private var events: [PlankInputEvent] = []
+    private var stopped = false
+
+    init() {
+        (wakeups, wakeupContinuation) = AsyncStream<Void>.makeStream(
+            bufferingPolicy: .bufferingNewest(1)
+        )
+    }
+
+    var signals: AsyncStream<Void> { wakeups }
 
     func append(_ event: PlankInputEvent) {
         lock.lock()
+        guard !stopped else {
+            lock.unlock()
+            return
+        }
+        let shouldWake = events.isEmpty
         if case .pointer = event,
            case .pointer? = events.last {
             events[events.count - 1] = event
@@ -20,6 +44,7 @@ final class PlankInputQueue: @unchecked Sendable {
             events.append(event)
         }
         lock.unlock()
+        if shouldWake { wakeupContinuation.yield(()) }
     }
 
     func drain() -> [PlankInputEvent] {
@@ -30,10 +55,39 @@ final class PlankInputQueue: @unchecked Sendable {
         return drained
     }
 
-    func removeAll() {
+    func stop() {
         lock.lock()
+        stopped = true
         events.removeAll(keepingCapacity: true)
         lock.unlock()
+        wakeupContinuation.finish()
+    }
+}
+
+// The Rust endpoint synchronizes its input and video queues independently.
+// Keep it alive until the input sender has exited before destroying it.
+private final class PlankTransportHandle: @unchecked Sendable {
+    let pointer: OpaquePointer
+
+    init(_ pointer: OpaquePointer) {
+        self.pointer = pointer
+    }
+}
+
+private final class PlankInputSenderState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var failed = false
+
+    func markFailed() {
+        lock.lock()
+        failed = true
+        lock.unlock()
+    }
+
+    var hasFailed: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return failed
     }
 }
 
@@ -51,6 +105,66 @@ enum PlankSessionError: LocalizedError, Sendable {
     }
 }
 
+// Shape chunks arrive on the same reliable data channel as cursor positions.
+// Only a complete, ordered generation becomes visible to the presentation layer.
+private struct CursorShapeAssembly {
+    private var pixels = Data()
+    private var generation: UInt64 = 0
+    private var width = 0
+    private var height = 0
+    private var hotspotX = 0
+    private var hotspotY = 0
+    private var visible = false
+
+    mutating func append(
+        event: PlankVisionCursorEvent,
+        chunk: ArraySlice<UInt8>
+    ) -> PlankRemoteCursorShape? {
+        let first = event.flags & UInt32(PLANK_VISION_CURSOR_FIRST_CHUNK) != 0
+        let last = event.flags & UInt32(PLANK_VISION_CURSOR_LAST_CHUNK) != 0
+        let currentVisibility = event.flags & UInt32(PLANK_VISION_CURSOR_VISIBLE) != 0
+        if first {
+            guard event.chunk_offset == 0 else { return nil }
+            pixels = Data()
+            pixels.reserveCapacity(Int(event.image_size))
+            generation = event.generation
+            width = Int(event.width)
+            height = Int(event.height)
+            hotspotX = Int(event.hotspot_x)
+            hotspotY = Int(event.hotspot_y)
+            visible = currentVisibility
+        }
+        guard !pixels.isEmpty || first,
+              generation == event.generation,
+              width == event.width,
+              height == event.height,
+              hotspotX == event.hotspot_x,
+              hotspotY == event.hotspot_y,
+              visible == currentVisibility,
+              pixels.count == event.chunk_offset else {
+            pixels = Data()
+            return nil
+        }
+        pixels.append(contentsOf: chunk)
+        guard last else { return nil }
+        guard pixels.count == event.image_size else {
+            pixels = Data()
+            return nil
+        }
+        let shape = PlankRemoteCursorShape(
+            pixels: pixels,
+            width: width,
+            height: height,
+            hotspotX: hotspotX,
+            hotspotY: hotspotY,
+            visible: visible,
+            generation: generation
+        )
+        pixels = Data()
+        return shape
+    }
+}
+
 struct PlankSessionEngine: Sendable {
     func stream(
         host: String,
@@ -58,7 +172,9 @@ struct PlankSessionEngine: Sendable {
         launch: PlankLaunchCredentials,
         inputQueue: PlankInputQueue,
         onFrame: @escaping @Sendable (PlankRenderedFrame) -> Void,
-        onCursor: @escaping @Sendable (PlankRemoteCursor) -> Void
+        onCursor: @escaping @Sendable (PlankCursorUpdate) -> Void,
+        onHostFeatures: @escaping @Sendable (UInt32) -> Void,
+        onRawHid: @escaping @Sendable (Data) -> Void
     ) async throws {
         let worker = Task.detached(priority: .userInitiated) {
             var error = [CChar](repeating: 0, count: 512)
@@ -128,6 +244,10 @@ struct PlankSessionEngine: Sendable {
                   responseObject["video_format"] as? Int == 0x0800 else {
                 throw PlankSessionError.invalidNegotiation
             }
+            let hostFeatures = UInt32(truncatingIfNeeded: responseObject["host_feature_flags"] as? Int ?? 0)
+            onHostFeatures(hostFeatures)
+            let rawHidAvailable = hostFeatures & PlankHostFeature.tabletRelayRequired ==
+                PlankHostFeature.tabletRelayRequired
 
             guard let decoder = plank_video_decoder_create(&error, error.count) else {
                 throw PlankSessionError.transport(String(cString: error))
@@ -140,93 +260,98 @@ struct PlankSessionEngine: Sendable {
                 count: topology.desktopWidth * topology.desktopHeight * 4
             )
             var frame = PlankVisionVideoFrame()
-            var decodedFrames: UInt64 = 0
-            while !Task.isCancelled {
-                for input in inputQueue.drain() {
-                    let inputResult: Int32
-                    switch input {
-                    case let .pointer(x, y, maximumX, maximumY):
-                        inputResult = plank_vision_transport_send_mouse_position(
-                            transport, x, y, maximumX, maximumY
+            var cursorChunk = [UInt8](repeating: 0, count: Int(PLANK_VISION_CURSOR_MAX_CHUNK_SIZE))
+            var cursorAssembly = CursorShapeAssembly()
+            let senderState = PlankInputSenderState()
+            let endpoint = PlankTransportHandle(transport)
+            let sender = Task.detached(priority: .userInitiated) {
+                for await _ in inputQueue.signals {
+                    for event in inputQueue.drain() {
+                        guard Self.send(
+                            event, to: endpoint.pointer,
+                            rawHidAvailable: rawHidAvailable
+                        ) == PLANK_VISION_TRANSPORT_OK else {
+                            senderState.markFailed()
+                            inputQueue.stop()
+                            return
+                        }
+                    }
+                }
+            }
+            do {
+                while !Task.isCancelled {
+                    if senderState.hasFailed {
+                        throw PlankSessionError.transport("The remote input channel stopped unexpectedly.")
+                    }
+                    var payloadSize = 0
+                    let result = plank_vision_transport_receive_video(
+                        transport, &frame, &payload, payload.count, &payloadSize, 30
+                    )
+                    // Keep Host tablet requests moving even while video is idle.
+                    // Cap each drain so sustained control traffic cannot starve video.
+                    for _ in 0..<64 {
+                        var cursor = PlankVisionCursorEvent()
+                        var cursorChunkSize = 0
+                        let cursorResult = plank_vision_transport_receive_data_event(
+                            transport, &cursor, &cursorChunk, cursorChunk.count,
+                            &cursorChunkSize, 0
                         )
-                    case let .button(number, pressed):
-                        inputResult = plank_vision_transport_send_mouse_button(
-                            transport, number, pressed ? 1 : 0
-                        )
-                    case let .key(code, pressed, modifiers):
-                        inputResult = plank_vision_transport_send_key(
-                            transport, code, pressed ? 1 : 0, modifiers
-                        )
-                    case let .text(data):
-                        inputResult = data.withUnsafeBytes { bytes in
-                            plank_vision_transport_send_utf8(
-                                transport,
-                                bytes.bindMemory(to: UInt8.self).baseAddress,
-                                bytes.count
+                        if cursorResult == PLANK_VISION_TRANSPORT_TIMEOUT { break }
+                        guard cursorResult == PLANK_VISION_TRANSPORT_OK else {
+                            throw PlankSessionError.transport("The remote cursor channel stopped unexpectedly.")
+                        }
+                        if cursor.type == PLANK_VISION_CURSOR_POSITION {
+                            onCursor(.position(PlankRemoteCursor(
+                                x: Int(cursor.x),
+                                y: Int(cursor.y),
+                                frameWidth: Int(cursor.frame_width),
+                                frameHeight: Int(cursor.frame_height),
+                                sequence: cursor.sequence
+                            )))
+                        } else if cursor.type == PLANK_VISION_CURSOR_SHAPE,
+                                  let shape = cursorAssembly.append(
+                                    event: cursor,
+                                    chunk: cursorChunk.prefix(cursorChunkSize)
+                                  ) {
+                            onCursor(.shape(shape))
+                        } else if cursor.type == PLANK_VISION_RAW_HID_EVENT {
+                            onRawHid(Data(cursorChunk.prefix(cursorChunkSize)))
+                        }
+                    }
+
+                    if result == PLANK_VISION_TRANSPORT_BUFFER_TOO_SMALL,
+                       payloadSize > payload.count, payloadSize <= 64 * 1024 * 1024 {
+                        payload = [UInt8](repeating: 0, count: payloadSize)
+                        continue
+                    }
+                    if result == PLANK_VISION_TRANSPORT_TIMEOUT { continue }
+                    guard result == PLANK_VISION_TRANSPORT_OK, payloadSize > 0 else {
+                        throw PlankSessionError.transport("The native video receiver stopped unexpectedly.")
+                    }
+
+                    var decodedWidth: UInt32 = 0
+                    var decodedHeight: UInt32 = 0
+                    var decodedStride: UInt32 = 0
+                    let decodeResult = payload.withUnsafeBytes { encodedBytes in
+                        pixels.withUnsafeMutableBytes { pixelBytes in
+                            plank_video_decoder_decode(
+                                decoder,
+                                encodedBytes.bindMemory(to: UInt8.self).baseAddress,
+                                payloadSize,
+                                pixelBytes.bindMemory(to: UInt8.self).baseAddress,
+                                pixelBytes.count,
+                                &decodedWidth,
+                                &decodedHeight,
+                                &decodedStride,
+                                &error,
+                                error.count
                             )
                         }
                     }
-                    guard inputResult == PLANK_VISION_TRANSPORT_OK else {
-                        throw PlankSessionError.transport("The remote input channel stopped unexpectedly.")
+                    if decodeResult == PLANK_VIDEO_DECODER_NO_FRAME { continue }
+                    guard decodeResult == PLANK_VIDEO_DECODER_FRAME else {
+                        throw PlankSessionError.transport(String(cString: error))
                     }
-                }
-                var payloadSize = 0
-                let result = plank_vision_transport_receive_video(
-                    transport, &frame, &payload, payload.count, &payloadSize, 3000
-                )
-                if result == PLANK_VISION_TRANSPORT_BUFFER_TOO_SMALL,
-                   payloadSize > payload.count, payloadSize <= 64 * 1024 * 1024 {
-                    payload = [UInt8](repeating: 0, count: payloadSize)
-                    continue
-                }
-                if result == PLANK_VISION_TRANSPORT_TIMEOUT { continue }
-                guard result == PLANK_VISION_TRANSPORT_OK, payloadSize > 0 else {
-                    throw PlankSessionError.transport("The native video receiver stopped unexpectedly.")
-                }
-
-                while true {
-                    var cursor = PlankVisionCursorPosition()
-                    let cursorResult = plank_vision_transport_receive_cursor_position(
-                        transport, &cursor, 0
-                    )
-                    if cursorResult == PLANK_VISION_TRANSPORT_TIMEOUT { break }
-                    guard cursorResult == PLANK_VISION_TRANSPORT_OK else {
-                        throw PlankSessionError.transport("The remote cursor channel stopped unexpectedly.")
-                    }
-                    onCursor(PlankRemoteCursor(
-                        x: Int(cursor.x),
-                        y: Int(cursor.y),
-                        frameWidth: Int(cursor.frame_width),
-                        frameHeight: Int(cursor.frame_height),
-                        sequence: cursor.sequence
-                    ))
-                }
-
-                var decodedWidth: UInt32 = 0
-                var decodedHeight: UInt32 = 0
-                var decodedStride: UInt32 = 0
-                let decodeResult = payload.withUnsafeBytes { encodedBytes in
-                    pixels.withUnsafeMutableBytes { pixelBytes in
-                        plank_video_decoder_decode(
-                            decoder,
-                            encodedBytes.bindMemory(to: UInt8.self).baseAddress,
-                            payloadSize,
-                            pixelBytes.bindMemory(to: UInt8.self).baseAddress,
-                            pixelBytes.count,
-                            &decodedWidth,
-                            &decodedHeight,
-                            &decodedStride,
-                            &error,
-                            error.count
-                        )
-                    }
-                }
-                if decodeResult == PLANK_VIDEO_DECODER_NO_FRAME { continue }
-                guard decodeResult == PLANK_VIDEO_DECODER_FRAME else {
-                    throw PlankSessionError.transport(String(cString: error))
-                }
-                decodedFrames += 1
-                if decodedFrames == 1 || decodedFrames.isMultiple(of: 6) {
                     let byteCount = Int(decodedStride) * Int(decodedHeight)
                     onFrame(PlankRenderedFrame(
                         pixels: Data(pixels.prefix(byteCount)),
@@ -236,12 +361,63 @@ struct PlankSessionEngine: Sendable {
                         frameNumber: frame.frame_number
                     ))
                 }
+            } catch {
+                inputQueue.stop()
+                await sender.value
+                throw error
             }
+            inputQueue.stop()
+            await sender.value
         }
         try await withTaskCancellationHandler {
             try await worker.value
         } onCancel: {
+            inputQueue.stop()
             worker.cancel()
+        }
+    }
+
+    private static func send(
+        _ input: PlankInputEvent,
+        to transport: OpaquePointer,
+        rawHidAvailable: Bool
+    ) -> Int32 {
+        switch input {
+        case let .pointer(x, y, maximumX, maximumY):
+            return plank_vision_transport_send_mouse_position(
+                transport, x, y, maximumX, maximumY
+            )
+        case let .button(number, pressed):
+            return plank_vision_transport_send_mouse_button(
+                transport, number, pressed ? 1 : 0
+            )
+        case let .scroll(vertical, horizontal):
+            let verticalResult = vertical == 0 ? Int32(PLANK_VISION_TRANSPORT_OK) :
+                plank_vision_transport_send_scroll(transport, vertical, 0)
+            let horizontalResult = horizontal == 0 ? Int32(PLANK_VISION_TRANSPORT_OK) :
+                plank_vision_transport_send_scroll(transport, horizontal, 1)
+            return verticalResult == PLANK_VISION_TRANSPORT_OK ? horizontalResult : verticalResult
+        case let .key(code, pressed, modifiers):
+            return plank_vision_transport_send_key(
+                transport, code, pressed ? 1 : 0, modifiers
+            )
+        case let .text(data):
+            return data.withUnsafeBytes { bytes in
+                plank_vision_transport_send_utf8(
+                    transport,
+                    bytes.bindMemory(to: UInt8.self).baseAddress,
+                    bytes.count
+                )
+            }
+        case let .rawHid(frame):
+            guard rawHidAvailable else { return Int32(PLANK_VISION_TRANSPORT_ERROR) }
+            return frame.withUnsafeBytes { bytes in
+                plank_vision_transport_send_raw_hid(
+                    transport,
+                    bytes.bindMemory(to: UInt8.self).baseAddress,
+                    bytes.count
+                )
+            }
         }
     }
 }

@@ -4,6 +4,19 @@ CONFIG += debug_and_release
 # Ensure symbols are always generated
 CONFIG += force_debug_info
 
+# A Qt UIKit mkspec defaults to the device SDK even when the installed Qt
+# libraries target the simulator. Keep every subproject on the same visionOS
+# SDK selected by the build environment.
+visionos {
+    isEmpty(PLANK_VISIONOS_MIN_VERSION): PLANK_VISIONOS_MIN_VERSION = 26.0
+    QMAKE_VISIONOS_DEPLOYMENT_TARGET = $$PLANK_VISIONOS_MIN_VERSION
+
+    PLANK_VISIONOS_SDK = $$(PLANK_VISIONOS_SDK)
+    !isEmpty(PLANK_VISIONOS_SDK) {
+        QMAKE_MAC_SDK = $$PLANK_VISIONOS_SDK
+    }
+}
+
 # SDK27 Clang recognizes __yield but requires its ACLE declaration. Qt6.10.2
 # qYieldCpu uses the intrinsic without including this header itself.
 macx:contains(QMAKE_APPLE_DEVICE_ARCHS, arm64) {

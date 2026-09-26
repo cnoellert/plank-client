@@ -1,6 +1,13 @@
 QT += core quick network quickcontrols2 svg
 CONFIG += c++17
 
+visionos {
+    # Keep the first qualified device build compatible with the available
+    # visionOS 26 hardware. Pass the same target to Cargo so Rust and its C
+    # helper objects do not silently inherit the installed SDK version.
+    isEmpty(PLANK_VISIONOS_MIN_VERSION): PLANK_VISIONOS_MIN_VERSION = 26.0
+}
+
 unix:contains(CONFIG, plank-transport) {
     isEmpty(PLANK_TRANSPORT_DIR) {
         PLANK_TRANSPORT_DIR = $$(PLANK_TRANSPORT_DIR)
@@ -45,6 +52,7 @@ unix:contains(CONFIG, plank-transport) {
     plank_transport.depends = FORCE
     plank_transport.commands = \
         CARGO_TARGET_DIR=$$shell_quote($$PLANK_TRANSPORT_CARGO_TARGET_DIR) \
+        XROS_DEPLOYMENT_TARGET=$$shell_quote($$PLANK_VISIONOS_MIN_VERSION) \
         $$shell_quote($$PLANK_CARGO) build --locked --offline --release $$PLANK_TRANSPORT_CARGO_ARGS \
         --manifest-path $$shell_quote($$PLANK_TRANSPORT_DIR/Cargo.toml)
     QMAKE_EXTRA_TARGETS += plank_transport
@@ -54,8 +62,8 @@ unix:contains(CONFIG, plank-transport) {
     INCLUDEPATH += $$PLANK_TRANSPORT_DIR/include
     LIBS += $$PLANK_TRANSPORT_LIBRARY -lpthread -lm
     !visionos: LIBS += -ldl
-    !macx: LIBS += -lrt
-    macx: LIBS += -framework Security -framework SystemConfiguration
+    !macx:!visionos: LIBS += -lrt
+    macx|visionos: LIBS += -framework Security -framework SystemConfiguration
     DEFINES += PLANK_TRANSPORT=1
 }
 
@@ -68,7 +76,7 @@ include(../globaldefs.pri)
 # do this for Windows and Mac (when disable-prebuilts is not defined),
 # since they always ship with the matching build of the Qt runtime.
 !disable-prebuilts {
-    win32|macx {
+    win32|macx|visionos {
         CONFIG(release, debug|release) {
             CONFIG += qtquickcompiler
         }
@@ -125,13 +133,15 @@ visionos {
         error("SDL3 visionOS headers are missing from PLANK_VISIONOS_DEPS")
     }
 
-    INCLUDEPATH += $$PLANK_VISIONOS_DEPS/include $$PLANK_VISIONOS_DEPS/include/SDL3
+    INCLUDEPATH += $$PLANK_VISIONOS_DEPS/include \
+        $$PLANK_VISIONOS_DEPS/include/SDL3 \
+        $$PLANK_VISIONOS_DEPS/include/opus
     LIBS += -L$$PLANK_VISIONOS_DEPS/lib \
         -lssl -lcrypto -lavcodec -lavutil -lswscale -lswresample \
-        -lopus -lSDL3 -lSDL3_ttf
+        -lopus -lSDL3 -lSDL3_ttf -liconv -framework CoreHaptics
 }
 
-unix:if(!macx|disable-prebuilts) {
+unix:if(!macx|disable-prebuilts):!visionos {
     CONFIG += link_pkgconfig
     PKGCONFIG += openssl sdl3 sdl3-ttf
 
@@ -230,8 +240,8 @@ win32 {
 }
 win32:!winrt {
 }
-macx {
-    !disable-prebuilts {
+macx|visionos {
+    macx:!visionos:!disable-prebuilts {
         LIBS += -lssl.3 -lcrypto.3 -lavcodec.63 -lavutil.61 -lswscale.10 -lopus.0 -lSDL3 -lSDL3_ttf -lplacebo
         CONFIG += libplacebo
     }
@@ -485,7 +495,7 @@ win32:!winrt {
         streaming/video/ffmpeg-renderers/d3d11va.h \
         streaming/video/ffmpeg-renderers/pacer/dxvsyncsource.h
 }
-macx {
+macx|visionos {
     message(VideoToolbox renderer selected)
 
     SOURCES += \
@@ -621,7 +631,7 @@ DEPENDPATH += $$PWD/../h264bitstream
     DEPENDPATH += $$PWD/../AntiHooking
 }
 
-unix:!macx: {
+unix:!macx:!visionos {
     # The packaged Linux executable lives in /usr/bin while its qualified
     # FFmpeg runtime remains private to PLANK under /usr/lib/plank. Resolve
     # those libraries relative to the executable instead of relying on a
@@ -688,10 +698,12 @@ macx:!visionos {
     }
 }
 visionos {
-    isEmpty(PLANK_VISIONOS_MIN_VERSION): PLANK_VISIONOS_MIN_VERSION = 2.0
     QMAKE_APPLE_DEVICE_ARCHS = arm64
-    QMAKE_XCODE_ATTRIBUTE_XROS_DEPLOYMENT_TARGET = $$PLANK_VISIONOS_MIN_VERSION
-    QMAKE_XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER = la.instinctual.PLANK.Client.visionOS
+    QMAKE_VISIONOS_DEPLOYMENT_TARGET = $$PLANK_VISIONOS_MIN_VERSION
+    # Qt composes PRODUCT_BUNDLE_IDENTIFIER from this prefix and the target.
+    # QMAKE_XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER is overwritten by Qt's
+    # default_post feature and therefore cannot be used here.
+    QMAKE_TARGET_BUNDLE_PREFIX = la.instinctual.PLANK.Client
     QMAKE_INFO_PLIST = $$PWD/Info-visionos.plist
 }
 

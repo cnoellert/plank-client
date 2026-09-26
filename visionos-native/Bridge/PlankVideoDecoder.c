@@ -7,6 +7,9 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#if defined(__aarch64__)
+#include <arm_neon.h>
+#endif
 
 struct PlankVideoDecoder {
     AVCodecContext *codec;
@@ -25,6 +28,35 @@ static void set_av_error(char *error, size_t capacity, const char *prefix, int r
     av_strerror(result, detail, sizeof(detail));
     if (error != NULL && capacity > 0) {
         snprintf(error, capacity, "%s: %s", prefix, detail);
+    }
+}
+
+// The negotiated identity-GBR stream decodes to full-range planar GBR10.
+// Copy its channels directly to the current 8-bit BGRA display surface;
+// swscale otherwise routes this format through an unnecessary YUV conversion.
+static void convert_gbrp10le_to_bgra(const AVFrame *frame, uint8_t *bgra, size_t stride) {
+    for (int y = 0; y < frame->height; ++y) {
+        const uint16_t *green = (const uint16_t *)(frame->data[0] + y * frame->linesize[0]);
+        const uint16_t *blue = (const uint16_t *)(frame->data[1] + y * frame->linesize[1]);
+        const uint16_t *red = (const uint16_t *)(frame->data[2] + y * frame->linesize[2]);
+        uint8_t *output = bgra + (size_t)y * stride;
+        int x = 0;
+#if defined(__aarch64__)
+        for (; x + 8 <= frame->width; x += 8) {
+            uint8x8x4_t pixels;
+            pixels.val[0] = vshrn_n_u16(vld1q_u16(blue + x), 2);
+            pixels.val[1] = vshrn_n_u16(vld1q_u16(green + x), 2);
+            pixels.val[2] = vshrn_n_u16(vld1q_u16(red + x), 2);
+            pixels.val[3] = vdup_n_u8(255);
+            vst4_u8(output + (size_t)x * 4, pixels);
+        }
+#endif
+        for (; x < frame->width; ++x) {
+            output[(size_t)x * 4 + 0] = (uint8_t)(blue[x] >> 2);
+            output[(size_t)x * 4 + 1] = (uint8_t)(green[x] >> 2);
+            output[(size_t)x * 4 + 2] = (uint8_t)(red[x] >> 2);
+            output[(size_t)x * 4 + 3] = 255;
+        }
     }
 }
 
@@ -95,6 +127,13 @@ int32_t plank_video_decoder_decode(
         set_error(error, error_capacity, "Decoded video buffer is too small");
         return PLANK_VIDEO_DECODER_ERROR;
     }
+    *width = (uint32_t)decoder->frame->width;
+    *height = (uint32_t)decoder->frame->height;
+    *stride = (uint32_t)output_stride;
+    if (decoder->frame->format == AV_PIX_FMT_GBRP10LE) {
+        convert_gbrp10le_to_bgra(decoder->frame, bgra, output_stride);
+        return PLANK_VIDEO_DECODER_FRAME;
+    }
     decoder->scale = sws_getCachedContext(
         decoder->scale,
         decoder->frame->width, decoder->frame->height,
@@ -117,9 +156,6 @@ int32_t plank_video_decoder_decode(
         set_error(error, error_capacity, "Unable to convert decoded video frame");
         return PLANK_VIDEO_DECODER_ERROR;
     }
-    *width = (uint32_t)decoder->frame->width;
-    *height = (uint32_t)decoder->frame->height;
-    *stride = (uint32_t)output_stride;
     return PLANK_VIDEO_DECODER_FRAME;
 }
 

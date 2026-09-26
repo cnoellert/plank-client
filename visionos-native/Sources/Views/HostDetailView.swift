@@ -1,83 +1,28 @@
-import CoreGraphics
 import SwiftUI
-import UIKit
 
 struct HostDetailView: View {
     let host: HostBookmark
     @ObservedObject var store: HostStore
-    @StateObject private var client = PlankCoreClient()
+    @ObservedObject var client: PlankCoreClient
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismissWindow) private var dismissWindow
     @State private var username = ""
     @State private var password = ""
-    @State private var remotePointerPressed = false
+
+    private var displaySize: Binding<SpatialDisplaySize> {
+        Binding(
+            get: { host.spatialDisplaySize },
+            set: { newValue in
+                var updated = host
+                updated.spatialDisplaySize = newValue
+                store.update(updated)
+            }
+        )
+    }
 
     var body: some View {
-        ZStack {
-            if let frame = client.latestFrame,
-               let image = makeImage(from: frame) {
-                GeometryReader { proxy in
-                    Image(decorative: image, scale: 1)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(.black)
-                        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-                        .contentShape(Rectangle())
-                        .background {
-                            HardwareKeyboardCapture { characters in
-                                handleKeyboardCharacters(characters)
-                            }
-                        }
-                        .onContinuousHover(coordinateSpace: .local) { phase in
-                            if case let .active(location) = phase {
-                                sendPointer(location, in: proxy.size, frame: frame)
-                            }
-                        }
-                        .simultaneousGesture(
-                            DragGesture(minimumDistance: 0, coordinateSpace: .local)
-                                .onChanged { value in
-                                    sendPointer(value.location, in: proxy.size, frame: frame)
-                                    if !remotePointerPressed {
-                                        remotePointerPressed = true
-                                        client.setLeftButton(pressed: true)
-                                    }
-                                }
-                                .onEnded { value in
-                                    sendPointer(value.location, in: proxy.size, frame: frame)
-                                    remotePointerPressed = false
-                                    client.setLeftButton(pressed: false)
-                                }
-                        )
-                        .overlay(alignment: .topLeading) {
-                            Label("Live · frame \(frame.frameNumber)", systemImage: "dot.radiowaves.left.and.right")
-                                .font(.headline.monospacedDigit())
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 10)
-                                .background(.ultraThinMaterial, in: Capsule())
-                                .padding(20)
-                        }
-                        .overlay(alignment: .topTrailing) {
-                            Button(role: .destructive) {
-                                client.disconnectSession()
-                            } label: {
-                                Label("Disconnect", systemImage: "xmark.circle.fill")
-                                    .font(.headline)
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .padding(20)
-                        }
-                        .overlay {
-                            if let cursor = client.remoteCursor,
-                               cursor.frameWidth == frame.width,
-                               cursor.frameHeight == frame.height {
-                                remoteCursorView(cursor, in: proxy.size, frame: frame)
-                            }
-                        }
-                }
-            } else {
-                connectionPanel
-            }
-        }
-        .padding(48)
+        connectionPanel
+        .padding(20)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .navigationTitle(host.name)
     }
@@ -99,14 +44,37 @@ struct HostDetailView: View {
 
             status
 
+            if canChooseDisplaySize {
+                displaySizeControl
+            }
+
             if case .authenticated = client.phase {
                 Button {
-                    client.startSession()
+                    openWindow(id: "plank-desktop")
+                    client.startSession(displaySize: host.spatialDisplaySize)
                 } label: {
                     Label("Start Session", systemImage: "play.rectangle.fill")
                         .frame(minWidth: 160)
                 }
                 .buttonStyle(.borderedProminent)
+            }
+
+            if isSessionActive {
+                HStack(spacing: 16) {
+                    Button {
+                        openWindow(id: "plank-desktop")
+                    } label: {
+                        Label("Open Session", systemImage: "macwindow.on.rectangle")
+                    }
+                    .buttonStyle(.borderedProminent)
+
+                    Button(role: .destructive) {
+                        client.disconnectSession()
+                        dismissWindow(id: "plank-desktop")
+                    } label: {
+                        Label("Disconnect", systemImage: "xmark.circle.fill")
+                    }
+                }
             }
 
             if case .needsCredentials = client.phase {
@@ -157,6 +125,44 @@ struct HostDetailView: View {
                 }
             }
         }
+    }
+
+    private var isSessionActive: Bool {
+        switch client.phase {
+        case .startingSession, .frameReceived, .streaming:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private var canChooseDisplaySize: Bool {
+        switch client.phase {
+        case .idle, .needsCredentials, .authenticated, .failed:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private var displaySizeControl: some View {
+        VStack(spacing: 10) {
+            Picker("Display", selection: displaySize) {
+                ForEach(SpatialDisplaySize.allCases) { size in
+                    Text(size.title)
+                        .tag(size)
+                        .disabled(!size.isAvailable)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            Text(displaySize.wrappedValue == .ultrawide ?
+                 "Ultrawide requires the upcoming 5120×1440 Host mode." :
+                 "One virtual display · \(displaySize.wrappedValue.virtualMode.replacingOccurrences(of: "x", with: " × "))")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: 520)
     }
 
     @ViewBuilder
@@ -210,194 +216,4 @@ struct HostDetailView: View {
         .buttonStyle(.borderedProminent)
     }
 
-    private func makeImage(from frame: PlankRenderedFrame) -> CGImage? {
-        guard let provider = CGDataProvider(data: frame.pixels as CFData),
-              let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else {
-            return nil
-        }
-        let bitmapInfo = CGBitmapInfo.byteOrder32Little.union(
-            CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue)
-        )
-        return CGImage(
-            width: frame.width,
-            height: frame.height,
-            bitsPerComponent: 8,
-            bitsPerPixel: 32,
-            bytesPerRow: frame.bytesPerRow,
-            space: colorSpace,
-            bitmapInfo: bitmapInfo,
-            provider: provider,
-            decode: nil,
-            shouldInterpolate: false,
-            intent: .defaultIntent
-        )
-    }
-
-    private func sendPointer(
-        _ location: CGPoint,
-        in availableSize: CGSize,
-        frame: PlankRenderedFrame
-    ) {
-        let scale = min(
-            availableSize.width / CGFloat(frame.width),
-            availableSize.height / CGFloat(frame.height)
-        )
-        guard scale > 0 else { return }
-        let imageSize = CGSize(
-            width: CGFloat(frame.width) * scale,
-            height: CGFloat(frame.height) * scale
-        )
-        let origin = CGPoint(
-            x: (availableSize.width - imageSize.width) / 2,
-            y: (availableSize.height - imageSize.height) / 2
-        )
-        let x = Int(((location.x - origin.x) / scale).rounded())
-        let y = Int(((location.y - origin.y) / scale).rounded())
-        guard x >= 0, y >= 0, x < frame.width, y < frame.height else { return }
-        client.movePointer(x: x, y: y, width: frame.width, height: frame.height)
-    }
-
-    private func handleKeyboardCharacters(_ characters: String) {
-        for character in characters {
-            switch character {
-            case "\r", "\n":
-            client.pressKey(code: 0x0D)
-            case "\t":
-            client.pressKey(code: 0x09)
-            case "\u{8}", "\u{7f}":
-            client.pressKey(code: 0x08)
-            case "\u{1b}":
-            client.pressKey(code: 0x1B)
-            default:
-                if let key = physicalKey(for: character) {
-                    client.pressKey(code: key.code, modifiers: key.shifted ? 0x01 : 0)
-                } else {
-                    client.sendText(String(character))
-                }
-            }
-        }
-    }
-
-    private func physicalKey(for character: Character) -> (code: UInt16, shifted: Bool)? {
-        if let ascii = character.asciiValue {
-            if ascii >= Character("a").asciiValue!, ascii <= Character("z").asciiValue! {
-                return (UInt16(ascii - Character("a").asciiValue! + 0x41), false)
-            }
-            if ascii >= Character("A").asciiValue!, ascii <= Character("Z").asciiValue! {
-                return (UInt16(ascii - Character("A").asciiValue! + 0x41), true)
-            }
-            if ascii >= Character("0").asciiValue!, ascii <= Character("9").asciiValue! {
-                return (UInt16(ascii), false)
-            }
-        }
-        switch character {
-        case " ": return (0x20, false)
-        case "!": return (0x31, true)
-        case "@": return (0x32, true)
-        case "#": return (0x33, true)
-        case "$": return (0x34, true)
-        case "%": return (0x35, true)
-        case "^": return (0x36, true)
-        case "&": return (0x37, true)
-        case "*": return (0x38, true)
-        case "(": return (0x39, true)
-        case ")": return (0x30, true)
-        case ";": return (0xBA, false)
-        case ":": return (0xBA, true)
-        case "=": return (0xBB, false)
-        case "+": return (0xBB, true)
-        case ",": return (0xBC, false)
-        case "<": return (0xBC, true)
-        case "-": return (0xBD, false)
-        case "_": return (0xBD, true)
-        case ".": return (0xBE, false)
-        case ">": return (0xBE, true)
-        case "/": return (0xBF, false)
-        case "?": return (0xBF, true)
-        case "`": return (0xC0, false)
-        case "~": return (0xC0, true)
-        case "[": return (0xDB, false)
-        case "{": return (0xDB, true)
-        case "\\": return (0xDC, false)
-        case "|": return (0xDC, true)
-        case "]": return (0xDD, false)
-        case "}": return (0xDD, true)
-        case "'": return (0xDE, false)
-        case "\"": return (0xDE, true)
-        default: return nil
-        }
-    }
-
-    @ViewBuilder
-    private func remoteCursorView(
-        _ cursor: PlankRemoteCursor,
-        in availableSize: CGSize,
-        frame: PlankRenderedFrame
-    ) -> some View {
-        let scale = min(
-            availableSize.width / CGFloat(frame.width),
-            availableSize.height / CGFloat(frame.height)
-        )
-        let imageWidth = CGFloat(frame.width) * scale
-        let imageHeight = CGFloat(frame.height) * scale
-        let x = (availableSize.width - imageWidth) / 2 + CGFloat(cursor.x) * scale
-        let y = (availableSize.height - imageHeight) / 2 + CGFloat(cursor.y) * scale
-        ZStack {
-            Circle()
-                .stroke(.cyan, lineWidth: 2)
-                .frame(width: 18, height: 18)
-            Circle()
-                .fill(.white)
-                .frame(width: 4, height: 4)
-        }
-        .shadow(color: .black, radius: 2)
-        .position(x: x, y: y)
-        .allowsHitTesting(false)
-    }
-}
-
-private struct HardwareKeyboardCapture: UIViewRepresentable {
-    let onCharacters: @MainActor (String) -> Void
-
-    func makeUIView(context: Context) -> KeyboardCaptureView {
-        let view = KeyboardCaptureView()
-        view.onCharacters = onCharacters
-        return view
-    }
-
-    func updateUIView(_ view: KeyboardCaptureView, context: Context) {
-        view.onCharacters = onCharacters
-        view.requestKeyboardFocus()
-    }
-}
-
-@MainActor
-private final class KeyboardCaptureView: UIView {
-    var onCharacters: (@MainActor (String) -> Void)?
-
-    override var canBecomeFirstResponder: Bool { true }
-
-    override func didMoveToWindow() {
-        super.didMoveToWindow()
-        requestKeyboardFocus()
-    }
-
-    func requestKeyboardFocus() {
-        guard window != nil, !isFirstResponder else { return }
-        DispatchQueue.main.async { [weak self] in
-            _ = self?.becomeFirstResponder()
-        }
-    }
-
-    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
-        var handled = false
-        for press in presses {
-            guard let characters = press.key?.characters, !characters.isEmpty else { continue }
-            onCharacters?(characters)
-            handled = true
-        }
-        if !handled {
-            super.pressesBegan(presses, with: event)
-        }
-    }
 }

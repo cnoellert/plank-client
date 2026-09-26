@@ -10,7 +10,12 @@
 #include "streaming/streamutils.h"
 #include "path.h"
 
+#import <TargetConditionals.h>
+#if TARGET_OS_VISION
+#import <UIKit/UIKit.h>
+#else
 #import <Cocoa/Cocoa.h>
+#endif
 #import <VideoToolbox/VideoToolbox.h>
 #import <AVFoundation/AVFoundation.h>
 #import <dispatch/dispatch.h>
@@ -36,6 +41,16 @@ struct Vertex
 
 #define MAX_VIDEO_PLANES 3
 
+#if TARGET_OS_VISION
+static constexpr MTLResourceOptions kPlankCpuVisibleResourceOptions =
+        MTLCPUCacheModeWriteCombined | MTLResourceStorageModeShared;
+static constexpr MTLStorageMode kPlankCpuVisibleStorageMode = MTLStorageModeShared;
+#else
+static constexpr MTLResourceOptions kPlankCpuVisibleResourceOptions =
+        MTLCPUCacheModeWriteCombined | MTLResourceStorageModeManaged;
+static constexpr MTLStorageMode kPlankCpuVisibleStorageMode = MTLStorageModeManaged;
+#endif
+
 // A drawable may report presentation after the renderer has been destroyed.
 // Callbacks retain only this state, never the renderer or its SDL windows.
 struct MetalPresentationPacer
@@ -58,6 +73,7 @@ struct MetalPresentationTarget
     id<CAMetalDrawable> drawable = nil;
     id<MTLBuffer> vertices = nil;
     bool visible = false;
+    bool synchronizePresentation = false;
     QSize frameSize;
     QSize drawableSize;
 
@@ -182,7 +198,7 @@ public:
         };
         [target.vertices release];
         target.vertices = [m_MetalLayer.device newBufferWithBytes:verts length:sizeof(verts)
-            options:MTLCPUCacheModeWriteCombined | MTLResourceStorageModeManaged];
+            options:kPlankCpuVisibleResourceOptions];
         return target.vertices != nil;
     }
 
@@ -234,7 +250,7 @@ public:
 
             // Create the new colorspace parameter buffer for our fragment shader
             [m_CscParamsBuffer release];
-            auto bufferOptions = MTLCPUCacheModeWriteCombined | MTLResourceStorageModeManaged;
+            auto bufferOptions = kPlankCpuVisibleResourceOptions;
             m_CscParamsBuffer = [m_MetalLayer.device newBufferWithBytes:(void*)&paramBuffer length:sizeof(paramBuffer) options:bufferOptions];
             if (!m_CscParamsBuffer) {
                 SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
@@ -328,7 +344,7 @@ public:
                                                                              height:planeHeight
                                                                           mipmapped:NO];
             texDesc.cpuCacheMode = MTLCPUCacheModeWriteCombined;
-            texDesc.storageMode = MTLStorageModeManaged;
+            texDesc.storageMode = kPlankCpuVisibleStorageMode;
             texDesc.usage = MTLTextureUsageShaderRead;
 
             m_SwMappingTextures[planeIndex] = [m_MetalLayer.device newTextureWithDescriptor:texDesc];
@@ -503,7 +519,7 @@ public:
 
             // Only one output paces a frame; the secondary output must not double
             // the in-flight count. A late callback cannot touch a deleted renderer.
-            if (target->output.primary && target->layer.displaySyncEnabled) {
+            if (target->output.primary && target->synchronizePresentation) {
                 auto pacer = m_Pacer;
                 SDL_LockMutex(pacer->mutex);
                 pacer->pending++;
@@ -537,6 +553,16 @@ public:
             return nullptr;
         }
 
+        // visionOS exposes one system Metal device. MTLCopyAllDevices() is a
+        // macOS API and is unavailable to spatial applications.
+#if TARGET_OS_VISION
+        id<MTLDevice> systemDevice = [MTLCreateSystemDefaultDevice() autorelease];
+        if (systemDevice == nil) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                         "No Metal device found!");
+        }
+        return systemDevice;
+#else
         NSArray<id<MTLDevice>> *devices = [MTLCopyAllDevices() autorelease];
         if (devices.count == 0) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
@@ -563,6 +589,7 @@ public:
             SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION,
                         "Avoiding Metal renderer due to use of dGPU/eGPU. Use VT_FORCE_METAL=1 to override.");
         }
+#endif
 
         return nullptr;
     }
@@ -622,7 +649,10 @@ public:
             target->layer.device = device;
             target->layer.wantsExtendedDynamicRangeContent = !!(params->videoFormat & VIDEO_FORMAT_MASK_10BIT);
             target->layer.maximumDrawableCount = 3;
+            target->synchronizePresentation = params->enableVsync;
+#if !TARGET_OS_VISION
             target->layer.displaySyncEnabled = params->enableVsync;
+#endif
             if (output.primary) m_MetalLayer = target->layer;
             m_Targets.push_back(std::move(target));
         }
@@ -695,7 +725,7 @@ public:
                                                                          height:newSurface->h
                                                                       mipmapped:NO];
         texDesc.cpuCacheMode = MTLCPUCacheModeWriteCombined;
-        texDesc.storageMode = MTLStorageModeManaged;
+        texDesc.storageMode = kPlankCpuVisibleStorageMode;
         texDesc.usage = MTLTextureUsageShaderRead;
         auto newTexture = [m_MetalLayer.device newTextureWithDescriptor:texDesc];
         if (newTexture == nil) {

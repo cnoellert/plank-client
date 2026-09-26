@@ -1,7 +1,8 @@
 import SwiftUI
 
 struct HostBrowserView: View {
-    @StateObject private var store = HostStore()
+    @ObservedObject var store: HostStore
+    @ObservedObject var client: PlankCoreClient
     @StateObject private var discovery = HostDiscovery()
     @State private var selection: HostBookmark.ID?
     @State private var showingAddHost = false
@@ -62,7 +63,7 @@ struct HostBrowserView: View {
             }
         } detail: {
             if let selectedHost {
-                HostDetailView(host: selectedHost, store: store)
+                HostDetailView(host: selectedHost, store: store, client: client)
             } else {
                 ContentUnavailableView(
                     "Choose a Workstation",
@@ -76,7 +77,7 @@ struct HostBrowserView: View {
         }
         .sheet(isPresented: $showingSettings) {
             NavigationStack {
-                SettingsView()
+                SettingsView(client: client)
                     .toolbar {
                         ToolbarItem(placement: .confirmationAction) {
                             Button("Done") { showingSettings = false }
