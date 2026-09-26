@@ -241,7 +241,19 @@ void SdlInputHandler::setWindow(SDL_Window *window)
             }
         }
         else {
-            m_LinuxRawWacomInput.reset(new LinuxRawWacomInput(requestTabletCursor));
+            m_LinuxRawWacomInput.reset(new LinuxRawWacomInput(
+                [](const unsigned char* frame, std::size_t size) {
+                    return LiSendRawHidEvent(frame, static_cast<unsigned int>(size)) == 0;
+                },
+                requestTabletCursor,
+                [](LinuxRawWacomInput::LogLevel level, const std::string& message) {
+                    if (level == LinuxRawWacomInput::LogLevel::Warning) {
+                        SDL_LogWarn(SDL_LOG_CATEGORY_INPUT, "%s", message.c_str());
+                    }
+                    else {
+                        SDL_LogInfo(SDL_LOG_CATEGORY_INPUT, "%s", message.c_str());
+                    }
+                }));
             m_LinuxRawWacomInput->setActive(
                 (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS) != 0);
         }

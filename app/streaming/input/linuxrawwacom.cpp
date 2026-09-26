@@ -1,9 +1,6 @@
 #include "linuxrawwacom.h"
 
-#include <Limelight.h>
 #include <plank.h>
-#include <SDL3/SDL.h>
-#include <QtEndian>
 #include <libudev.h>
 
 #include <algorithm>
@@ -12,12 +9,14 @@
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
+#include <endian.h>
 #include <fcntl.h>
 #include <linux/hidraw.h>
 #include <linux/input.h>
 #include <linux/uhid.h>
 #include <poll.h>
 #include <set>
+#include <type_traits>
 #include <utility>
 #include <sys/ioctl.h>
 #include <unistd.h>
@@ -139,17 +138,40 @@ unsigned long setReportIoctl(std::uint8_t type, std::size_t size)
 }
 
 template<typename T>
+T littleEndian(T value)
+{
+    static_assert(std::is_integral<T>::value, "integer wire fields only");
+    if constexpr (sizeof(T) == 2) {
+        std::uint16_t bits;
+        std::memcpy(&bits, &value, sizeof(bits));
+        bits = htole16(bits);
+        std::memcpy(&value, &bits, sizeof(bits));
+    }
+    else if constexpr (sizeof(T) == 4) {
+        std::uint32_t bits;
+        std::memcpy(&bits, &value, sizeof(bits));
+        bits = htole32(bits);
+        std::memcpy(&value, &bits, sizeof(bits));
+    }
+    else {
+        static_assert(sizeof(T) == 2 || sizeof(T) == 4,
+                      "unsupported wire integer size");
+    }
+    return value;
+}
+
+template<typename T>
 T readLittle(const T& source)
 {
     T wire;
     std::memcpy(&wire, &source, sizeof(wire));
-    return qFromLittleEndian(wire);
+    return littleEndian(wire);
 }
 
 template<typename T>
 void writeLittle(T& destination, T value)
 {
-    value = qToLittleEndian(value);
+    value = littleEndian(value);
     std::memcpy(&destination, &value, sizeof(value));
 }
 
@@ -160,7 +182,8 @@ PlankWacomTransportDecision plankWacomTransportForConnectedDevice()
     return connectedWacomTransportDecision();
 }
 
-LinuxRawWacomInput::LinuxRawWacomInput(std::function<void()> tabletActivity)
+LinuxRawWacomInput::LinuxRawWacomInput(
+        SendFrame sendFrame, std::function<void()> tabletActivity, Log log)
     : m_Active(false),
       m_Stopping(false),
       m_Reconnecting(false),
@@ -169,7 +192,9 @@ LinuxRawWacomInput::LinuxRawWacomInput(std::function<void()> tabletActivity)
       m_InputSequence(0),
       m_AttachPending(false),
       m_Attached(false),
-      m_TabletActivity(std::move(tabletActivity))
+      m_SendFrame(std::move(sendFrame)),
+      m_TabletActivity(std::move(tabletActivity)),
+      m_Log(std::move(log))
 {
     m_Thread = std::thread(&LinuxRawWacomInput::run, this);
 }
@@ -180,6 +205,13 @@ LinuxRawWacomInput::~LinuxRawWacomInput()
     m_Stopping.store(true);
     if (m_Thread.joinable()) {
         m_Thread.join();
+    }
+}
+
+void LinuxRawWacomInput::log(LogLevel level, const std::string& message) const
+{
+    if (m_Log) {
+        m_Log(level, message);
     }
 }
 
@@ -223,8 +255,7 @@ void LinuxRawWacomInput::finishReconnect()
 
 void LinuxRawWacomInput::run()
 {
-    SDL_LogInfo(SDL_LOG_CATEGORY_INPUT,
-                "PLANK exact raw Wacom capture initialized");
+    log(LogLevel::Info, "PLANK exact raw Wacom capture initialized");
     while (!m_Stopping.load()) {
         if (!m_Active.load() || m_Reconnecting.load()) {
             {
@@ -242,8 +273,8 @@ void LinuxRawWacomInput::run()
             std::lock_guard<std::recursive_mutex> lock(m_Mutex);
             if (m_AttachPending &&
                     std::chrono::steady_clock::now() >= m_AttachDeadline) {
-                SDL_LogWarn(SDL_LOG_CATEGORY_INPUT,
-                            "Timed out waiting for exact Wacom host attachment; retrying");
+                log(LogLevel::Warning,
+                    "Timed out waiting for exact Wacom host attachment; retrying");
                 release(false);
                 delayRetry = true;
             }
@@ -252,8 +283,8 @@ void LinuxRawWacomInput::run()
                     delayRetry = true;
                 }
                 else if (!discover() || !sendAttach()) {
-                    SDL_LogWarn(SDL_LOG_CATEGORY_INPUT,
-                                "Unable to attach exact Wacom device; will retry after checking hidraw and input permissions");
+                    log(LogLevel::Warning,
+                        "Unable to attach exact Wacom device; will retry after checking hidraw and input permissions");
                     release(false);
                     m_AttachFailed.store(true);
                 }
@@ -394,16 +425,16 @@ bool LinuxRawWacomInput::discover()
 bool LinuxRawWacomInput::sendAttach()
 {
     PLANK_RAW_HID_DEVICE_MESSAGE device = {};
-    device.interfaceCount = qToLittleEndian(
+    device.interfaceCount = littleEndian(
         static_cast<std::uint16_t>(m_Interfaces.size()));
 
     hidraw_devinfo info = {};
     if (ioctl(m_Interfaces.front().fd, HIDIOCGRAWINFO, &info) < 0) {
         return false;
     }
-    device.bus = qToLittleEndian(static_cast<std::uint16_t>(info.bustype));
-    device.vendor = qToLittleEndian(static_cast<std::uint32_t>(info.vendor));
-    device.product = qToLittleEndian(static_cast<std::uint32_t>(info.product));
+    device.bus = littleEndian(static_cast<std::uint16_t>(info.bustype));
+    device.vendor = littleEndian(static_cast<std::uint32_t>(info.vendor));
+    device.product = littleEndian(static_cast<std::uint32_t>(info.product));
 
     std::array<char, 128> name = {};
     std::array<char, 64> physical = {};
@@ -418,7 +449,7 @@ bool LinuxRawWacomInput::sendAttach()
     input_id inputIdentity = {};
     if (!m_EventFds.empty() &&
             ioctl(m_EventFds.front(), EVIOCGID, &inputIdentity) == 0) {
-        device.version = qToLittleEndian(
+        device.version = littleEndian(
             static_cast<std::uint32_t>(inputIdentity.version));
     }
 
@@ -440,10 +471,9 @@ bool LinuxRawWacomInput::sendAttach()
     m_AttachPending = true;
     m_AttachDeadline = std::chrono::steady_clock::now() +
             std::chrono::seconds(3);
-    SDL_LogInfo(SDL_LOG_CATEGORY_INPUT,
-                "Sent exact Wacom attach: %u interfaces, generation %u",
-                static_cast<unsigned int>(m_Interfaces.size()),
-                static_cast<unsigned int>(m_Generation));
+    log(LogLevel::Info,
+        "Sent exact Wacom attach: " + std::to_string(m_Interfaces.size()) +
+        " interfaces, generation " + std::to_string(m_Generation));
     return true;
 }
 
@@ -470,7 +500,7 @@ bool LinuxRawWacomInput::sendFrame(std::uint16_t type,
     if (payloadLength != 0) {
         std::memcpy(frame.data() + sizeof(header), payload, payloadLength);
     }
-    return LiSendRawHidEvent(frame.data(), static_cast<unsigned int>(frame.size())) == 0;
+    return m_SendFrame && m_SendFrame(frame.data(), frame.size());
 }
 
 void LinuxRawWacomInput::handlePhysicalReports()
@@ -542,18 +572,16 @@ void LinuxRawWacomInput::handleControl(const unsigned char* data,
     if (type == PLANK_RAW_HID_ATTACH_RESULT && payloadLength == sizeof(std::int32_t)) {
         std::int32_t result;
         std::memcpy(&result, payload, sizeof(result));
-        result = qFromLittleEndian(result);
+        result = littleEndian(result);
         m_AttachPending = false;
         if (result == 0) {
             setGrabbed(true);
             m_Attached = true;
-            SDL_LogInfo(SDL_LOG_CATEGORY_INPUT,
-                        "Exact Wacom device attached to host");
+            log(LogLevel::Info, "Exact Wacom device attached to host");
         }
         else {
-            SDL_LogWarn(SDL_LOG_CATEGORY_INPUT,
-                        "Host rejected exact Wacom attach: %s",
-                        std::strerror(result));
+            log(LogLevel::Warning,
+                std::string("Host rejected exact Wacom attach: ") + std::strerror(result));
             release(false);
             m_AttachFailed.store(true);
         }
@@ -581,7 +609,7 @@ void LinuxRawWacomInput::handleGetReport(std::uint16_t interfaceId,
     const int result = request != 0 ?
         ioctl(m_Interfaces[interfaceId].fd, request, report.data()) : -1;
     const std::int32_t error = result < 0 ? (request == 0 ? EINVAL : errno) : 0;
-    const std::int32_t littleError = qToLittleEndian(error);
+    const std::int32_t littleError = littleEndian(error);
     std::vector<unsigned char> reply(sizeof(littleError) + std::max(result, 0));
     std::memcpy(reply.data(), &littleError, sizeof(littleError));
     if (result > 0) {
@@ -608,7 +636,7 @@ void LinuxRawWacomInput::handleSetReport(std::uint16_t type,
     if (type == PLANK_RAW_HID_SET_REPORT) {
         const std::int32_t error = result < 0 ?
             (request == 0 ? EINVAL : errno) : 0;
-        const std::int32_t littleError = qToLittleEndian(error);
+        const std::int32_t littleError = littleEndian(error);
         sendFrame(PLANK_RAW_HID_SET_REPORT_REPLY, interfaceId, transactionId,
                   reinterpret_cast<const unsigned char*>(&littleError),
                   sizeof(littleError));
@@ -620,9 +648,9 @@ void LinuxRawWacomInput::setGrabbed(bool grabbed)
     const int value = grabbed ? 1 : 0;
     for (int fd : m_EventFds) {
         if (ioctl(fd, EVIOCGRAB, value) < 0 && errno != ENODEV) {
-            SDL_LogWarn(SDL_LOG_CATEGORY_INPUT,
-                        "Unable to %s Wacom event node: %s",
-                        grabbed ? "grab" : "release", std::strerror(errno));
+            log(LogLevel::Warning,
+                std::string("Unable to ") + (grabbed ? "grab" : "release") +
+                " Wacom event node: " + std::strerror(errno));
         }
     }
 }
@@ -631,12 +659,12 @@ void LinuxRawWacomInput::suspendForFocusLoss()
 {
     if (m_AttachPending || m_Attached) {
         if (sendFrame(PLANK_RAW_HID_SUSPEND, 0, 0, nullptr, 0)) {
-            SDL_LogInfo(SDL_LOG_CATEGORY_INPUT,
-                        "Suspended exact Wacom forwarding while preserving host endpoints");
+            log(LogLevel::Info,
+                "Suspended exact Wacom forwarding while preserving host endpoints");
         }
         else {
-            SDL_LogWarn(SDL_LOG_CATEGORY_INPUT,
-                        "Unable to suspend exact Wacom forwarding cleanly");
+            log(LogLevel::Warning,
+                "Unable to suspend exact Wacom forwarding cleanly");
         }
     }
     release(false);

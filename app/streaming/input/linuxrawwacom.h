@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <mutex>
@@ -50,7 +51,12 @@ PlankWacomTransportDecision plankWacomTransportForConnectedDevice();
 class LinuxRawWacomInput
 {
 public:
-    explicit LinuxRawWacomInput(std::function<void()> tabletActivity);
+    enum class LogLevel { Info, Warning };
+    using SendFrame = std::function<bool(const unsigned char*, std::size_t)>;
+    using Log = std::function<void(LogLevel, const std::string&)>;
+
+    LinuxRawWacomInput(SendFrame sendFrame, std::function<void()> tabletActivity,
+                       Log log);
     ~LinuxRawWacomInput();
 
     LinuxRawWacomInput(const LinuxRawWacomInput&) = delete;
@@ -82,6 +88,7 @@ private:
     void setGrabbed(bool grabbed);
     void suspendForFocusLoss();
     void release(bool notifyHost);
+    void log(LogLevel level, const std::string& message) const;
 
     std::atomic<bool> m_Active;
     std::atomic<bool> m_Stopping;
@@ -95,6 +102,8 @@ private:
     std::uint32_t m_InputSequence;
     bool m_AttachPending;
     bool m_Attached;
+    SendFrame m_SendFrame;
     std::function<void()> m_TabletActivity;
+    Log m_Log;
     std::chrono::steady_clock::time_point m_AttachDeadline;
 };
