@@ -50,5 +50,11 @@ int main(void) {
     write_le16(frame + 6, 0xffff);
     assert(!plank_vision_raw_hid_frame_valid(frame, sizeof(frame),
                                              PLANK_VISION_RAW_HID_FROM_HOST));
+    assert(!plank_vision_raw_hid_make_suspend(0, frame, sizeof(frame)));
+    assert(!plank_vision_raw_hid_make_suspend(7, frame, 19));
+    assert(plank_vision_raw_hid_make_suspend(7, frame, sizeof(frame)));
+    assert(plank_vision_raw_hid_frame_valid(frame, 20,
+                                            PLANK_VISION_RAW_HID_TO_HOST));
+    assert(frame[6] == 13 && frame[10] == 7 && frame[16] == 0);
     return 0;
 }

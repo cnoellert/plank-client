@@ -23,6 +23,7 @@ final class PlankRelayLiveLink: @unchecked Sendable {
     private let reportState: @Sendable (String) -> Void
     private let onReady: @Sendable () -> Void
     private let onUnexpectedClose: @Sendable () -> Void
+    private let acceptGeneration: @Sendable (UInt16) -> Bool
     private var codec: OpaquePointer?
     private var heartbeat: DispatchSourceTimer?
     private var connectionReady = false
@@ -33,13 +34,15 @@ final class PlankRelayLiveLink: @unchecked Sendable {
     private var pendingHostFrames: [Data] = []
     private var pendingHostBytes = 0
     private var invalidTabletFrames = 0
+    private var attachedGeneration: UInt16?
 
     init(address: String, port: UInt16, hostFeatures: UInt32,
          clientPrivateKey: Data, relayPublicKey: Data,
          deliverTabletFrame: @escaping @Sendable (Data) -> Void,
          reportState: @escaping @Sendable (String) -> Void,
          onReady: @escaping @Sendable () -> Void,
-         onUnexpectedClose: @escaping @Sendable () -> Void) throws {
+         onUnexpectedClose: @escaping @Sendable () -> Void,
+         acceptGeneration: @escaping @Sendable (UInt16) -> Bool) throws {
         guard clientPrivateKey.count == 32, relayPublicKey.count == 32,
               !address.isEmpty, port != 0 else { throw PlankRelayLiveError.invalidConfiguration }
         let created = clientPrivateKey.withUnsafeBytes { clientBytes in
@@ -60,6 +63,7 @@ final class PlankRelayLiveLink: @unchecked Sendable {
         self.reportState = reportState
         self.onReady = onReady
         self.onUnexpectedClose = onUnexpectedClose
+        self.acceptGeneration = acceptGeneration
     }
 
     func start() {
@@ -106,6 +110,13 @@ final class PlankRelayLiveLink: @unchecked Sendable {
                 )
             }
             guard valid == 1 else { closeOnQueue(); return }
+            if frame.count >= 24, frame[6] == 10 {
+                let generation = UInt16(frame[10]) | (UInt16(frame[11]) << 8)
+                let result = frame[20..<24].contains { $0 != 0 }
+                if result && attachedGeneration == generation {
+                    attachedGeneration = nil
+                }
+            }
             if sessionReady {
                 send(Message.hostFrame, frame)
             } else {
@@ -217,7 +228,21 @@ final class PlankRelayLiveLink: @unchecked Sendable {
                         frame.count, PLANK_VISION_RAW_HID_TO_HOST
                     )
                 }
-                if valid == 1 { deliverTabletFrame(frame) }
+                if valid == 1 {
+                    let type = UInt16(frame[6]) | (UInt16(frame[7]) << 8)
+                    let generation = UInt16(frame[10]) | (UInt16(frame[11]) << 8)
+                    if type == 1 {
+                        guard generation != 0, acceptGeneration(generation) else {
+                            closeOnQueue()
+                            return
+                        }
+                        attachedGeneration = generation
+                    } else if (type == 9 || type == 13),
+                              attachedGeneration == generation {
+                        attachedGeneration = nil
+                    }
+                    deliverTabletFrame(frame)
+                }
                 else {
                     invalidTabletFrames += 1
                     if invalidTabletFrames >= 3 { closeOnQueue(); return }
@@ -271,6 +296,15 @@ final class PlankRelayLiveLink: @unchecked Sendable {
 
     private func closeOnQueue(sendEnd: Bool = false) {
         guard !closed else { return }
+        if !sendEnd, let attachedGeneration {
+            var suspend = [UInt8](repeating: 0, count: 20)
+            if plank_vision_raw_hid_make_suspend(
+                attachedGeneration, &suspend, suspend.count
+            ) == 1 {
+                deliverTabletFrame(Data(suspend))
+            }
+        }
+        attachedGeneration = nil
         var finalRecord: Data?
         if sendEnd && sessionReady {
             if let suspend = encode(Message.sessionActive, Data([0])) {
@@ -314,6 +348,7 @@ final class PlankRelaySessionBridge: @unchecked Sendable {
     private let reportState: @Sendable (String) -> Void
     private var link: PlankRelayLiveLink?
     private var linkID: UUID?
+    private var lastGeneration: UInt16?
     private var retryCount = 0
     private var ended = false
     private var active = false
@@ -355,6 +390,8 @@ final class PlankRelaySessionBridge: @unchecked Sendable {
             onReady: { [weak self] in self?.relayReady(identifier) },
             onUnexpectedClose: { [weak self] in
                 self?.relayClosed(identifier, hostFeatures: hostFeatures)
+            }, acceptGeneration: { [weak self] generation in
+                self?.acceptGeneration(generation) ?? false
             }
         )
         guard let candidate else {
@@ -406,6 +443,14 @@ final class PlankRelaySessionBridge: @unchecked Sendable {
         lock.lock()
         if !ended && linkID == identifier { retryCount = 0 }
         lock.unlock()
+    }
+
+    private func acceptGeneration(_ generation: UInt16) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !ended, lastGeneration != generation else { return false }
+        lastGeneration = generation
+        return true
     }
 
     private func relayClosed(_ identifier: UUID, hostFeatures: UInt32) {

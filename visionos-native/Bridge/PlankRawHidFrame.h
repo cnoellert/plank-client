@@ -15,4 +15,9 @@ int plank_vision_raw_hid_frame_valid(
     const uint8_t *frame, size_t frame_size,
     PlankVisionRawHidDirection direction);
 
+// Release a Host tablet contact when the Relay link disappears mid-stroke.
+// The caller forwards the resulting 20-byte PLWH frame on the Host input lane.
+int plank_vision_raw_hid_make_suspend(
+    uint16_t generation, uint8_t *out, size_t capacity);
+
 #endif

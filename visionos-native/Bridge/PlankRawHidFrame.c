@@ -11,6 +11,32 @@ static uint32_t read_le32(const uint8_t *value) {
            ((uint32_t)value[2] << 16) | ((uint32_t)value[3] << 24);
 }
 
+static void write_le16(uint8_t *out, uint16_t value) {
+    out[0] = (uint8_t)value;
+    out[1] = (uint8_t)(value >> 8);
+}
+
+static void write_le32(uint8_t *out, uint32_t value) {
+    out[0] = (uint8_t)value;
+    out[1] = (uint8_t)(value >> 8);
+    out[2] = (uint8_t)(value >> 16);
+    out[3] = (uint8_t)(value >> 24);
+}
+
+int plank_vision_raw_hid_make_suspend(
+    uint16_t generation, uint8_t *out, size_t capacity) {
+    if (generation == 0 || out == NULL ||
+            capacity < sizeof(PLANK_RAW_HID_WIRE_HEADER)) return 0;
+    write_le32(out, PLANK_RAW_HID_WIRE_MAGIC);
+    write_le16(out + 4, PLANK_RAW_HID_WIRE_VERSION);
+    write_le16(out + 6, PLANK_RAW_HID_SUSPEND);
+    write_le16(out + 8, 0);
+    write_le16(out + 10, generation);
+    write_le32(out + 12, 0);
+    write_le32(out + 16, 0);
+    return 1;
+}
+
 int plank_vision_raw_hid_frame_valid(
     const uint8_t *frame, size_t frame_size,
     PlankVisionRawHidDirection direction) {
