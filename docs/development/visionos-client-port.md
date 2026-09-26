@@ -96,10 +96,12 @@ The NUC runs the Relay as an unprivileged systemd service. After a full NUC
 reboot and reinstalling the signed Client with link-loss contact release, a
 fresh physical Vision Pro session again confirmed tip clicks and varying
 pressure. After removing the headset for one minute, pen movement and pressure
-returned immediately on wake. A mid-stroke connection loss has not yet been
-physically tested. In a live USB hotplug check, the Relay reattached the
-tablet without restarting PLANK. Pen movement returned after a couple of
-seconds; clicks and varying pressure followed a few seconds later.
+returned immediately on wake. In a live USB hotplug check, the Relay
+reattached the tablet without restarting PLANK. Pen movement returned after a
+couple of seconds; clicks and varying pressure followed a few seconds later.
+Restarting the Relay service while the pen tip was held down in GNOME's tablet
+test area ended the stroke cleanly; new pen input worked after reconnection.
+The Host showed one Wacom device set after recovery.
 
 ## Qualification backlog
 
