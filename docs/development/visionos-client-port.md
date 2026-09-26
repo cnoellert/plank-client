@@ -102,6 +102,10 @@ couple of seconds; clicks and varying pressure followed a few seconds later.
 Restarting the Relay service while the pen tip was held down in GNOME's tablet
 test area ended the stroke cleanly; new pen input worked after reconnection.
 The Host showed one Wacom device set after recovery.
+The Relay now persists attachment generations; two consecutive service restarts
+in one live session produced generations 2 and 3, with tip clicks and varying
+pressure after each. The desktop Client's raw-Wacom worker accepts an optional
+generation provider, while its existing default behavior is unchanged.
 
 ## Qualification backlog
 
