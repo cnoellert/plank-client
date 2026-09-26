@@ -123,8 +123,15 @@ seconds; clicks and varying pressure followed a few seconds later.
   direction, rate and horizontal scrolling.
 - Add host audio output and verify sleep, wake and reconnect behavior.
 - Qualify the Wacom Relay across longer Vision Pro sleeps and sessions,
-  including repeated tablet hotplug cycles. Add service discovery and
-  Bluetooth LE after the local TCP path remains stable.
+  including repeated tablet hotplug cycles.
+- Evaluate pairing the Wacom tablet to the headless Relay NUC over Bluetooth
+  instead of USB. Confirm that Linux exposes the raw reports, pad keys, and
+  pressure needed by the existing Host path before treating it as supported.
+- Implement and qualify a Bluetooth LE link between the Relay NUC and Vision
+  Pro, using the same authenticated session semantics as the local TCP link.
+- Discover a headless Relay without knowing its IP address in advance, then
+  pair it through the tablet's ExpressKeys. Keep manual address entry as a
+  fallback when local discovery is unavailable.
 
 ## Build
 
