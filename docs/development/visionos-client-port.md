@@ -129,6 +129,9 @@ endurance session remains pending.
 
 ## Qualification backlog
 
+- Rebase the native Vision Pro Client branch onto the current upstream Client
+  after the pen-latency comparison. Review shared transport and submodule
+  changes, then rebuild and rerun the Host, streaming and Wacom preflights.
 - Measure end-to-end pointer and video latency under sustained use, including
   thermal behavior and frame pacing over longer sessions.
 - Evaluate VideoToolbox and a native pixel-buffer or Metal path if further
