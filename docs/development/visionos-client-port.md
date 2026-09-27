@@ -134,6 +134,11 @@ endurance session remains pending.
   changes, then rebuild and rerun the Host, streaming and Wacom preflights.
 - Measure end-to-end pointer and video latency under sustained use, including
   thermal behavior and frame pacing over longer sessions.
+- Isolate tablet latency by measuring capture-to-Client, Client-to-Host, and
+  Host-to-visible-frame time. A short A/B comparison with the preflight Client
+  and its immediate predecessor felt about the same, so the preflight change
+  has no observed latency regression. Investigate the high volume of HEVC
+  reference-frame errors seen with the developer console attached.
 - Evaluate VideoToolbox and a native pixel-buffer or Metal path if further
   performance work is warranted; the current UIKit layer and direct color
   conversion passed the live smooth-playback check.
