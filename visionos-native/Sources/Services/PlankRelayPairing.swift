@@ -149,7 +149,7 @@ private final class PlankRelayTCP: @unchecked Sendable {
 
 @MainActor
 final class PlankRelayPairing: ObservableObject {
-    @Published var address = "192.168.86.2"
+    @Published var address = ""
     @Published var port = "28990"
     @Published private(set) var code: [UInt8]?
     @Published private(set) var status = "Pair a Wacom tablet connected to a local Relay."

@@ -87,7 +87,8 @@ The 2017 Intuos Pro PTH-660 can pair to visionOS over Bluetooth, but in the
 physical-device check it produced no pointer or pen input and did not appear
 in the app's stylus or mouse device lists. [Wacom supports its mobile pairing
 for paper sketching, not pen-tablet input](https://support.wacom.com/hc/en-us/articles/1500006264721-How-do-you-pair-the-Wacom-Intuos-Pro-2017-Paper-Edition-with-a-Mobile-device).
-The separate Linux Relay now carries that same tablet over a local TCP link.
+The separate [Linux tablet Relay](https://github.com/cnoellert/plank-tablet-relay)
+now carries that same tablet over a local TCP link.
 On September 25, 2026, a physical Vision Pro paired with the development NUC
 using five ExpressKeys and forwarded pen movement, tip and side buttons, and
 varying pressure into GNOME Settings and Flame. Focus suspension and recovery
@@ -157,7 +158,7 @@ cmake -G Xcode \
 xcodebuild \
   -project build/visionos-native-xcode/PlankVision.xcodeproj \
   -scheme PlankVision \
-  -destination 'platform=visionOS,id=00008142-001030AC01F1401C' \
+  -destination 'platform=visionOS,id=<YOUR_DEVICE_ID>' \
   -configuration Debug \
   -allowProvisioningUpdates \
   build

@@ -22,6 +22,6 @@ Build for a paired Apple Vision Pro:
 xcodebuild \
   -project build/visionos-native/PlankVision.xcodeproj \
   -scheme PlankVision \
-  -destination 'platform=visionOS,id=00008142-001030AC01F1401C' \
+  -destination 'platform=visionOS,id=<YOUR_DEVICE_ID>' \
   -configuration Debug build
 ```
