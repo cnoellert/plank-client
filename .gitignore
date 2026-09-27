@@ -6,6 +6,7 @@
 build/
 build-*/
 cmake-build-*/
+__pycache__/
 libs/
 config.tests/*/.qmake.stash
 config.tests/*/Makefile

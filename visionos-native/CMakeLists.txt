@@ -99,7 +99,8 @@ if(PLANK_RELAY_SOURCE_DIR)
         "$<$<COMPILE_LANGUAGE:Swift>:-DPLANK_TABLET_RELAY>")
     target_sources(PlankVision PRIVATE
         Sources/Services/PlankRelayPairing.swift
-        Sources/Services/PlankRelayLiveLink.swift)
+        Sources/Services/PlankRelayLiveLink.swift
+        Sources/Services/PlankWacomPreflight.swift)
 endif()
 
 set(PLANK_FFMPEG_DIR "" CACHE PATH "Path to the visionOS FFmpeg installation")

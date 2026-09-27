@@ -174,7 +174,8 @@ struct PlankSessionEngine: Sendable {
         onFrame: @escaping @Sendable (PlankRenderedFrame) -> Void,
         onCursor: @escaping @Sendable (PlankCursorUpdate) -> Void,
         onHostFeatures: @escaping @Sendable (UInt32) -> Void,
-        onRawHid: @escaping @Sendable (Data) -> Void
+        onRawHid: @escaping @Sendable (Data) -> Void,
+        onTabletFrameSent: @escaping @Sendable (Data) -> Void
     ) async throws {
         let worker = Task.detached(priority: .userInitiated) {
             var error = [CChar](repeating: 0, count: 512)
@@ -274,6 +275,9 @@ struct PlankSessionEngine: Sendable {
                             senderState.markFailed()
                             inputQueue.stop()
                             return
+                        }
+                        if case let .rawHid(frame) = event {
+                            onTabletFrameSent(frame)
                         }
                     }
                 }

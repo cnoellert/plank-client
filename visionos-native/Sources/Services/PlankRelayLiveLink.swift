@@ -19,6 +19,7 @@ final class PlankRelayLiveLink: @unchecked Sendable {
     private let queue = DispatchQueue(label: "la.instinctual.plank.tablet-relay.session")
     private let connection: NWConnection
     private let hostFeatures: UInt32
+    private let preflight: PlankWacomPreflight
     private let deliverTabletFrame: @Sendable (Data) -> Void
     private let reportState: @Sendable (String) -> Void
     private let onReady: @Sendable () -> Void
@@ -37,6 +38,7 @@ final class PlankRelayLiveLink: @unchecked Sendable {
     private var attachedGeneration: UInt16?
 
     init(address: String, port: UInt16, hostFeatures: UInt32,
+         preflight: PlankWacomPreflight,
          clientPrivateKey: Data, relayPublicKey: Data,
          deliverTabletFrame: @escaping @Sendable (Data) -> Void,
          reportState: @escaping @Sendable (String) -> Void,
@@ -59,6 +61,7 @@ final class PlankRelayLiveLink: @unchecked Sendable {
         connection = NWConnection(host: NWEndpoint.Host(address),
                                   port: NWEndpoint.Port(rawValue: port)!, using: .tcp)
         self.hostFeatures = hostFeatures
+        self.preflight = preflight
         self.deliverTabletFrame = deliverTabletFrame
         self.reportState = reportState
         self.onReady = onReady
@@ -198,6 +201,13 @@ final class PlankRelayLiveLink: @unchecked Sendable {
             switch type {
             case Message.status:
                 guard payloadSize >= 8 else { closeOnQueue(); return }
+                if !sessionReady {
+                    let version = pltr_client_link_peer_version(codec).map {
+                        String(cString: $0)
+                    } ?? ""
+                    preflight.relayAuthenticated(version: version)
+                }
+                preflight.observeRelayStatus(body)
                 switch body[0] {
                 case 0: reportState("Relay authenticated; waiting for the tablet.")
                 case 1: reportState("Relay owns the tablet; attaching to the Host…")
@@ -313,6 +323,7 @@ final class PlankRelayLiveLink: @unchecked Sendable {
             finalRecord = encode(Message.sessionEnd, Data([1]))
         }
         closed = true
+        preflight.beginRelayConnection()
         reportState("Relay disconnected.")
         heartbeat?.cancel()
         heartbeat = nil
@@ -345,6 +356,7 @@ final class PlankRelaySessionBridge: @unchecked Sendable {
     private let lock = NSLock()
     private let retryQueue = DispatchQueue(label: "la.instinctual.plank.tablet-relay.retry")
     private let inputQueue: PlankInputQueue
+    private let preflight: PlankWacomPreflight
     private let reportState: @Sendable (String) -> Void
     private var link: PlankRelayLiveLink?
     private var linkID: UUID?
@@ -354,8 +366,10 @@ final class PlankRelaySessionBridge: @unchecked Sendable {
     private var active = false
 
     init(inputQueue: PlankInputQueue,
+         preflight: PlankWacomPreflight,
          reportState: @escaping @Sendable (String) -> Void) {
         self.inputQueue = inputQueue
+        self.preflight = preflight
         self.reportState = reportState
     }
 
@@ -383,6 +397,7 @@ final class PlankRelaySessionBridge: @unchecked Sendable {
         let identifier = UUID()
         let candidate = try? PlankRelayLiveLink(
             address: address, port: port, hostFeatures: hostFeatures,
+            preflight: preflight,
             clientPrivateKey: privateKey, relayPublicKey: relayKey,
             deliverTabletFrame: { [inputQueue] frame in
                 inputQueue.append(.rawHid(frame))
@@ -407,6 +422,7 @@ final class PlankRelaySessionBridge: @unchecked Sendable {
         let initialActive = active
         lock.unlock()
         if shouldStart {
+            preflight.beginRelayConnection()
             reportState("Connecting to the paired Wacom Relay…")
             candidate.setActive(initialActive)
             candidate.start()

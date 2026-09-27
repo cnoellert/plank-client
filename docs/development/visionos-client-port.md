@@ -108,6 +108,25 @@ in one live session produced generations 2 and 3, with tip clicks and varying
 pressure after each. The desktop Client's raw-Wacom worker accepts an optional
 generation provider, while its existing default behavior is unchanged.
 
+The Client now emits `PLANK Wacom preflight: {JSON}` records for each change to
+the six tablet prerequisites: Host raw HID, Host focus suspend, authenticated
+Relay link, exclusive raw Wacom ownership, DEVICE and all DESCRIPTOR frames
+accepted by the Host transport, and a successful Host ATTACH_RESULT. The
+ownership gate requires Relay software version 0.1.1 or later, which reports
+attached only after Linux has grabbed every local Wacom event node. This
+preflight is a protocol prerequisite; Flame pressure is still a separate live
+check. Export the current Vision Pro app log and run:
+
+```bash
+python3 scripts/check_visionos_wacom_preflight.py \
+  /path/to/exported-vision-pro.log --max-age-seconds 300
+```
+
+The checker prints one JSON result and exits nonzero unless the latest record
+has all six gates, all three software versions, and `ready: true`. Do not use a
+previous session's passing record as evidence for a new test. The 30-minute
+endurance session remains pending.
+
 ## Qualification backlog
 
 - Measure end-to-end pointer and video latency under sustained use, including

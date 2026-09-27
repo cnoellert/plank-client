@@ -60,6 +60,9 @@ struct SettingsView: View {
                 Text(client.tabletRelayStatus)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                Text(client.tabletPreflightSummary)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
 #endif
 

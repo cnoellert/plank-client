@@ -66,6 +66,7 @@ final class PlankCoreClient: ObservableObject {
     @Published private(set) var activeHostID: HostBookmark.ID?
 #if PLANK_TABLET_RELAY
     @Published private(set) var tabletRelayStatus = "Pair a Wacom Relay in Settings."
+    @Published private(set) var tabletPreflightSummary = "No active Wacom preflight."
 #endif
 
     private var latestFrame: PlankRenderedFrame?
@@ -88,6 +89,7 @@ final class PlankCoreClient: ObservableObject {
 #if PLANK_TABLET_RELAY
     private var tabletBridge: PlankRelaySessionBridge?
     private var tabletSceneActive = false
+    private var tabletPreflightSequence: UInt64 = 0
 #endif
 
     func setTabletControlReceiver(_ receiver: (@Sendable (Data) -> Void)?) {
@@ -150,6 +152,8 @@ final class PlankCoreClient: ObservableObject {
         hostSupportsTabletRelay = false
 #if PLANK_TABLET_RELAY
         tabletRelayStatus = "Waiting for Host tablet support…"
+        tabletPreflightSummary = "Waiting for Host and Relay checks…"
+        tabletPreflightSequence = 0
 #endif
         let sessionInputQueue = inputQueue
         streamGeneration = UUID()
@@ -177,7 +181,21 @@ final class PlankCoreClient: ObservableObject {
         generation: UUID
     ) async {
 #if PLANK_TABLET_RELAY
-        let sessionTabletBridge = PlankRelaySessionBridge(inputQueue: inputQueue) {
+        let preflight = PlankWacomPreflight(
+            clientVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown",
+            hostVersion: identity.version,
+            onChange: { [weak self] snapshot in
+                Task { @MainActor [weak self] in
+                    guard let self, self.streamGeneration == generation,
+                          snapshot.sequence > self.tabletPreflightSequence else { return }
+                    self.tabletPreflightSequence = snapshot.sequence
+                    self.tabletPreflightSummary = snapshot.summary
+                }
+            }
+        )
+        let sessionTabletBridge = PlankRelaySessionBridge(
+            inputQueue: inputQueue, preflight: preflight
+        ) {
             [weak self] status in
             Task { @MainActor [weak self] in
                 guard let self, self.streamGeneration == generation else { return }
@@ -253,6 +271,10 @@ final class PlankCoreClient: ObservableObject {
                 }
             } onHostFeatures: { [weak self] flags in
 #if PLANK_TABLET_RELAY
+                preflight.observeHostFeatures(
+                    rawHid: flags & PlankHostFeature.rawHidTablet != 0,
+                    focusSuspend: flags & PlankHostFeature.rawHidFocusSuspend != 0
+                )
                 sessionTabletBridge.startIfPaired(hostFeatures: flags)
 #endif
                 Task { @MainActor [weak self] in
@@ -263,9 +285,14 @@ final class PlankCoreClient: ObservableObject {
                 }
             } onRawHid: { [tabletControlReceiver] frame in
 #if PLANK_TABLET_RELAY
+                preflight.observeHostFrame(frame)
                 sessionTabletBridge.forwardHostFrame(frame)
 #else
                 tabletControlReceiver.deliver(frame)
+#endif
+            } onTabletFrameSent: { frame in
+#if PLANK_TABLET_RELAY
+                preflight.observeSentTabletFrame(frame)
 #endif
             }
         } catch {
@@ -365,6 +392,7 @@ final class PlankCoreClient: ObservableObject {
         tabletBridge?.close()
         tabletBridge = nil
         tabletSceneActive = false
+        tabletPreflightSummary = "No active Wacom preflight."
 #endif
         tabletControlReceiver.set(nil)
         streamGeneration = UUID()
@@ -464,6 +492,7 @@ final class PlankCoreClient: ObservableObject {
         tabletBridge?.close()
         tabletBridge = nil
         tabletSceneActive = false
+        tabletPreflightSummary = "No active Wacom preflight."
 #endif
         tabletControlReceiver.set(nil)
         streamGeneration = UUID()
