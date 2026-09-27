@@ -129,6 +129,13 @@ endurance session remains pending.
 
 ## Qualification backlog
 
+- Restore the original Client's virtual-display resolution choices in AVP
+  bookmark setup, so the selected remote display size is saved with each host.
+- Add an Edit action for saved host bookmarks, including their display choice.
+- Prevent starting another session from the main host browser while one is
+  already running; make the active session and return path clear.
+- Remove the received-frame counter from the main host browser. Keep frame
+  diagnostics in the session statistics view.
 - Rebase the native Vision Pro Client branch onto the current upstream Client
   after the pen-latency comparison. Review shared transport and submodule
   changes, then rebuild and rerun the Host, streaming and Wacom preflights.
@@ -164,8 +171,12 @@ endurance session remains pending.
 - Implement and qualify a Bluetooth LE link between the Relay NUC and Vision
   Pro, using the same authenticated session semantics as the local TCP link.
 - Discover a headless Relay without knowing its IP address in advance, then
-  pair it through the tablet's ExpressKeys. Keep manual address entry as a
-  fallback when local discovery is unavailable.
+  pair it through the tablet's ExpressKeys. The signed Client now browses
+  `_plank-tablet._tcp`, and the NUC advertises its identity and pairing-window
+  state. The running Relay also watches for the five-second ExpressKey chord.
+  Live acceptance of discovery and physical pairing remains pending. The
+  current Mac and NUC are on different routed subnets, where local multicast
+  does not reach Portofino; manual address remains the fallback there.
 
 ## Build
 

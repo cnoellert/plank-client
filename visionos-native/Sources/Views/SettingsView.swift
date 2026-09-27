@@ -32,11 +32,30 @@ struct SettingsView: View {
 
 #if PLANK_TABLET_RELAY
             Section("Tablet Relay") {
+                Picker("Nearby Relay", selection: $tabletRelay.selectedServiceID) {
+                    Text("Enter address manually").tag("")
+                    ForEach(tabletRelay.nearbyRelays) { relay in
+                        Text(relay.name).tag(relay.id)
+                    }
+                }
+                .onChange(of: tabletRelay.selectedServiceID) {
+                    tabletRelay.refreshPairedState()
+                }
+                Text("To pair a new headset, hold Wacom ExpressKeys 1 and 8 for five seconds, then choose the Relay and tap Pair.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
                 TextField("Relay address", text: $tabletRelay.address)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                    .disabled(!tabletRelay.selectedServiceID.isEmpty)
                 TextField("Port", text: $tabletRelay.port)
                     .keyboardType(.numberPad)
+                    .disabled(!tabletRelay.selectedServiceID.isEmpty)
+                if !tabletRelay.selectedServiceID.isEmpty {
+                    Button("Use Saved Pairing") { tabletRelay.useSavedPairing() }
+                } else {
+                    Button("Use Manual Pairing") { tabletRelay.useManualPairing() }
+                }
                 HStack {
                     Button(tabletRelay.paired ? "Re-pair Wacom Relay" : "Pair Wacom Relay") {
                         tabletRelay.beginPairing()
@@ -73,5 +92,9 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
         .frame(minWidth: 560, minHeight: 420)
+#if PLANK_TABLET_RELAY
+        .onAppear { tabletRelay.startDiscovery() }
+        .onDisappear { tabletRelay.stopDiscovery() }
+#endif
     }
 }

@@ -37,7 +37,7 @@ final class PlankRelayLiveLink: @unchecked Sendable {
     private var invalidTabletFrames = 0
     private var attachedGeneration: UInt16?
 
-    init(address: String, port: UInt16, hostFeatures: UInt32,
+    init(endpoint: NWEndpoint, hostFeatures: UInt32,
          preflight: PlankWacomPreflight,
          clientPrivateKey: Data, relayPublicKey: Data,
          deliverTabletFrame: @escaping @Sendable (Data) -> Void,
@@ -45,8 +45,9 @@ final class PlankRelayLiveLink: @unchecked Sendable {
          onReady: @escaping @Sendable () -> Void,
          onUnexpectedClose: @escaping @Sendable () -> Void,
          acceptGeneration: @escaping @Sendable (UInt16) -> Bool) throws {
-        guard clientPrivateKey.count == 32, relayPublicKey.count == 32,
-              !address.isEmpty, port != 0 else { throw PlankRelayLiveError.invalidConfiguration }
+        guard clientPrivateKey.count == 32, relayPublicKey.count == 32 else {
+            throw PlankRelayLiveError.invalidConfiguration
+        }
         let created = clientPrivateKey.withUnsafeBytes { clientBytes in
             relayPublicKey.withUnsafeBytes { relayBytes in
                 pltr_client_link_create(
@@ -58,8 +59,7 @@ final class PlankRelayLiveLink: @unchecked Sendable {
         }
         guard let created else { throw PlankRelayLiveError.invalidConfiguration }
         codec = created
-        connection = NWConnection(host: NWEndpoint.Host(address),
-                                  port: NWEndpoint.Port(rawValue: port)!, using: .tcp)
+        connection = NWConnection(to: endpoint, using: .tcp)
         self.hostFeatures = hostFeatures
         self.preflight = preflight
         self.deliverTabletFrame = deliverTabletFrame
@@ -383,20 +383,15 @@ final class PlankRelaySessionBridge: @unchecked Sendable {
             reportState("Host does not advertise the required tablet controls.")
             return
         }
-        let defaults = UserDefaults.standard
-        guard let address = defaults.string(forKey: "plank.vision.relayAddress"),
-              let port = UInt16(exactly: defaults.integer(forKey: "plank.vision.relayPort")),
-              port > 0,
+        guard let saved = PlankRelayKeys.savedConnection(),
               let privateKey = try? PlankRelayKeys.clientPrivateKey(),
-              let relayKey = try? PlankRelayKeys.read(
-                  PlankRelayKeys.relayAccount(address: address, port: port)
-              ) else {
+              let relayKey = try? PlankRelayKeys.read(saved.account) else {
             reportState("Pair the Wacom Relay in Settings before connecting.")
             return
         }
         let identifier = UUID()
         let candidate = try? PlankRelayLiveLink(
-            address: address, port: port, hostFeatures: hostFeatures,
+            endpoint: saved.endpoint, hostFeatures: hostFeatures,
             preflight: preflight,
             clientPrivateKey: privateKey, relayPublicKey: relayKey,
             deliverTabletFrame: { [inputQueue] frame in
