@@ -468,7 +468,9 @@ final class PlankRelayPairing: NSObject, ObservableObject,
                 try await pair(endpoint: endpoint, bluetoothIdentifier: bluetoothIdentifier,
                                account: account, service: service, manual: manual, digits: digits)
                 paired = true
-                status = "Wacom Relay paired and its identity verified."
+                status = bluetoothIdentifier == nil ?
+                    "Wacom Relay paired and its identity verified." :
+                    "Bluetooth Relay paired. Its key is pinned for future sessions."
             } catch {
                 status = Task.isCancelled ? "Tablet pairing canceled." : error.localizedDescription
             }
