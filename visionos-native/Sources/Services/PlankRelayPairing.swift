@@ -321,6 +321,8 @@ final class PlankRelayPairing: NSObject, ObservableObject,
             } else {
                 status = "Pairing is saved. Select Use Saved Pairing to use this Relay."
             }
+        } else if !isPairing {
+            status = "Choose and pair a Relay to use it with the next desktop session."
         }
     }
 
@@ -339,9 +341,23 @@ final class PlankRelayPairing: NSObject, ObservableObject,
             status = "Saved Bluetooth pairing selected."
             return
         }
-        guard !selectedServiceID.isEmpty,
-              let service = nearbyRelays.first(where: { $0.id == selectedServiceID }) else {
+        guard !selectedServiceID.isEmpty else {
             status = "Select a nearby Relay first."
+            return
+        }
+        let defaults = UserDefaults.standard
+        if defaults.string(forKey: "plank.vision.relayMode") == "bonjour",
+           let name = defaults.string(forKey: "plank.vision.relayServiceName"),
+           let domain = defaults.string(forKey: "plank.vision.relayServiceDomain"),
+           PlankDiscoveredRelay(name: name, domain: domain).id == selectedServiceID,
+           let key = try? PlankRelayKeys.read(
+               PlankRelayKeys.serviceAccount(name: name, domain: domain)), key.count == 32 {
+            paired = true
+            status = "Saved nearby pairing selected. It will connect when the Relay is reachable."
+            return
+        }
+        guard let service = nearbyRelays.first(where: { $0.id == selectedServiceID }) else {
+            status = "Relay not nearby. Wait for discovery or use its address."
             return
         }
         do {

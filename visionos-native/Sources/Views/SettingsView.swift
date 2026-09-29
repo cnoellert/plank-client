@@ -37,6 +37,7 @@ struct SettingsView: View {
                     Text("Nearby Bluetooth").tag("bluetooth")
                     Text("Manual address").tag("manual")
                 }
+                .disabled(tabletRelay.isPairing)
                 .onChange(of: tabletRelay.connectionKind) {
                     tabletRelay.refreshPairedState()
                 }
@@ -44,10 +45,18 @@ struct SettingsView: View {
                 if tabletRelay.connectionKind == "wifi" {
                     Picker("Nearby Relay", selection: $tabletRelay.selectedServiceID) {
                         Text("Select a Relay").tag("")
+                        if !tabletRelay.selectedServiceID.isEmpty &&
+                           !tabletRelay.nearbyRelays.contains(where: {
+                               $0.id == tabletRelay.selectedServiceID
+                           }) {
+                            Text("Previously paired Relay (not nearby)")
+                                .tag(tabletRelay.selectedServiceID)
+                        }
                         ForEach(tabletRelay.nearbyRelays) { relay in
                             Text(relay.name).tag(relay.id)
                         }
                     }
+                    .disabled(tabletRelay.isPairing)
                     .onChange(of: tabletRelay.selectedServiceID) {
                         tabletRelay.refreshPairedState()
                     }
@@ -68,6 +77,7 @@ struct SettingsView: View {
                             Text(relay.name).tag(relay.id.uuidString)
                         }
                     }
+                    .disabled(tabletRelay.isPairing)
                     .onChange(of: tabletRelay.selectedBluetoothID) {
                         tabletRelay.refreshPairedState()
                     }
@@ -78,11 +88,13 @@ struct SettingsView: View {
                     TextField("Relay address", text: $tabletRelay.address)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
+                        .disabled(tabletRelay.isPairing)
                         .onChange(of: tabletRelay.address) {
                             tabletRelay.refreshPairedState()
                         }
                     TextField("Port", text: $tabletRelay.port)
                         .keyboardType(.numberPad)
+                        .disabled(tabletRelay.isPairing)
                         .onChange(of: tabletRelay.port) {
                             tabletRelay.refreshPairedState()
                         }
