@@ -168,8 +168,13 @@ endurance session remains pending.
 - Evaluate pairing the Wacom tablet to the headless Relay NUC over Bluetooth
   instead of USB. Confirm that Linux exposes the raw reports, pad keys, and
   pressure needed by the existing Host path before treating it as supported.
-- Implement and qualify a Bluetooth LE link between the Relay NUC and Vision
-  Pro, using the same authenticated session semantics as the local TCP link.
+- Qualify the draft Bluetooth LE link between the Relay and Vision Pro on
+  physical hardware. The Client branch discovers the Relay with CoreBluetooth,
+  reads its LE L2CAP PSM, pairs through the physical tablet button gesture,
+  and uses the existing pinned-key/Noise and raw-HID session protocol with
+  the Bluetooth link type. The Relay branch has passing Linux package checks
+  on amd64 and arm64, and the Client builds for visionOS. Neither branch has
+  passed a physical LE CoC session yet; TCP remains the installed path.
 - Discover a headless Relay without knowing its IP address in advance, then
   pair it through the tablet's ExpressKeys. The signed Client now browses
   `_plank-tablet._tcp`, and the NUC advertises its identity and pairing-window

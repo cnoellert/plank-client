@@ -32,29 +32,73 @@ struct SettingsView: View {
 
 #if PLANK_TABLET_RELAY
             Section("Tablet Relay") {
-                Picker("Nearby Relay", selection: $tabletRelay.selectedServiceID) {
-                    Text("Enter address manually").tag("")
-                    ForEach(tabletRelay.nearbyRelays) { relay in
-                        Text(relay.name).tag(relay.id)
-                    }
+                Picker("Connection", selection: $tabletRelay.connectionKind) {
+                    Text("Nearby Wi-Fi").tag("wifi")
+                    Text("Nearby Bluetooth").tag("bluetooth")
+                    Text("Manual address").tag("manual")
                 }
-                .onChange(of: tabletRelay.selectedServiceID) {
+                .onChange(of: tabletRelay.connectionKind) {
                     tabletRelay.refreshPairedState()
                 }
-                Text("To pair a new headset, hold Wacom ExpressKeys 1 and 8 for five seconds, then choose the Relay and tap Pair.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                TextField("Relay address", text: $tabletRelay.address)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
-                    .disabled(!tabletRelay.selectedServiceID.isEmpty)
-                TextField("Port", text: $tabletRelay.port)
-                    .keyboardType(.numberPad)
-                    .disabled(!tabletRelay.selectedServiceID.isEmpty)
-                if !tabletRelay.selectedServiceID.isEmpty {
-                    Button("Use Saved Pairing") { tabletRelay.useSavedPairing() }
+
+                if tabletRelay.connectionKind == "wifi" {
+                    Picker("Nearby Relay", selection: $tabletRelay.selectedServiceID) {
+                        Text("Select a Relay").tag("")
+                        ForEach(tabletRelay.nearbyRelays) { relay in
+                            Text(relay.name).tag(relay.id)
+                        }
+                    }
+                    .onChange(of: tabletRelay.selectedServiceID) {
+                        tabletRelay.refreshPairedState()
+                    }
+                    Text("Nearby relays are found automatically. Pairing is saved to the selected Relay.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else if tabletRelay.connectionKind == "bluetooth" {
+                    Picker("Nearby Relay", selection: $tabletRelay.selectedBluetoothID) {
+                        Text("Select a Relay").tag("")
+                        if !tabletRelay.selectedBluetoothID.isEmpty &&
+                           !tabletRelay.nearbyBluetoothRelays.contains(where: {
+                               $0.id.uuidString == tabletRelay.selectedBluetoothID
+                           }) {
+                            Text("Previously paired Relay (not nearby)")
+                                .tag(tabletRelay.selectedBluetoothID)
+                        }
+                        ForEach(tabletRelay.nearbyBluetoothRelays) { relay in
+                            Text(relay.name).tag(relay.id.uuidString)
+                        }
+                    }
+                    .onChange(of: tabletRelay.selectedBluetoothID) {
+                        tabletRelay.refreshPairedState()
+                    }
+                    Text("Bluetooth pairing uses three presses of the Wacom center button. Keep the Relay nearby.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
                 } else {
-                    Button("Use Manual Pairing") { tabletRelay.useManualPairing() }
+                    TextField("Relay address", text: $tabletRelay.address)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .onChange(of: tabletRelay.address) {
+                            tabletRelay.refreshPairedState()
+                        }
+                    TextField("Port", text: $tabletRelay.port)
+                        .keyboardType(.numberPad)
+                        .onChange(of: tabletRelay.port) {
+                            tabletRelay.refreshPairedState()
+                        }
+                    Text("Use this when a Relay cannot be found automatically.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                if tabletRelay.paired {
+                    Button("Use Saved Pairing") {
+                        if tabletRelay.connectionKind == "manual" {
+                            tabletRelay.useManualPairing()
+                        } else {
+                            tabletRelay.useSavedPairing()
+                        }
+                    }
                 }
                 HStack {
                     Button(tabletRelay.paired ? "Re-pair Wacom Relay" : "Pair Wacom Relay") {
