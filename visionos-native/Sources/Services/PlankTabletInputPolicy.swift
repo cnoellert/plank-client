@@ -14,25 +14,30 @@ struct PlankTabletInputPolicy {
     }
 
     private var state: State = .noTablet
+    private var relayAttached = false
     private var suppressedMouseButtons = Set<UInt8>()
     private var forwardedMouseButtons = Set<UInt8>()
     private var suppressedKeys = Set<UInt16>()
     private var forwardedKeys: [UInt16: UInt8] = [:]
 
     var waitsForTablet: Bool { state == .waiting }
+    var showsBlockingOverlay: Bool { waitsForTablet && relayAttached }
+    var shouldContinueWhenUnavailable: Bool { waitsForTablet && !relayAttached }
     var forwardsTabletReports: Bool { state == .ready }
 
     mutating func begin(hasPairedTablet: Bool) {
         state = hasPairedTablet ? .waiting : .noTablet
+        relayAttached = false
         suppressedMouseButtons.removeAll()
         forwardedMouseButtons.removeAll()
         suppressedKeys.removeAll()
         forwardedKeys.removeAll()
     }
 
-    mutating func updatePreflight(ready: Bool) -> [Release] {
+    mutating func updatePreflight(ready: Bool, relayAttached: Bool = false) -> [Release] {
         guard state == .waiting || state == .ready else { return [] }
         let wasReady = state == .ready
+        self.relayAttached = relayAttached
         state = ready ? .ready : .waiting
         guard wasReady && !ready else { return [] }
         let releases = forwardedMouseButtons.sorted().map(Release.mouse) +
@@ -49,6 +54,14 @@ struct PlankTabletInputPolicy {
     mutating func continueWithoutTablet() {
         guard state == .waiting else { return }
         state = .withoutTablet
+        relayAttached = false
+    }
+
+    @discardableResult
+    mutating func continueIfUnavailable() -> Bool {
+        guard shouldContinueWhenUnavailable else { return false }
+        continueWithoutTablet()
+        return true
     }
 
     mutating func allowsMouseButton(_ number: UInt8, pressed: Bool) -> Bool {

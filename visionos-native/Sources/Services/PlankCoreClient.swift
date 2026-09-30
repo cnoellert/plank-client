@@ -73,6 +73,7 @@ final class PlankCoreClient: ObservableObject {
     @Published private(set) var tabletRelayStatus = "Pair a Wacom Relay in Settings."
     @Published private(set) var tabletPreflightSummary = "No active Wacom preflight."
     @Published private(set) var waitingForTablet = false
+    @Published private(set) var showingTabletWaitScreen = false
 #endif
 
     private var latestFrame: PlankRenderedFrame?
@@ -100,6 +101,7 @@ final class PlankCoreClient: ObservableObject {
     private var tabletSceneActive = false
     private var tabletPreflightSequence: UInt64 = 0
     private var tabletInputPolicy = PlankTabletInputPolicy()
+    private var tabletWaitTimeoutID = UUID()
 #endif
 
     func setTabletControlReceiver(_ receiver: (@Sendable (Data) -> Void)?) {
@@ -120,10 +122,16 @@ final class PlankCoreClient: ObservableObject {
         return UInt16(frame[6]) | UInt16(frame[7]) << 8
     }
 
-    private func updateTabletPreflight(ready: Bool) {
+    private func updateTabletPreflight(_ snapshot: PlankWacomPreflightSnapshot,
+                                      generation: UUID) {
         // A Relay can disappear while a drag or key is held. Release what the
         // Host has already seen before blocking new user input.
-        for release in tabletInputPolicy.updatePreflight(ready: ready) {
+        let wasWaiting = tabletInputPolicy.waitsForTablet
+        let wasUnavailable = tabletInputPolicy.shouldContinueWhenUnavailable
+        for release in tabletInputPolicy.updatePreflight(
+            ready: snapshot.ready,
+            relayAttached: snapshot.gates[.deviceOwnership] == .passed
+        ) {
             switch release {
             case let .mouse(number):
                 inputQueue.append(.button(number: number, pressed: false))
@@ -132,23 +140,64 @@ final class PlankCoreClient: ObservableObject {
             }
         }
         waitingForTablet = tabletInputPolicy.waitsForTablet
+        showingTabletWaitScreen = tabletInputPolicy.showsBlockingOverlay
+        if !waitingForTablet {
+            tabletWaitTimeoutID = UUID()
+        } else if (!wasWaiting || !wasUnavailable) &&
+                    tabletInputPolicy.shouldContinueWhenUnavailable &&
+                    hostSupportsTabletRelay && tabletSceneActive {
+            scheduleTabletAvailabilityGrace(generation: generation)
+        }
     }
 
     func continueWithoutTablet() {
-        guard tabletInputPolicy.waitsForTablet else { return }
-        tabletInputPolicy.continueWithoutTablet()
+        continueWithoutTablet(status: "Continuing this session without Wacom.")
+    }
+
+    private func continueWithoutTablet(status: String, whenUnavailableOnly: Bool = false) {
+        if whenUnavailableOnly {
+            guard tabletInputPolicy.continueIfUnavailable() else { return }
+        } else {
+            guard tabletInputPolicy.waitsForTablet else { return }
+            tabletInputPolicy.continueWithoutTablet()
+        }
+        tabletWaitTimeoutID = UUID()
         tabletBridge?.close()
         stoppingTabletBridge = tabletBridge
         tabletBridge = nil
-        tabletRelayStatus = "Continuing this session without Wacom."
+        tabletRelayStatus = status
         waitingForTablet = false
+        showingTabletWaitScreen = false
+    }
+
+    private func scheduleTabletAvailabilityGrace(generation: UUID) {
+        guard tabletSceneActive, tabletInputPolicy.shouldContinueWhenUnavailable else { return }
+        let timeoutID = UUID()
+        tabletWaitTimeoutID = timeoutID
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(12))
+            guard let self, !Task.isCancelled,
+                  self.streamGeneration == generation,
+                  self.tabletWaitTimeoutID == timeoutID,
+                  self.waitingForTablet,
+                  self.tabletSceneActive,
+                  self.tabletInputPolicy.shouldContinueWhenUnavailable else { return }
+            self.continueWithoutTablet(
+                status: "Wacom Relay unavailable; continuing this session without the tablet.",
+                whenUnavailableOnly: true
+            )
+        }
     }
 #endif
 
     func setTabletActive(_ active: Bool) {
 #if PLANK_TABLET_RELAY
+        let wasActive = tabletSceneActive
         tabletSceneActive = active
         tabletBridge?.setActive(active)
+        if active && !wasActive && hostSupportsTabletRelay && waitingForTablet {
+            scheduleTabletAvailabilityGrace(generation: streamGeneration)
+        }
 #endif
     }
 
@@ -215,6 +264,8 @@ final class PlankCoreClient: ObservableObject {
         tabletRelayStatus = "Waiting for Host tablet support…"
         tabletPreflightSummary = "Waiting for Host and Relay checks…"
         tabletPreflightSequence = 0
+        tabletWaitTimeoutID = UUID()
+        showingTabletWaitScreen = false
 #endif
         let sessionInputQueue = inputQueue
         streamGeneration = UUID()
@@ -223,7 +274,7 @@ final class PlankCoreClient: ObservableObject {
         // GNOME may bind its first pointer interaction before the redirected
         // tablet appears. Present the video immediately, but let a saved Relay
         // attach before forwarding mouse input into that desktop session.
-        tabletInputPolicy.begin(hasPairedTablet: PlankRelayKeys.savedConnection() != nil)
+        tabletInputPolicy.begin(hasPairedTablet: PlankRelayKeys.hasSavedPairing())
         waitingForTablet = tabletInputPolicy.waitsForTablet
 #endif
         phase = .startingSession(identity, authentication)
@@ -277,7 +328,7 @@ final class PlankCoreClient: ObservableObject {
                           snapshot.sequence > self.tabletPreflightSequence else { return }
                     self.tabletPreflightSequence = snapshot.sequence
                     self.tabletPreflightSummary = snapshot.summary
-                    self.updateTabletPreflight(ready: snapshot.ready)
+                    self.updateTabletPreflight(snapshot, generation: generation)
                 }
             }
         )
@@ -392,9 +443,16 @@ final class PlankCoreClient: ObservableObject {
                     self.hostSupportsTabletRelay =
                         flags & PlankHostFeature.tabletRelayRequired ==
                         PlankHostFeature.tabletRelayRequired
-                    // Keep the input barrier in place until the Host confirms
-                    // the tablet attachment, or the user explicitly continues
-                    // without it. A timeout must not silently open input.
+                    if !self.hostSupportsTabletRelay {
+                        let status = "This Host does not support Wacom Relay; continuing without it."
+                        if self.waitingForTablet {
+                            self.continueWithoutTablet(status: status)
+                        } else {
+                            self.tabletRelayStatus = status
+                        }
+                    } else if self.waitingForTablet {
+                        self.scheduleTabletAvailabilityGrace(generation: generation)
+                    }
                 }
             } onRawHid: { [tabletControlReceiver] frame in
 #if PLANK_TABLET_RELAY
@@ -414,6 +472,8 @@ final class PlankCoreClient: ObservableObject {
             tabletRelayStatus = "Tablet link idle; start a desktop session to connect."
             tabletPreflightSummary = "No active Wacom preflight."
             waitingForTablet = false
+            showingTabletWaitScreen = false
+            tabletWaitTimeoutID = UUID()
 #endif
             phase = .failed(Self.message(for: error))
         }
@@ -492,13 +552,13 @@ final class PlankCoreClient: ObservableObject {
             )
         }
 
-        var deadline = ContinuousClock.now.advanced(
-            by: .seconds(waitingForRelease ? 12 : 45)
+        var startupDeadline = PlankSessionStartupDeadline(
+            now: ContinuousClock.now, waitingForRelease: waitingForRelease
         )
         let client = initialClient
         var authentication = initialAuthentication
 
-        while ContinuousClock.now < deadline {
+        while startupDeadline.canRetry(at: ContinuousClock.now) {
             try Task.checkCancellation()
             try await Task.sleep(for: .milliseconds(500))
 
@@ -530,7 +590,7 @@ final class PlankCoreClient: ObservableObject {
                 continue
             } catch let PlankHTTPError.rejected(code, _) where code == 425 {
                 waitingForRelease = false
-                deadline = ContinuousClock.now.advanced(by: .seconds(45))
+                startupDeadline.displayTransition()
                 continue
             } catch let PlankHTTPError.rejected(code, _) where code == 503 {
                 waitingForRelease = true
@@ -576,6 +636,8 @@ final class PlankCoreClient: ObservableObject {
         tabletPreflightSummary = "No active Wacom preflight."
         tabletInputPolicy.begin(hasPairedTablet: false)
         waitingForTablet = false
+        showingTabletWaitScreen = false
+        tabletWaitTimeoutID = UUID()
 #endif
         tabletControlReceiver.set(nil)
         hostSupportsTabletRelay = false
@@ -731,6 +793,8 @@ final class PlankCoreClient: ObservableObject {
         tabletPreflightSummary = "No active Wacom preflight."
         tabletInputPolicy.begin(hasPairedTablet: false)
         waitingForTablet = false
+        showingTabletWaitScreen = false
+        tabletWaitTimeoutID = UUID()
 #endif
         tabletControlReceiver.set(nil)
         hostSupportsTabletRelay = false

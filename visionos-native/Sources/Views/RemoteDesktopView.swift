@@ -170,33 +170,56 @@ struct RemoteDesktopView: View {
 
 #if PLANK_TABLET_RELAY
             if client.waitingForTablet {
-                Color.black
-                    .ignoresSafeArea()
-                VStack(spacing: 18) {
-                    ProgressView()
-                    Text("Connecting Wacom tablet…")
-                        .font(.title2.weight(.semibold))
-                    Text(client.tabletRelayStatus)
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                    Text("Mouse, keyboard, and pen input will start when the workstation confirms the tablet is ready.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                    HStack(spacing: 14) {
-                        Button("Continue without Wacom") {
-                            client.continueWithoutTablet()
+                if client.showingTabletWaitScreen {
+                    Color.black
+                        .ignoresSafeArea()
+                    VStack(spacing: 18) {
+                        ProgressView()
+                        Text("Connecting Wacom tablet…")
+                            .font(.title2.weight(.semibold))
+                        Text(client.tabletRelayStatus)
+                            .font(.body)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                        Text("Mouse, keyboard, and pen input will start when the workstation confirms the tablet is ready.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                        HStack(spacing: 14) {
+                            Button("Continue without Wacom") {
+                                client.continueWithoutTablet()
+                            }
+                            Button("Disconnect", role: .cancel) {
+                                client.disconnectSession()
+                                dismissWindow(id: "plank-desktop")
+                            }
                         }
-                        Button("Disconnect", role: .cancel) {
-                            client.disconnectSession()
-                            dismissWindow(id: "plank-desktop")
-                        }
+                        .buttonStyle(.bordered)
                     }
-                    .buttonStyle(.bordered)
+                    .padding(32)
+                    .frame(maxWidth: 580)
+                } else {
+                    VStack {
+                        HStack {
+                            Spacer()
+                            VStack(alignment: .leading, spacing: 8) {
+                                ProgressView("Checking Wacom Relay…")
+                                Text(client.tabletRelayStatus)
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                Button("Continue without Wacom") {
+                                    client.continueWithoutTablet()
+                                }
+                                .buttonStyle(.bordered)
+                            }
+                            .padding(14)
+                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                            .frame(maxWidth: 380)
+                        }
+                        Spacer()
+                    }
+                    .padding(20)
                 }
-                .padding(32)
-                .frame(maxWidth: 580)
             }
 #endif
         }

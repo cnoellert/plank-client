@@ -496,3 +496,43 @@ cmake -G Xcode \
 
 Streaming is not considered implemented until the native target connects to a
 real Host and independently verifies video, audio and input on the headset.
+
+## Next integration target: Relay connection handoff
+
+The standalone Setup app already learns fresh network routes through its
+authenticated Relay management connection, including Bluetooth rendezvous when
+multicast discovery cannot cross subnets. The native Client still maintains a
+separate saved drawing endpoint and trust record. Changing the Relay from
+Ethernet to Wi-Fi currently requires a manual address selection in the Client.
+There is no implemented Setup-to-Client handoff; management authorization and
+drawing authorization are separate today.
+
+Proposed operator flow:
+
+- Setup owns tablet pairing, network configuration and Relay administration.
+- A **Use in PLANK** action offers the configured Relay to the Client.
+- PLANK selects the Relay by its verified identity and displays its name and
+  actual active network path. Address and port entry remain an advanced fallback.
+- Reconnection refreshes available routes without treating an address change as
+  a new Relay or requiring the operator to repeat pairing.
+
+Implement a versioned handoff contract before adding the button. It must
+distinguish management and drawing endpoints and identities, retain the current
+authenticated drawing transport, and never put private keys or pairing secrets
+in a launch URL. Incoming route suggestions are untrusted until the Client
+verifies the saved drawing identity. A first-time authorization flow needs an
+explicit design; the existing Setup approval does not automatically authorize
+the independent drawing service. Do not import tablet-management UI or capture
+ownership into PLANK.
+
+Acceptance must cover changing network addresses, reachable routes across
+subnets, missing or unreachable Relays, a mismatched identity, and a network
+interface disappearing during an active stroke. Starting another connection
+must release the old transport and input state before resuming tablet input.
+This section describes planned work, not an implemented handoff or seamless
+network failover.
+
+The coordinated implementation assignments and gates are in
+[Relay connection handoff execution plan](plans/relay-connection-handoff.md).
+The first slice updates routes for an already approved drawing identity; new
+Client enrollment remains explicit and separate.

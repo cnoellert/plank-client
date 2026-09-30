@@ -15,12 +15,12 @@ private enum PlankRelayError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidAddress: "Enter a Relay address and port from 1 to 65535."
-        case let .keychain(status): "Tablet key storage failed (\(status))."
-        case .random: "Could not generate a secure tablet pairing code."
-        case .crypto: "The tablet pairing exchange failed verification."
+        case let .keychain(status): "Relay trust storage failed (\(status))."
+        case .random: "Could not generate a secure headset approval code."
+        case .crypto: "The Relay approval exchange failed verification."
         case .connectionClosed: "The tablet Relay closed the connection."
         case .connectionTimedOut: "The Relay could not be reached. Choose Manual Address if it is on another subnet."
-        case .pairingRejected: "The tablet Relay rejected pairing. Check the ExpressKey order and try again."
+        case .pairingRejected: "The Relay rejected headset approval. Check the ExpressKey order and try again."
         }
     }
 }
@@ -117,6 +117,11 @@ enum PlankRelayKeys {
         return (.hostPort(host: NWEndpoint.Host(address), port: endpointPort),
                 relayAccount(address: address, port: port))
     }
+
+    static func hasSavedPairing() -> Bool {
+        guard let saved = savedConnection() else { return false }
+        return (try? read(saved.account))?.count == 32
+    }
 }
 
 struct PlankDiscoveredRelay: Identifiable, Equatable {
@@ -212,13 +217,17 @@ final class PlankRelayPairing: ObservableObject {
     @Published var selectedServiceID = ""
     @Published private(set) var discoveryStatus = "Searching the local network for Relays…"
     @Published private(set) var code: [UInt8]?
-    @Published private(set) var status = "Pair a Wacom tablet connected to a local Relay."
+    @Published private(set) var status = ""
     @Published private(set) var isPairing = false
     @Published private(set) var paired = false
 
     private var task: Task<Void, Never>?
     private var browser: NWBrowser?
     private var discoveryGeneration = UUID()
+
+    var hasSavedConnection: Bool {
+        PlankRelayKeys.hasSavedPairing()
+    }
 
     var selectedNearbyRelayAvailable: Bool {
         nearbyRelays.contains { $0.id == selectedServiceID }
@@ -374,8 +383,9 @@ final class PlankRelayPairing: ObservableObject {
             account = nil
         }
         paired = account.flatMap { try? PlankRelayKeys.read($0) }?.count == 32
-        status = paired ? "Saved pairing found for this Relay." :
-            "Choose a Relay with a saved pairing or pair a new one."
+        status = paired ? "" :
+            (account == nil ? "Choose a Relay to approve this headset." :
+             "Approve this headset for the selected Relay.")
     }
 
     func useSavedPairing() {
@@ -392,7 +402,7 @@ final class PlankRelayPairing: ObservableObject {
                       let knownKey = try PlankRelayKeys.read(
                           PlankRelayKeys.relayAccount(address: address, port: manualPort)
                       ), knownKey.count == 32 else {
-                    status = "Pair this nearby Relay before using it."
+                    status = "Approve this headset for the nearby Relay first."
                     return
                 }
                 try PlankRelayKeys.write(knownKey, account: serviceAccount)
@@ -403,7 +413,7 @@ final class PlankRelayPairing: ObservableObject {
                                       forKey: "plank.vision.relayServiceDomain")
             UserDefaults.standard.set("bonjour", forKey: "plank.vision.relayMode")
             paired = true
-            status = "Saved pairing selected. The Relay identity will be verified when you connect."
+            status = "Relay selected. Its identity will be verified when you connect."
         } catch {
             status = error.localizedDescription
         }
@@ -430,7 +440,7 @@ final class PlankRelayPairing: ObservableObject {
                 knownKey = existing
             }
             guard knownKey?.count == 32 else {
-                status = "No saved pairing for that address."
+                status = "Approve this headset for that address first."
                 return
             }
         } catch {
@@ -482,20 +492,20 @@ final class PlankRelayPairing: ObservableObject {
         code = digits.map { $0 - 48 }
         let previouslyPaired = paired
         isPairing = true
-        status = "Connecting to the Relay pairing window…"
+        status = "Connecting to the Relay approval window…"
         task = Task {
             do {
                 try await pair(endpoint: endpoint, account: account,
                                service: service, manual: manual, digits: digits)
                 paired = true
-                status = "Wacom Relay paired and its identity verified."
+                status = "Headset approved; Relay identity verified."
             } catch {
                 paired = previouslyPaired
                 if Task.isCancelled {
-                    status = "Tablet pairing canceled. The saved pairing is unchanged."
+                    status = "Headset approval canceled. Existing trust is unchanged."
                 } else if let networkError = error as? NWError,
                           case .posix(.ECONNRESET) = networkError {
-                    status = "The Relay closed new pairing. Hold ExpressKeys 1 and 8 for five seconds before trying again. The saved pairing is unchanged."
+                    status = "The Relay closed headset approval. Hold ExpressKeys 1 and 8 for five seconds before trying again. Existing trust is unchanged."
                 } else {
                     status = error.localizedDescription
                 }

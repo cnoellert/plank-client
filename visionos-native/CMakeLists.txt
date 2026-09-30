@@ -23,6 +23,7 @@ add_executable(PlankVision MACOSX_BUNDLE
     Sources/Services/HostStore.swift
     Sources/Services/PlankHTTPClient.swift
     Sources/Services/PlankCoreClient.swift
+    Sources/Services/PlankSessionStartupDeadline.swift
     Sources/Services/PlankHardwareVideoDecoder.swift
     Sources/Services/PlankSessionEngine.swift
     Sources/Views/AddHostView.swift

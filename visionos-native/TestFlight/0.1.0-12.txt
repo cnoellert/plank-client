@@ -1,0 +1,5 @@
+PLANK Vision Pro beta for use with a PLANK 1.1.024 workstation Host.
+
+Use a 60 fps saved workstation setting for this test. Check video playback, mouse and keyboard input, scrolling, and disconnect/reconnect. If you have a separately paired PLANK Wacom Relay, check pen movement, tip click and drag, side buttons, and pressure after reconnecting and after switching to Mac Virtual Display and back.
+
+Other stream frame rates and the optional 96 Hz timing experiment are not yet qualified. Report the exact connection stage and whether the picture continues to update if input appears stuck. The Bluetooth tablet Relay lab is separate from this build.
