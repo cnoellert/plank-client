@@ -147,7 +147,7 @@ final class PlankRelayBluetoothChannel: NSObject,
         guard !closed, error == nil, characteristic.uuid == Self.psm,
               let bytes = characteristic.value, bytes.count == 2 else { stop(); return }
         let psm = UInt16(bytes[0]) | UInt16(bytes[1]) << 8
-        guard (0x80...0xff).contains(psm), psm & 1 == 1 else { stop(); return }
+        guard (0x80...0xff).contains(psm) else { stop(); return }
         device.openL2CAPChannel(psm)
     }
 
