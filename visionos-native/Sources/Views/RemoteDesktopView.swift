@@ -1,9 +1,80 @@
 import CoreGraphics
+import Combine
 import Foundation
 import GameController
 import QuartzCore
 import SwiftUI
 import UIKit
+
+@MainActor
+private final class PlankDisplayTimingProbe: NSObject, ObservableObject {
+    @Published private(set) var summary = "Display link: measuring…"
+
+    private var displayLink: CADisplayLink?
+    private var prefer96 = false
+    private var windowStart = 0.0
+    private var callbacks = 0
+    private var targetIntervals: [Double] = []
+    private var durations: [Double] = []
+
+    func start(enabled: Bool, prefer96: Bool) {
+        guard enabled else { stop(); return }
+        if displayLink != nil && self.prefer96 == prefer96 { return }
+        stop()
+        self.prefer96 = prefer96
+        summary = "Display link: measuring… \(prefer96 ? "96 Hz hint" : "automatic")"
+        let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
+        if prefer96 {
+            link.preferredFrameRateRange = CAFrameRateRange(
+                minimum: 96, maximum: 96, preferred: 96
+            )
+        }
+        link.add(to: .main, forMode: .common)
+        displayLink = link
+    }
+
+    func stop() {
+        displayLink?.invalidate()
+        displayLink = nil
+        windowStart = 0
+        callbacks = 0
+        targetIntervals.removeAll()
+        durations.removeAll()
+    }
+
+    @objc private func tick(_ link: CADisplayLink) {
+        let targetInterval = link.targetTimestamp - link.timestamp
+        if (0.005...0.05).contains(targetInterval) {
+            targetIntervals.append(targetInterval)
+        }
+        if (0.005...0.05).contains(link.duration) {
+            durations.append(link.duration)
+        }
+        if windowStart == 0 { windowStart = link.timestamp }
+        callbacks += 1
+        let elapsed = link.timestamp - windowStart
+        guard elapsed >= 2 else { return }
+
+        let callbackRate = Double(max(0, callbacks - 1)) / elapsed
+        let targetRate = Self.medianRate(targetIntervals)
+        let durationRate = Self.medianRate(durations)
+        summary = String(
+            format: "Display link: target %.1f Hz · callbacks %.1f/s · duration %.1f Hz · %@",
+            targetRate, callbackRate, durationRate,
+            prefer96 ? "96 Hz hint" : "automatic"
+        )
+        windowStart = link.timestamp
+        callbacks = 1
+        targetIntervals.removeAll(keepingCapacity: true)
+        durations.removeAll(keepingCapacity: true)
+    }
+
+    private static func medianRate(_ intervals: [Double]) -> Double {
+        guard !intervals.isEmpty else { return 0 }
+        let sorted = intervals.sorted()
+        return 1 / sorted[sorted.count / 2]
+    }
+}
 
 struct RemoteDesktopView: View {
     let host: HostBookmark
@@ -11,8 +82,12 @@ struct RemoteDesktopView: View {
     @Environment(\.dismissWindow) private var dismissWindow
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("plank.vision.keyboardFunctionKeyMode") private var keyboardFunctionKeyMode = KeyboardFunctionKeyMode.pc.rawValue
+    @AppStorage("plank.vision.showStatistics") private var showStatistics = false
+    @AppStorage("plank.vision.debugPrefer96Hz") private var debugPrefer96Hz = false
+    @StateObject private var displayTiming = PlankDisplayTimingProbe()
     @State private var keyboardFocusGeneration = 0
     @State private var mouseReleaseGeneration = 0
+    @State private var mouseTrackingGeneration = 0
     var body: some View {
         ZStack {
             Color.black
@@ -23,16 +98,29 @@ struct RemoteDesktopView: View {
                     if let frame = client.frameDimensions {
                         RemoteInputSurface(
                             releaseGeneration: mouseReleaseGeneration,
+                            trackingGeneration: mouseTrackingGeneration,
                             onPointer: { location in
                                 sendPointer(location, in: proxy.size, frame: frame)
                             },
                             onButton: { number, pressed in
-                                requestKeyboardFocus()
                                 client.setMouseButton(number: number, pressed: pressed)
+                                // Taking keyboard focus during mouse-down can cancel
+                                // the gesture before its matching mouse-up arrives.
+                                if !pressed { requestKeyboardFocus() }
                             },
                             onScroll: { vertical, horizontal in
                                 requestKeyboardFocus()
                                 client.scroll(vertical: vertical, horizontal: horizontal)
+                            },
+                            onWindowFocus: { focused in
+                                // Mac Virtual Display can change the key
+                                // window without a SwiftUI scene-phase change.
+                                client.setTabletActive(focused)
+                                if focused {
+                                    requestKeyboardFocus()
+                                } else {
+                                    mouseReleaseGeneration &+= 1
+                                }
                             }
                         )
                     } else {
@@ -44,6 +132,24 @@ struct RemoteDesktopView: View {
                     }
                 }
             }
+
+            VStack {
+                HStack {
+                    if showStatistics {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(client.videoDiagnosticText)
+                            Text(displayTiming.summary)
+                        }
+                        .font(.caption2.monospacedDigit())
+                        .padding(8)
+                        .background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 8))
+                    }
+                    Spacer()
+                }
+                Spacer()
+            }
+            .padding(12)
+            .allowsHitTesting(false)
 
             KeyboardCapture(
                 focusGeneration: keyboardFocusGeneration,
@@ -61,26 +167,82 @@ struct RemoteDesktopView: View {
             )
             .frame(width: 0, height: 0)
             .allowsHitTesting(false)
+
+#if PLANK_TABLET_RELAY
+            if client.waitingForTablet {
+                Color.black
+                    .ignoresSafeArea()
+                VStack(spacing: 18) {
+                    ProgressView()
+                    Text("Connecting Wacom tablet…")
+                        .font(.title2.weight(.semibold))
+                    Text(client.tabletRelayStatus)
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                    Text("Mouse, keyboard, and pen input will start when the workstation confirms the tablet is ready.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                    HStack(spacing: 14) {
+                        Button("Continue without Wacom") {
+                            client.continueWithoutTablet()
+                        }
+                        Button("Disconnect", role: .cancel) {
+                            client.disconnectSession()
+                            dismissWindow(id: "plank-desktop")
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .padding(32)
+                .frame(maxWidth: 580)
+            }
+#endif
         }
         .ignoresSafeArea()
         .onAppear {
             client.setTabletActive(scenePhase == .active)
+            updateDisplayTiming()
             requestKeyboardFocus()
         }
+        .onChange(of: showStatistics) { _, _ in updateDisplayTiming() }
+        .onChange(of: debugPrefer96Hz) { _, _ in updateDisplayTiming() }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 client.setTabletActive(true)
+                mouseTrackingGeneration &+= 1
                 requestKeyboardFocus()
             } else {
                 client.setTabletActive(false)
                 mouseReleaseGeneration &+= 1
             }
         }
+#if PLANK_TABLET_RELAY
+        .onChange(of: client.waitingForTablet) { _, waiting in
+            if waiting { mouseReleaseGeneration &+= 1 }
+        }
+#endif
         .onChange(of: client.phase) { _, phase in
             if !isSessionActive(phase) {
                 dismissWindow(id: "plank-desktop")
             }
         }
+        .onDisappear {
+            displayTiming.stop()
+            // Closing the spatial window must end its stream too. Otherwise
+            // the Host keeps a live reservation behind a vanished window.
+            if client.activeHostID == host.id && isSessionActive(client.phase) {
+                client.disconnectSession()
+            }
+        }
+    }
+
+    private func updateDisplayTiming() {
+        displayTiming.start(
+            enabled: showStatistics,
+            prefer96: debugPrefer96Hz && (host.streamFrameRate == 24 || host.streamFrameRate == 48)
+        )
     }
 
     private func isSessionActive(_ phase: ConnectionPhase) -> Bool {
@@ -230,6 +392,7 @@ private final class VideoSurfaceView: UIView {
     private var cursorShape: PlankRemoteCursorShape?
     private let cursorLayer = CALayer()
     private let cursorFallback = CALayer()
+    private let metalVideo = PlankMetalVideoView(frame: .zero)
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -237,11 +400,13 @@ private final class VideoSurfaceView: UIView {
         isOpaque = true
         isUserInteractionEnabled = false
         layer.contentsGravity = .resizeAspect
+        addSubview(metalVideo)
+        metalVideo.isHidden = true
         cursorLayer.contentsGravity = .resize
         cursorLayer.isHidden = true
         layer.addSublayer(cursorLayer)
-        cursorFallback.bounds = CGRect(x: 0, y: 0, width: 18, height: 18)
-        cursorFallback.cornerRadius = 9
+        cursorFallback.bounds = CGRect(x: 0, y: 0, width: 12, height: 12)
+        cursorFallback.cornerRadius = 6
         cursorFallback.borderWidth = 2
         cursorFallback.borderColor = UIColor.cyan.cgColor
         cursorFallback.isHidden = true
@@ -251,6 +416,16 @@ private final class VideoSurfaceView: UIView {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     func display(_ frame: PlankRenderedFrame?) {
+        if let frame, let pixelBuffer = frame.pixelBuffer, metalVideo.canRender {
+            dimensions = PlankFrameDimensions(width: frame.width, height: frame.height)
+            layoutVideo()
+            layer.contents = nil
+            metalVideo.isHidden = false
+            metalVideo.display(pixelBuffer)
+            layoutCursor()
+            return
+        }
+        metalVideo.isHidden = true
         guard let frame,
               let provider = CGDataProvider(data: frame.pixels as CFData),
               let colorSpace = CGColorSpace(name: CGColorSpace.sRGB) else {
@@ -323,7 +498,27 @@ private final class VideoSurfaceView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        layoutVideo()
         layoutCursor()
+    }
+
+    private func layoutVideo() {
+        guard let dimensions, bounds.width > 0, bounds.height > 0 else {
+            metalVideo.frame = bounds
+            return
+        }
+        let scale = min(
+            bounds.width / CGFloat(dimensions.width),
+            bounds.height / CGFloat(dimensions.height)
+        )
+        let width = CGFloat(dimensions.width) * scale
+        let height = CGFloat(dimensions.height) * scale
+        metalVideo.frame = CGRect(
+            x: (bounds.width - width) / 2,
+            y: (bounds.height - height) / 2,
+            width: width,
+            height: height
+        )
     }
 
     private func layoutCursor() {
@@ -356,11 +551,14 @@ private final class VideoSurfaceView: UIView {
             cursorLayer.isHidden = true
             return
         }
+        // Limit the minimum size to half the Host cursor. Full-size Host
+        // artwork overwhelms small controls in a spatial desktop window.
+        let cursorScale = min(max(scale, 0.5), 1)
         cursorLayer.frame = CGRect(
-            x: pointer.x - CGFloat(cursorShape.hotspotX) * scale,
-            y: pointer.y - CGFloat(cursorShape.hotspotY) * scale,
-            width: CGFloat(cursorShape.width) * scale,
-            height: CGFloat(cursorShape.height) * scale
+            x: pointer.x - CGFloat(cursorShape.hotspotX) * cursorScale,
+            y: pointer.y - CGFloat(cursorShape.hotspotY) * cursorScale,
+            width: CGFloat(cursorShape.width) * cursorScale,
+            height: CGFloat(cursorShape.height) * cursorScale
         )
         cursorLayer.isHidden = false
     }
@@ -368,15 +566,18 @@ private final class VideoSurfaceView: UIView {
 
 private struct RemoteInputSurface: UIViewRepresentable {
     let releaseGeneration: Int
+    let trackingGeneration: Int
     let onPointer: @MainActor (CGPoint) -> Void
     let onButton: @MainActor (UInt8, Bool) -> Void
     let onScroll: @MainActor (Int16, Int16) -> Void
+    let onWindowFocus: @MainActor (Bool) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
             onPointer: onPointer,
             onButton: onButton,
-            onScroll: onScroll
+            onScroll: onScroll,
+            onWindowFocus: onWindowFocus
         )
     }
 
@@ -403,6 +604,7 @@ private struct RemoteInputSurface: UIViewRepresentable {
             coordinator?.onButton(button, pressed)
         }
         view.addGestureRecognizer(mousePress)
+        context.coordinator.inputView = view
         context.coordinator.beginMouseMotionTracking()
 
         let wheel = WheelCaptureScrollView(frame: .zero)
@@ -431,6 +633,11 @@ private struct RemoteInputSurface: UIViewRepresentable {
         context.coordinator.onPointer = onPointer
         context.coordinator.onButton = onButton
         context.coordinator.onScroll = onScroll
+        context.coordinator.onWindowFocus = onWindowFocus
+        if context.coordinator.trackingGeneration != trackingGeneration {
+            context.coordinator.trackingGeneration = trackingGeneration
+            context.coordinator.refreshMouseMotionTracking()
+        }
         if context.coordinator.releaseGeneration != releaseGeneration {
             context.coordinator.releaseGeneration = releaseGeneration
             for recognizer in view.gestureRecognizers ?? [] {
@@ -451,7 +658,10 @@ private struct RemoteInputSurface: UIViewRepresentable {
         var onPointer: @MainActor (CGPoint) -> Void
         var onButton: @MainActor (UInt8, Bool) -> Void
         var onScroll: @MainActor (Int16, Int16) -> Void
+        var onWindowFocus: @MainActor (Bool) -> Void
         var releaseGeneration = 0
+        var trackingGeneration = 0
+        weak var inputView: UIView?
         private var mouseObservers: [NSObjectProtocol] = []
         private weak var trackedMouse: GCMouse?
         private var sawPhysicalMouseMotion = false
@@ -460,11 +670,13 @@ private struct RemoteInputSurface: UIViewRepresentable {
         init(
             onPointer: @escaping @MainActor (CGPoint) -> Void,
             onButton: @escaping @MainActor (UInt8, Bool) -> Void,
-            onScroll: @escaping @MainActor (Int16, Int16) -> Void
+            onScroll: @escaping @MainActor (Int16, Int16) -> Void,
+            onWindowFocus: @escaping @MainActor (Bool) -> Void
         ) {
             self.onPointer = onPointer
             self.onButton = onButton
             self.onScroll = onScroll
+            self.onWindowFocus = onWindowFocus
         }
 
         func beginMouseMotionTracking() {
@@ -488,6 +700,42 @@ private struct RemoteInputSurface: UIViewRepresentable {
                     self?.trackMouse(GCMouse.current)
                 }
             })
+            mouseObservers.append(center.addObserver(
+                forName: UIWindow.didBecomeKeyNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] notification in
+                guard let window = notification.object as? UIWindow else { return }
+                let windowID = ObjectIdentifier(window)
+                MainActor.assumeIsolated {
+                    guard let self,
+                          let inputWindow = self.inputView?.window,
+                          ObjectIdentifier(inputWindow) == windowID else { return }
+                    self.refreshMouseMotionTracking()
+                    self.onWindowFocus(true)
+                }
+            })
+            mouseObservers.append(center.addObserver(
+                forName: UIWindow.didResignKeyNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] notification in
+                guard let window = notification.object as? UIWindow else { return }
+                let windowID = ObjectIdentifier(window)
+                MainActor.assumeIsolated {
+                    guard let self,
+                          let inputWindow = self.inputView?.window,
+                          ObjectIdentifier(inputWindow) == windowID else { return }
+                    self.onWindowFocus(false)
+                }
+            })
+        }
+
+        func refreshMouseMotionTracking() {
+            // Returning from Mac Virtual Display can leave the mouse current
+            // without delivering a new current-mouse notification. Reinstall
+            // the motion callback when this desktop becomes active again.
+            trackMouse(GCMouse.current)
         }
 
         func stopMouseMotionTracking() {
@@ -726,7 +974,7 @@ private struct KeyboardCapture: UIViewRepresentable {
         view.functionKeyMode = functionKeyMode
         guard view.focusGeneration != focusGeneration else { return }
         view.focusGeneration = focusGeneration
-        view.requestKeyboardFocus(force: true)
+        view.requestKeyboardFocus()
     }
 }
 
@@ -745,17 +993,18 @@ private final class KeyboardCaptureView: UIView {
         if window == nil {
             releaseAllKeys()
         } else {
-            requestKeyboardFocus(force: true)
+            requestKeyboardFocus()
         }
     }
 
-    func requestKeyboardFocus(force: Bool) {
+    func requestKeyboardFocus() {
         guard window != nil else { return }
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            if force && self.isFirstResponder {
-                _ = self.resignFirstResponder()
-            }
+            // A mouse press asks the remote window for keyboard focus too.
+            // Resigning an already focused capture view for every press can
+            // cancel the pointer gesture before its matching release arrives.
+            guard !self.isFirstResponder else { return }
             _ = self.becomeFirstResponder()
         }
     }

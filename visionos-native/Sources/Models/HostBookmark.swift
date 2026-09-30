@@ -1,4 +1,5 @@
 import Foundation
+import CoreVideo
 
 enum KeyboardFunctionKeyMode: String, CaseIterable, Identifiable, Sendable {
     case pc
@@ -15,25 +16,37 @@ enum KeyboardFunctionKeyMode: String, CaseIterable, Identifiable, Sendable {
 }
 
 enum SpatialDisplaySize: String, Codable, CaseIterable, Identifiable, Sendable {
+    case portrait1024
+    case portrait1280
+    case fullHD
+    case wuxga
     case standard
+    case tall2560
+    case portrait2560
     case wide
+    case wide3840
+    case ultraHD
+    case dci4K
     case ultrawide
 
     var id: String { rawValue }
 
-    var title: String {
-        switch self {
-        case .standard: return "Standard"
-        case .wide: return "Wide"
-        case .ultrawide: return "Ultrawide"
-        }
-    }
+    var title: String { virtualMode.replacingOccurrences(of: "x", with: " × ") }
 
     var virtualMode: String {
         switch self {
+        case .portrait1024: return "1024x2160"
+        case .portrait1280: return "1280x2160"
+        case .fullHD: return "1920x1080"
+        case .wuxga: return "1920x1200"
         case .standard: return "2560x1440"
+        case .tall2560: return "2560x1600"
+        case .portrait2560: return "2560x2160"
         case .wide: return "3440x1440"
-        case .ultrawide: return "5120x1440"
+        case .wide3840: return "3840x1600"
+        case .ultraHD: return "3840x2160"
+        case .dci4K: return "4096x2160"
+        case .ultrawide: return "5120x2160"
         }
     }
 
@@ -42,9 +55,15 @@ enum SpatialDisplaySize: String, Codable, CaseIterable, Identifiable, Sendable {
         return (components[0], components[1])
     }
 
-    // The current Linux Host EDIDs include Standard and Wide. Keep the system
-    // naming visible while the coordinated 5120x1440 Host mode is prepared.
-    var isAvailable: Bool { self != .ultrawide }
+}
+
+enum StreamFrameRate {
+    static let defaultValue = 60
+    static let presets = [24, 25, 30, 48, 50, 60, 90, 120]
+
+    static func normalized(_ value: Int) -> Int {
+        (1...240).contains(value) ? value : defaultValue
+    }
 }
 
 struct HostBookmark: Identifiable, Codable, Hashable, Sendable {
@@ -54,6 +73,7 @@ struct HostBookmark: Identifiable, Codable, Hashable, Sendable {
     var port: UInt16
     var lastConnectedAt: Date?
     var spatialDisplaySize: SpatialDisplaySize
+    var streamFrameRate: Int
 
     init(
         id: UUID = UUID(),
@@ -61,7 +81,8 @@ struct HostBookmark: Identifiable, Codable, Hashable, Sendable {
         address: String,
         port: UInt16 = 28989,
         lastConnectedAt: Date? = nil,
-        spatialDisplaySize: SpatialDisplaySize = .standard
+        spatialDisplaySize: SpatialDisplaySize = .standard,
+        streamFrameRate: Int = StreamFrameRate.defaultValue
     ) {
         self.id = id
         self.name = name
@@ -69,10 +90,11 @@ struct HostBookmark: Identifiable, Codable, Hashable, Sendable {
         self.port = port
         self.lastConnectedAt = lastConnectedAt
         self.spatialDisplaySize = spatialDisplaySize
+        self.streamFrameRate = StreamFrameRate.normalized(streamFrameRate)
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, address, port, lastConnectedAt, spatialDisplaySize
+        case id, name, address, port, lastConnectedAt, spatialDisplaySize, streamFrameRate
     }
 
     init(from decoder: Decoder) throws {
@@ -86,6 +108,10 @@ struct HostBookmark: Identifiable, Codable, Hashable, Sendable {
             SpatialDisplaySize.self,
             forKey: .spatialDisplaySize
         ) ?? .standard
+        streamFrameRate = StreamFrameRate.normalized(
+            (try? values.decodeIfPresent(Int.self, forKey: .streamFrameRate)) ??
+            StreamFrameRate.defaultValue
+        )
     }
 }
 
@@ -154,8 +180,11 @@ struct PlankFrameProbe: Equatable, Sendable {
     let negotiationSummary: String
 }
 
-struct PlankRenderedFrame: Sendable {
+// CVPixelBuffer is immutable after VideoToolbox returns it. The Metal renderer
+// retains it until its command buffer completes.
+struct PlankRenderedFrame: @unchecked Sendable {
     let pixels: Data
+    let pixelBuffer: CVPixelBuffer?
     let width: Int
     let height: Int
     let bytesPerRow: Int

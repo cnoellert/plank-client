@@ -270,6 +270,14 @@ final class PlankHTTPClient: @unchecked Sendable {
         throw PlankHTTPError.invalidResponse("The Host sign-in exceeded its challenge limit.")
     }
 
+    // Keep the URLSession's certificate pin when a replacement display worker
+    // invalidates its in-memory bearer token. A fresh HTTP client would trust a
+    // new certificate before resending credentials.
+    func refreshAuthentication(username: String, password: String) async throws -> PlankAuthentication {
+        sessionToken = nil
+        return try await authenticate(username: username, password: password)
+    }
+
     func fetchTopology() async throws -> PlankTopology {
         let data = try await authorizedRequest(path: "plank/topology")
         guard let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -306,12 +314,12 @@ final class PlankHTTPClient: @unchecked Sendable {
         return delegate.applications
     }
 
-    func launchDesktop(topology: PlankTopology, applicationID: Int) async throws -> PlankLaunchCredentials {
+    func launchDesktop(topology: PlankTopology, applicationID: Int, frameRate: Int) async throws -> PlankLaunchCredentials {
         let encodingMode = "hevc-10-444-nvenc"
         let udpPayloadMTU: UInt32 = 1200
         var query: [URLQueryItem] = [
             .init(name: "appid", value: String(applicationID)),
-            .init(name: "mode", value: "\(topology.desktopWidth)x\(topology.desktopHeight)x60"),
+            .init(name: "mode", value: "\(topology.desktopWidth)x\(topology.desktopHeight)x\(frameRate)"),
             .init(name: "additionalStates", value: "1"),
             .init(name: "hdrMode", value: "1"),
             .init(name: "clientHdrCapVersion", value: "0"),
@@ -395,6 +403,17 @@ final class PlankHTTPClient: @unchecked Sendable {
         if let timeout { request.timeoutInterval = timeout }
         let (data, response) = try await session.data(for: request)
         try validateHTTP(response)
+        // The Host uses a GameStream XML status envelope (with HTTP 200) when
+        // an in-memory bearer token is invalidated by a display-worker change.
+        // Surface its protocol status instead of feeding XML to a JSON parser.
+        if data.first(where: { ![9, 10, 13, 32].contains($0) }) == 60 {
+            let status = ServerInfoParser()
+            let parser = XMLParser(data: data)
+            parser.delegate = status
+            if parser.parse(), let code = status.statusCode, code != 200 {
+                throw PlankHTTPError.rejected(code, status.statusMessage)
+            }
+        }
         return data
     }
 

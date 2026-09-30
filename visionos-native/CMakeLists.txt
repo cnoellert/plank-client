@@ -3,6 +3,10 @@ cmake_minimum_required(VERSION 3.30)
 project(PlankVision LANGUAGES Swift C)
 
 set(CMAKE_Swift_LANGUAGE_VERSION 6)
+set(PLANK_VISION_BUILD_NUMBER "1" CACHE STRING "Monotonically increasing TestFlight build number")
+if(NOT PLANK_VISION_BUILD_NUMBER MATCHES "^[1-9][0-9]*$")
+    message(FATAL_ERROR "PLANK_VISION_BUILD_NUMBER must be a positive integer")
+endif()
 
 add_executable(PlankVision MACOSX_BUNDLE
     Bridge/PlankAddress.c
@@ -19,13 +23,29 @@ add_executable(PlankVision MACOSX_BUNDLE
     Sources/Services/HostStore.swift
     Sources/Services/PlankHTTPClient.swift
     Sources/Services/PlankCoreClient.swift
+    Sources/Services/PlankHardwareVideoDecoder.swift
     Sources/Services/PlankSessionEngine.swift
     Sources/Views/AddHostView.swift
     Sources/Views/HostBrowserView.swift
     Sources/Views/HostDetailView.swift
+    Sources/Views/PlankMetalVideoView.swift
     Sources/Views/RemoteDesktopView.swift
     Sources/Views/SettingsView.swift
+    PrivacyInfo.xcprivacy
 )
+set_source_files_properties(PrivacyInfo.xcprivacy PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
+
+# visionOS requires a layered app icon. Render the existing PLANK artwork into
+# separate opaque and transparent layers so the archive is self-contained.
+set(PLANK_VISION_ASSETS "${CMAKE_CURRENT_BINARY_DIR}/generated/Assets.xcassets")
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/Assets.xcassets/" DESTINATION "${PLANK_VISION_ASSETS}")
+execute_process(COMMAND xcrun --sdk macosx swift
+    "${CMAKE_CURRENT_SOURCE_DIR}/Branding/render-vision-icon.swift"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Branding/plank-logo.png"
+    "${PLANK_VISION_ASSETS}"
+    COMMAND_ERROR_IS_FATAL ANY)
+set_source_files_properties("${PLANK_VISION_ASSETS}" PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
+target_sources(PlankVision PRIVATE "${PLANK_VISION_ASSETS}")
 
 set(PLANK_TRANSPORT_DIR "" CACHE PATH "Path to the plank-transport Cargo project")
 if(PLANK_TRANSPORT_DIR)
@@ -100,7 +120,8 @@ if(PLANK_RELAY_SOURCE_DIR)
     target_sources(PlankVision PRIVATE
         Sources/Services/PlankRelayPairing.swift
         Sources/Services/PlankRelayLiveLink.swift
-        Sources/Services/PlankWacomPreflight.swift)
+        Sources/Services/PlankWacomPreflight.swift
+        Sources/Services/PlankTabletInputPolicy.swift)
 endif()
 
 set(PLANK_FFMPEG_DIR "" CACHE PATH "Path to the visionOS FFmpeg installation")
@@ -132,7 +153,12 @@ set_target_properties(PlankVision PROPERTIES
     XCODE_ATTRIBUTE_GENERATE_INFOPLIST_FILE "NO"
     XCODE_ATTRIBUTE_INFOPLIST_KEY_UIApplicationSceneManifest_Generation "YES"
     XCODE_ATTRIBUTE_MARKETING_VERSION "0.1.0"
-    XCODE_ATTRIBUTE_CURRENT_PROJECT_VERSION "1"
+    XCODE_ATTRIBUTE_CURRENT_PROJECT_VERSION "${PLANK_VISION_BUILD_NUMBER}"
+    XCODE_ATTRIBUTE_SKIP_INSTALL "NO"
+    XCODE_ATTRIBUTE_INSTALL_PATH "/Applications"
+    XCODE_ATTRIBUTE_DEBUG_INFORMATION_FORMAT "dwarf-with-dsym"
+    XCODE_ATTRIBUTE_GCC_GENERATE_DEBUGGING_SYMBOLS "YES"
     XCODE_ATTRIBUTE_SWIFT_STRICT_CONCURRENCY "complete"
     XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "7"
+    XCODE_ATTRIBUTE_ASSETCATALOG_COMPILER_APPICON_NAME "AppIcon"
 )

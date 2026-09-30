@@ -1,4 +1,5 @@
 import Foundation
+import CoreVideo
 
 enum PlankHostFeature {
     static let rawHidTablet: UInt32 = 0x04
@@ -13,6 +14,17 @@ enum PlankInputEvent: Sendable {
     case key(code: UInt16, pressed: Bool, modifiers: UInt8)
     case text(Data)
     case rawHid(Data)
+}
+
+struct PlankVideoProgress: Sendable {
+    let received: UInt64
+    let decoded: UInt64
+    let keyFrames: UInt64
+    let receiveDrops: UInt64
+    let fecUnrecovered: UInt64
+    let frameGaps: UInt64
+    let averageDecodeMilliseconds: Double
+    let decoder: String
 }
 
 final class PlankInputQueue: @unchecked Sendable {
@@ -169,9 +181,11 @@ struct PlankSessionEngine: Sendable {
     func stream(
         host: String,
         topology: PlankTopology,
+        frameRate: Int,
         launch: PlankLaunchCredentials,
         inputQueue: PlankInputQueue,
         onFrame: @escaping @Sendable (PlankRenderedFrame) -> Void,
+        onVideoProgress: @escaping @Sendable (PlankVideoProgress) -> Void,
         onCursor: @escaping @Sendable (PlankCursorUpdate) -> Void,
         onHostFeatures: @escaping @Sendable (UInt32) -> Void,
         onRawHid: @escaping @Sendable (Data) -> Void,
@@ -203,8 +217,8 @@ struct PlankSessionEngine: Sendable {
                 "video": [
                     "width": topology.desktopWidth,
                     "height": topology.desktopHeight,
-                    "fps": 60,
-                    "fps_x100": 6000,
+                    "fps": frameRate,
+                    "fps_x100": frameRate * 100,
                     "slices_per_frame": 1,
                     "reference_frames": 1,
                     "encoder_csc_mode": 7,
@@ -254,13 +268,27 @@ struct PlankSessionEngine: Sendable {
                 throw PlankSessionError.transport(String(cString: error))
             }
             defer { plank_video_decoder_destroy(decoder) }
+            var hardwareDecoder: PlankHardwareVideoDecoder? = PlankHardwareVideoDecoder()
 
-            var payload = [UInt8](repeating: 0, count: 4 * 1024 * 1024)
+            let decoderPadding = Int(plank_video_decoder_input_padding())
+            var payload = [UInt8](repeating: 0, count: 4 * 1024 * 1024 + decoderPadding)
             var pixels = [UInt8](
                 repeating: 0,
                 count: topology.desktopWidth * topology.desktopHeight * 4
             )
             var frame = PlankVisionVideoFrame()
+            var receivedFrames: UInt64 = 0
+            var decodedFrames: UInt64 = 0
+            var keyFrames: UInt64 = 0
+            var frameGaps: UInt64 = 0
+            var lastReceivedFrameNumber: UInt64?
+            var decodeNanos: UInt64 = 0
+            var decodeCalls: UInt64 = 0
+            var lastVideoReport = DispatchTime.now().uptimeNanoseconds
+            var lastDecodedFrameTime = lastVideoReport
+            var lastIDRRequest = UInt64(0)
+            var awaitingKeyFrame = false
+            var hardwareFailures = 0
             var cursorChunk = [UInt8](repeating: 0, count: Int(PLANK_VISION_CURSOR_MAX_CHUNK_SIZE))
             var cursorAssembly = CursorShapeAssembly()
             let senderState = PlankInputSenderState()
@@ -289,8 +317,28 @@ struct PlankSessionEngine: Sendable {
                     }
                     var payloadSize = 0
                     let result = plank_vision_transport_receive_video(
-                        transport, &frame, &payload, payload.count, &payloadSize, 30
+                        transport, &frame, &payload,
+                        payload.count - decoderPadding, &payloadSize, 30
                     )
+                    let reportTime = DispatchTime.now().uptimeNanoseconds
+                    if reportTime - lastVideoReport >= 1_000_000_000 {
+                        var stats = PlankVisionVideoStats()
+                        _ = plank_vision_transport_video_stats(transport, &stats)
+                        onVideoProgress(PlankVideoProgress(
+                            received: receivedFrames,
+                            decoded: decodedFrames,
+                            keyFrames: keyFrames,
+                            receiveDrops: stats.receive_drops,
+                            fecUnrecovered: stats.fec_symbols_unrecovered,
+                            frameGaps: frameGaps,
+                            averageDecodeMilliseconds: decodeCalls == 0 ? 0 :
+                                Double(decodeNanos) / Double(decodeCalls) / 1_000_000,
+                            decoder: hardwareDecoder == nil ? "FFmpeg software" : "VideoToolbox xf44"
+                        ))
+                        decodeNanos = 0
+                        decodeCalls = 0
+                        lastVideoReport = reportTime
+                    }
                     // Keep Host tablet requests moving even while video is idle.
                     // Cap each drain so sustained control traffic cannot starve video.
                     for _ in 0..<64 {
@@ -324,18 +372,94 @@ struct PlankSessionEngine: Sendable {
                     }
 
                     if result == PLANK_VISION_TRANSPORT_BUFFER_TOO_SMALL,
-                       payloadSize > payload.count, payloadSize <= 64 * 1024 * 1024 {
-                        payload = [UInt8](repeating: 0, count: payloadSize)
+                       payloadSize > payload.count - decoderPadding,
+                       payloadSize <= 64 * 1024 * 1024 {
+                        payload = [UInt8](repeating: 0, count: payloadSize + decoderPadding)
                         continue
                     }
                     if result == PLANK_VISION_TRANSPORT_TIMEOUT { continue }
                     guard result == PLANK_VISION_TRANSPORT_OK, payloadSize > 0 else {
                         throw PlankSessionError.transport("The native video receiver stopped unexpectedly.")
                     }
+                    receivedFrames &+= 1
+                    if frame.flags & 1 != 0 { keyFrames &+= 1 }
+                    if let lastReceivedFrameNumber,
+                       frame.frame_number > lastReceivedFrameNumber + 1 {
+                        frameGaps &+= frame.frame_number - lastReceivedFrameNumber - 1
+                    }
+                    lastReceivedFrameNumber = frame.frame_number
+
+                    if awaitingKeyFrame {
+                        if frame.flags & 1 != 0 {
+                            awaitingKeyFrame = false
+                        } else {
+                            if reportTime - lastIDRRequest >= 1_000_000_000 {
+                                guard plank_vision_transport_request_idr(transport) ==
+                                        PLANK_VISION_TRANSPORT_OK else {
+                                    throw PlankSessionError.transport("Unable to request a fresh video frame.")
+                                }
+                                lastIDRRequest = reportTime
+                            }
+                            continue
+                        }
+                    }
+
+                    // libavcodec may read beyond the compressed packet size for
+                    // vectorized bitstream parsing. The transport buffer is reused,
+                    // so clear the trailing bytes after every received frame.
+                    payload.replaceSubrange(
+                        payloadSize..<(payloadSize + decoderPadding),
+                        with: repeatElement(0, count: decoderPadding)
+                    )
+
+                    if let hardware = hardwareDecoder {
+                        let decodeStart = DispatchTime.now().uptimeNanoseconds
+                        let outcome = payload.withUnsafeBufferPointer { bytes in
+                            hardware.decode(UnsafeBufferPointer(rebasing: bytes.prefix(payloadSize)))
+                        }
+                        decodeNanos &+= DispatchTime.now().uptimeNanoseconds - decodeStart
+                        decodeCalls &+= 1
+                        switch outcome {
+                        case let .frame(image):
+                            decodedFrames &+= 1
+                            lastDecodedFrameTime = reportTime
+                            onFrame(PlankRenderedFrame(
+                                pixels: Data(), pixelBuffer: image,
+                                width: CVPixelBufferGetWidth(image),
+                                height: CVPixelBufferGetHeight(image),
+                                bytesPerRow: 0, frameNumber: frame.frame_number
+                            ))
+                            continue
+                        case .waiting:
+                            if reportTime - lastDecodedFrameTime >= 1_000_000_000 &&
+                               reportTime - lastIDRRequest >= 1_000_000_000 {
+                                guard plank_vision_transport_request_idr(transport) ==
+                                        PLANK_VISION_TRANSPORT_OK else {
+                                    throw PlankSessionError.transport("Unable to request a fresh video frame.")
+                                }
+                                lastIDRRequest = reportTime
+                            }
+                            continue
+                        case .unavailable:
+                            hardwareFailures += 1
+                            NSLog("PLANK VideoToolbox decoder failed: %@",
+                                  hardware.lastError ?? "unknown error")
+                            hardwareDecoder = hardwareFailures <= 2 ?
+                                PlankHardwareVideoDecoder() : nil
+                            awaitingKeyFrame = true
+                            guard plank_vision_transport_request_idr(transport) ==
+                                    PLANK_VISION_TRANSPORT_OK else {
+                                throw PlankSessionError.transport("Unable to request a fresh video frame.")
+                            }
+                            lastIDRRequest = reportTime
+                            continue
+                        }
+                    }
 
                     var decodedWidth: UInt32 = 0
                     var decodedHeight: UInt32 = 0
                     var decodedStride: UInt32 = 0
+                    let decodeStart = DispatchTime.now().uptimeNanoseconds
                     let decodeResult = payload.withUnsafeBytes { encodedBytes in
                         pixels.withUnsafeMutableBytes { pixelBytes in
                             plank_video_decoder_decode(
@@ -352,13 +476,28 @@ struct PlankSessionEngine: Sendable {
                             )
                         }
                     }
-                    if decodeResult == PLANK_VIDEO_DECODER_NO_FRAME { continue }
+                    decodeNanos &+= DispatchTime.now().uptimeNanoseconds - decodeStart
+                    decodeCalls &+= 1
+                    if decodeResult == PLANK_VIDEO_DECODER_NO_FRAME {
+                        if reportTime - lastDecodedFrameTime >= 1_000_000_000 &&
+                           reportTime - lastIDRRequest >= 1_000_000_000 {
+                            guard plank_vision_transport_request_idr(transport) ==
+                                    PLANK_VISION_TRANSPORT_OK else {
+                                throw PlankSessionError.transport("Unable to request a fresh video frame.")
+                            }
+                            lastIDRRequest = reportTime
+                        }
+                        continue
+                    }
                     guard decodeResult == PLANK_VIDEO_DECODER_FRAME else {
                         throw PlankSessionError.transport(String(cString: error))
                     }
+                    decodedFrames &+= 1
+                    lastDecodedFrameTime = reportTime
                     let byteCount = Int(decodedStride) * Int(decodedHeight)
                     onFrame(PlankRenderedFrame(
                         pixels: Data(pixels.prefix(byteCount)),
+                        pixelBuffer: nil,
                         width: Int(decodedWidth),
                         height: Int(decodedHeight),
                         bytesPerRow: Int(decodedStride),

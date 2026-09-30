@@ -19,6 +19,9 @@ enum {
 PlankVideoDecoder *plank_video_decoder_create(
     char *error, size_t error_capacity);
 
+// FFmpeg requires this many zero bytes beyond the encoded packet payload.
+size_t plank_video_decoder_input_padding(void);
+
 int32_t plank_video_decoder_decode(
     PlankVideoDecoder *decoder,
     const uint8_t *encoded, size_t encoded_size,

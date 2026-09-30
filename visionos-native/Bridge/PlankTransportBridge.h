@@ -18,6 +18,12 @@ typedef struct PlankVisionVideoFrame {
     uint16_t host_processing_latency;
 } PlankVisionVideoFrame;
 
+typedef struct PlankVisionVideoStats {
+    uint64_t frames_received;
+    uint64_t receive_drops;
+    uint64_t fec_symbols_unrecovered;
+} PlankVisionVideoStats;
+
 typedef struct PlankVisionCursorEvent {
     uint16_t type;
     uint32_t x;
@@ -79,6 +85,11 @@ int32_t plank_vision_transport_receive_video(
     size_t payload_capacity,
     size_t *payload_size,
     uint32_t timeout_ms);
+
+int32_t plank_vision_transport_video_stats(
+    PlankVisionTransport *transport, PlankVisionVideoStats *stats);
+
+int32_t plank_vision_transport_request_idr(PlankVisionTransport *transport);
 
 int32_t plank_vision_transport_send_mouse_position(
     PlankVisionTransport *transport,

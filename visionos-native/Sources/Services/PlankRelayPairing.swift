@@ -9,6 +9,7 @@ private enum PlankRelayError: LocalizedError {
     case random
     case crypto
     case connectionClosed
+    case connectionTimedOut
     case pairingRejected
 
     var errorDescription: String? {
@@ -18,6 +19,7 @@ private enum PlankRelayError: LocalizedError {
         case .random: "Could not generate a secure tablet pairing code."
         case .crypto: "The tablet pairing exchange failed verification."
         case .connectionClosed: "The tablet Relay closed the connection."
+        case .connectionTimedOut: "The Relay could not be reached. Choose Manual Address if it is on another subnet."
         case .pairingRejected: "The tablet Relay rejected pairing. Check the ExpressKey order and try again."
         }
     }
@@ -82,16 +84,30 @@ enum PlankRelayKeys {
         "relay-service-\(name).\(domain)"
     }
 
-    static func savedConnection() -> (endpoint: NWEndpoint, account: String)? {
+    static func savedConnection(preferManualFallback: Bool = false) ->
+        (endpoint: NWEndpoint, account: String)? {
         let defaults = UserDefaults.standard
         if defaults.string(forKey: "plank.vision.relayMode") == "bonjour",
            let name = defaults.string(forKey: "plank.vision.relayServiceName"),
            let domain = defaults.string(forKey: "plank.vision.relayServiceDomain"),
            !name.isEmpty, !domain.isEmpty {
+            let account = serviceAccount(name: name, domain: domain)
+            // Discovery is local-subnet only. A previously verified address may
+            // still be routable when the selected Bonjour service is not.
+            // Keep the service's pinned key so a stale/reassigned IP cannot
+            // silently change the Relay identity.
+            if preferManualFallback,
+               let address = defaults.string(forKey: "plank.vision.relayAddress"),
+               let port = UInt16(exactly: defaults.integer(forKey: "plank.vision.relayPort")),
+               !address.isEmpty, port > 0,
+               let endpointPort = NWEndpoint.Port(rawValue: port) {
+                return (.hostPort(host: NWEndpoint.Host(address), port: endpointPort),
+                        account)
+            }
             return (
                 .service(name: name, type: "_plank-tablet._tcp", domain: domain,
                          interface: nil),
-                serviceAccount(name: name, domain: domain)
+                account
             )
         }
         guard let address = defaults.string(forKey: "plank.vision.relayAddress"),
@@ -109,6 +125,13 @@ struct PlankDiscoveredRelay: Identifiable, Equatable {
     var id: String { name + "|" + domain }
 }
 
+enum PlankRelaySetupMethod: String, CaseIterable, Identifiable {
+    case nearby
+    case manual
+
+    var id: String { rawValue }
+}
+
 private final class PlankConnectWaiter: @unchecked Sendable {
     private let lock = NSLock()
     private var continuation: CheckedContinuation<Void, Error>?
@@ -117,12 +140,14 @@ private final class PlankConnectWaiter: @unchecked Sendable {
         self.continuation = continuation
     }
 
-    func finish(_ result: Result<Void, Error>) {
+    @discardableResult
+    func finish(_ result: Result<Void, Error>) -> Bool {
         lock.lock()
         let pending = continuation
         continuation = nil
         lock.unlock()
         pending?.resume(with: result)
+        return pending != nil
     }
 }
 
@@ -146,6 +171,11 @@ private final class PlankRelayTCP: @unchecked Sendable {
                 }
             }
             connection.start(queue: queue)
+            queue.asyncAfter(deadline: .now() + .seconds(6)) { [weak self] in
+                if waiter.finish(.failure(PlankRelayError.connectionTimedOut)) {
+                    self?.connection.cancel()
+                }
+            }
         }
     }
 
@@ -178,7 +208,9 @@ final class PlankRelayPairing: ObservableObject {
     @Published var address = ""
     @Published var port = "28990"
     @Published private(set) var nearbyRelays: [PlankDiscoveredRelay] = []
+    @Published var setupMethod: PlankRelaySetupMethod = .manual
     @Published var selectedServiceID = ""
+    @Published private(set) var discoveryStatus = "Searching the local network for Relays…"
     @Published private(set) var code: [UInt8]?
     @Published private(set) var status = "Pair a Wacom tablet connected to a local Relay."
     @Published private(set) var isPairing = false
@@ -186,6 +218,52 @@ final class PlankRelayPairing: ObservableObject {
 
     private var task: Task<Void, Never>?
     private var browser: NWBrowser?
+    private var discoveryGeneration = UUID()
+
+    var selectedNearbyRelayAvailable: Bool {
+        nearbyRelays.contains { $0.id == selectedServiceID }
+    }
+
+    var selectedConnectionIsActive: Bool {
+        let defaults = UserDefaults.standard
+        if setupMethod == .manual {
+            return defaults.string(forKey: "plank.vision.relayMode") != "bonjour" &&
+                address.trimmingCharacters(in: .whitespacesAndNewlines) ==
+                    defaults.string(forKey: "plank.vision.relayAddress") &&
+                UInt16(port).map { Int($0) } == defaults.object(forKey: "plank.vision.relayPort") as? Int
+        }
+        guard defaults.string(forKey: "plank.vision.relayMode") == "bonjour",
+              let name = defaults.string(forKey: "plank.vision.relayServiceName"),
+              let domain = defaults.string(forKey: "plank.vision.relayServiceDomain") else {
+            return false
+        }
+        return selectedServiceID == PlankDiscoveredRelay(name: name, domain: domain).id
+    }
+
+    var activeConnectionDescription: String {
+        let defaults = UserDefaults.standard
+        if defaults.string(forKey: "plank.vision.relayMode") == "bonjour",
+           let name = defaults.string(forKey: "plank.vision.relayServiceName") {
+            return "Selected Relay: \(name)"
+        }
+        if let savedAddress = defaults.string(forKey: "plank.vision.relayAddress"),
+           !savedAddress.isEmpty {
+            let savedPort = defaults.integer(forKey: "plank.vision.relayPort")
+            return "Selected Relay address: \(savedAddress):\(savedPort)"
+        }
+        return "No Relay selected"
+    }
+
+    var savedRelayNotNearby: PlankDiscoveredRelay? {
+        let defaults = UserDefaults.standard
+        guard defaults.string(forKey: "plank.vision.relayMode") == "bonjour",
+              let name = defaults.string(forKey: "plank.vision.relayServiceName"),
+              let domain = defaults.string(forKey: "plank.vision.relayServiceDomain") else {
+            return nil
+        }
+        let saved = PlankDiscoveredRelay(name: name, domain: domain)
+        return nearbyRelays.contains(saved) ? nil : saved
+    }
 
     init() {
         let defaults = UserDefaults.standard
@@ -199,6 +277,7 @@ final class PlankRelayPairing: ObservableObject {
         if defaults.string(forKey: "plank.vision.relayMode") == "bonjour",
            let name = defaults.string(forKey: "plank.vision.relayServiceName"),
            let domain = defaults.string(forKey: "plank.vision.relayServiceDomain") {
+            setupMethod = .nearby
             selectedServiceID = PlankDiscoveredRelay(name: name, domain: domain).id
         }
         refreshPairedState()
@@ -206,26 +285,70 @@ final class PlankRelayPairing: ObservableObject {
 
     func startDiscovery() {
         guard browser == nil else { return }
+        let generation = UUID()
+        discoveryGeneration = generation
         let parameters = NWParameters.tcp
         parameters.includePeerToPeer = true
         let browser = NWBrowser(
             for: .bonjour(type: "_plank-tablet._tcp", domain: nil),
             using: parameters
         )
+        discoveryStatus = "Searching the local network for Relays…"
+        browser.stateUpdateHandler = { [weak self] state in
+            let message: String
+            switch state {
+            case .ready:
+                message = "Searching the local network for Relays…"
+            case let .waiting(error), let .failed(error):
+                message = "Local discovery unavailable: \(error.localizedDescription)"
+            case .cancelled:
+                message = "Local discovery stopped."
+            default:
+                return
+            }
+            Task { @MainActor in
+                guard self?.discoveryGeneration == generation else { return }
+                self?.discoveryStatus = message
+            }
+        }
         browser.browseResultsChangedHandler = { [weak self] results, _ in
+            var seen = Set<String>()
             let found = results.compactMap { result -> PlankDiscoveredRelay? in
                 guard case let .service(name, _, domain, _) = result.endpoint else {
                     return nil
                 }
-                return PlankDiscoveredRelay(name: name, domain: domain)
+                let relay = PlankDiscoveredRelay(name: name, domain: domain)
+                return seen.insert(relay.id).inserted ? relay : nil
             }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-            Task { @MainActor in self?.nearbyRelays = found }
+            Task { @MainActor in
+                guard self?.discoveryGeneration == generation else { return }
+                self?.nearbyRelays = found
+                if self?.setupMethod == .nearby,
+                   self?.selectedServiceID.isEmpty == true,
+                   found.count == 1 {
+                    self?.selectedServiceID = found[0].id
+                    self?.refreshPairedState()
+                }
+                self?.discoveryStatus = found.isEmpty ?
+                    "No Relay found on this network. Manual address is available." :
+                    "\(found.count) nearby Relay\(found.count == 1 ? "" : "s") found."
+            }
         }
         self.browser = browser
         browser.start(queue: .global(qos: .userInitiated))
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(5))
+            guard let self, self.discoveryGeneration == generation,
+                  self.nearbyRelays.isEmpty,
+                  self.discoveryStatus == "Searching the local network for Relays…" else {
+                return
+            }
+            self.discoveryStatus = "No Relay found on this network. Manual address is available."
+        }
     }
 
     func stopDiscovery() {
+        discoveryGeneration = UUID()
         browser?.cancel()
         browser = nil
         nearbyRelays = []
@@ -234,38 +357,46 @@ final class PlankRelayPairing: ObservableObject {
     func refreshPairedState() {
         let defaults = UserDefaults.standard
         let account: String?
-        if !selectedServiceID.isEmpty,
-           let service = nearbyRelays.first(where: { $0.id == selectedServiceID }) {
-            account = PlankRelayKeys.serviceAccount(name: service.name,
-                                                     domain: service.domain)
-        } else if !selectedServiceID.isEmpty,
-                  defaults.string(forKey: "plank.vision.relayMode") == "bonjour" {
-            account = PlankRelayKeys.savedConnection()?.account
+        if setupMethod == .nearby {
+            if let service = nearbyRelays.first(where: { $0.id == selectedServiceID }) {
+                account = PlankRelayKeys.serviceAccount(name: service.name,
+                                                         domain: service.domain)
+            } else if !selectedServiceID.isEmpty,
+                      defaults.string(forKey: "plank.vision.relayMode") == "bonjour",
+                      selectedConnectionIsActive {
+                account = PlankRelayKeys.savedConnection()?.account
+            } else {
+                account = nil
+            }
         } else if let number = UInt16(port), number > 0 {
             account = PlankRelayKeys.relayAccount(address: address, port: number)
         } else {
             account = nil
         }
         paired = account.flatMap { try? PlankRelayKeys.read($0) }?.count == 32
-        if paired { status = "Paired Wacom Relay. Start a PLANK desktop session to use it." }
+        status = paired ? "Saved pairing found for this Relay." :
+            "Choose a Relay with a saved pairing or pair a new one."
     }
 
     func useSavedPairing() {
         guard !selectedServiceID.isEmpty,
-              let service = nearbyRelays.first(where: { $0.id == selectedServiceID }),
-              let manualPort = UInt16(port), manualPort > 0,
-              let knownKey = try? PlankRelayKeys.read(
-                  PlankRelayKeys.relayAccount(address: address, port: manualPort)
-              ), knownKey.count == 32 else {
-            status = "Select a nearby Relay with an existing manual pairing."
+              let service = nearbyRelays.first(where: { $0.id == selectedServiceID }) else {
+            status = "Choose a nearby Relay first."
             return
         }
         do {
-            try PlankRelayKeys.write(
-                knownKey,
-                account: PlankRelayKeys.serviceAccount(name: service.name,
-                                                       domain: service.domain)
-            )
+            let serviceAccount = PlankRelayKeys.serviceAccount(name: service.name,
+                                                               domain: service.domain)
+            if try PlankRelayKeys.read(serviceAccount)?.count != 32 {
+                guard let manualPort = UInt16(port), manualPort > 0,
+                      let knownKey = try PlankRelayKeys.read(
+                          PlankRelayKeys.relayAccount(address: address, port: manualPort)
+                      ), knownKey.count == 32 else {
+                    status = "Pair this nearby Relay before using it."
+                    return
+                }
+                try PlankRelayKeys.write(knownKey, account: serviceAccount)
+            }
             UserDefaults.standard.set(service.name,
                                       forKey: "plank.vision.relayServiceName")
             UserDefaults.standard.set(service.domain,
@@ -280,11 +411,30 @@ final class PlankRelayPairing: ObservableObject {
 
     func useManualPairing() {
         let manualAddress = address.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !manualAddress.isEmpty, let manualPort = UInt16(port), manualPort > 0,
-              let knownKey = try? PlankRelayKeys.read(
-                  PlankRelayKeys.relayAccount(address: manualAddress, port: manualPort)
-              ), knownKey.count == 32 else {
-            status = "No saved pairing for that address."
+        guard !manualAddress.isEmpty, let manualPort = UInt16(port), manualPort > 0 else {
+            status = "Enter a Relay address and valid port."
+            return
+        }
+        let manualAccount = PlankRelayKeys.relayAccount(
+            address: manualAddress, port: manualPort
+        )
+        do {
+            var knownKey = try PlankRelayKeys.read(manualAccount)
+            if knownKey == nil,
+               let saved = PlankRelayKeys.savedConnection(),
+               let existing = try PlankRelayKeys.read(saved.account),
+               existing.count == 32 {
+                // Only the authenticated link can accept this address. A
+                // different Relay at the same IP will fail key verification.
+                try PlankRelayKeys.write(existing, account: manualAccount)
+                knownKey = existing
+            }
+            guard knownKey?.count == 32 else {
+                status = "No saved pairing for that address."
+                return
+            }
+        } catch {
+            status = error.localizedDescription
             return
         }
         UserDefaults.standard.set(manualAddress, forKey: "plank.vision.relayAddress")
@@ -300,7 +450,7 @@ final class PlankRelayPairing: ObservableObject {
         let account: String
         let service: PlankDiscoveredRelay?
         let manual: (address: String, port: UInt16)?
-        if !selectedServiceID.isEmpty {
+        if setupMethod == .nearby {
             guard let found = nearbyRelays.first(where: { $0.id == selectedServiceID }) else {
                 status = "Relay not nearby. Wait for discovery or use its address."
                 return
@@ -330,7 +480,7 @@ final class PlankRelayPairing: ObservableObject {
         }
         let digits = random.map { UInt8(49 + ($0 & 7)) }
         code = digits.map { $0 - 48 }
-        paired = false
+        let previouslyPaired = paired
         isPairing = true
         status = "Connecting to the Relay pairing window…"
         task = Task {
@@ -340,7 +490,15 @@ final class PlankRelayPairing: ObservableObject {
                 paired = true
                 status = "Wacom Relay paired and its identity verified."
             } catch {
-                status = Task.isCancelled ? "Tablet pairing canceled." : error.localizedDescription
+                paired = previouslyPaired
+                if Task.isCancelled {
+                    status = "Tablet pairing canceled. The saved pairing is unchanged."
+                } else if let networkError = error as? NWError,
+                          case .posix(.ECONNRESET) = networkError {
+                    status = "The Relay closed new pairing. Hold ExpressKeys 1 and 8 for five seconds before trying again. The saved pairing is unchanged."
+                } else {
+                    status = error.localizedDescription
+                }
             }
             code = nil
             isPairing = false
