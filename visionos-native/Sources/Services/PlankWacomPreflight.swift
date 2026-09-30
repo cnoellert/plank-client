@@ -122,7 +122,10 @@ final class PlankWacomPreflight: @unchecked Sendable {
                 sentDescriptors.removeAll()
                 gates[.attachSent] = .pending
                 gates[.hostAcknowledgement] = .pending
-                gates[.deviceOwnership] = .pending
+                // Relay status and the transport's send callback arrive on
+                // different queues. An attached status may already have
+                // passed ownership for this link; an attach send must not
+                // erase that independent fact.
             } else if frameGeneration == generation,
                       let interfaceID = Self.read16(frame, at: 8),
                       Int(interfaceID) < expectedDescriptors {
@@ -143,8 +146,10 @@ final class PlankWacomPreflight: @unchecked Sendable {
         let accepted = frame[20..<24].allSatisfy { $0 == 0 }
         mutate {
             guard frameGeneration == generation else { return }
-            gates[.hostAcknowledgement] = accepted &&
-                gates[.attachSent] == .passed ? .passed : .failed
+            // The Host can return this acknowledgement before the sender's
+            // callback records its final descriptor. Each gate is independent;
+            // readiness still requires both to pass.
+            gates[.hostAcknowledgement] = accepted ? .passed : .failed
         }
     }
 

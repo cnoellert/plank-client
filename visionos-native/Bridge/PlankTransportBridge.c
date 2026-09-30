@@ -295,6 +295,50 @@ int32_t plank_vision_transport_receive_video(
 #endif
 }
 
+int32_t plank_vision_transport_video_stats(
+    PlankVisionTransport *transport, PlankVisionVideoStats *stats) {
+#if !PLANK_NATIVE_TRANSPORT
+    (void)transport; (void)stats;
+    return PLANK_VISION_TRANSPORT_UNAVAILABLE;
+#else
+    if (transport == NULL || transport->endpoint == NULL || stats == NULL) {
+        return PLANK_VISION_TRANSPORT_ERROR;
+    }
+    PlankTransportNativeStats native_stats = {0};
+    native_stats.struct_size = sizeof(native_stats);
+    if (plank_transport_native_endpoint_stats(
+            transport->endpoint, &native_stats) != PLANK_TRANSPORT_OK) {
+        return PLANK_VISION_TRANSPORT_ERROR;
+    }
+    stats->frames_received = native_stats.video_frames_received;
+    stats->receive_drops = native_stats.video_receive_drops;
+    stats->fec_symbols_unrecovered =
+        native_stats.video_fec_source_symbols_unrecovered;
+    return PLANK_VISION_TRANSPORT_OK;
+#endif
+}
+
+int32_t plank_vision_transport_request_idr(PlankVisionTransport *transport) {
+#if !PLANK_NATIVE_TRANSPORT
+    (void)transport;
+    return PLANK_VISION_TRANSPORT_UNAVAILABLE;
+#else
+    if (transport == NULL || transport->endpoint == NULL) {
+        return PLANK_VISION_TRANSPORT_ERROR;
+    }
+    uint8_t packet[PLANK_TRANSPORT_CONTROL_MAX_PACKET_SIZE];
+    size_t packet_size = 0;
+    if (plank_transport_control_encode(
+            PLANK_TRANSPORT_CONTROL_REQUEST_IDR, NULL, 0,
+            packet, sizeof(packet), &packet_size) != 0 ||
+            plank_transport_native_data_send(
+                transport->endpoint, packet, packet_size) != PLANK_TRANSPORT_OK) {
+        return PLANK_VISION_TRANSPORT_ERROR;
+    }
+    return PLANK_VISION_TRANSPORT_OK;
+#endif
+}
+
 int32_t plank_vision_transport_send_mouse_position(
     PlankVisionTransport *transport,
     uint16_t x,
@@ -555,8 +599,23 @@ void plank_vision_transport_disconnect(PlankVisionTransport *transport) {
         if (plank_transport_control_encode(
                 PLANK_TRANSPORT_CONTROL_CLIENT_DISCONNECT, NULL, 0,
                 packet, sizeof(packet), &packet_size) == 0) {
-            (void)plank_transport_native_data_send(
-                transport->endpoint, packet, packet_size);
+            if (plank_transport_native_data_send(
+                    transport->endpoint, packet, packet_size) == PLANK_TRANSPORT_OK) {
+                // data_send only queues the reliable control packet. Stopping
+                // the worker immediately can discard it, leaving the Host's
+                // reservation active until its idle timeout. Let the Host
+                // process the disconnect and close its endpoint, with a hard
+                // bound for an unreachable peer.
+                for (unsigned int attempt = 0; attempt < 150; ++attempt) {
+                    const uint32_t state = plank_transport_native_endpoint_state(
+                        transport->endpoint);
+                    if (state != PLANK_TRANSPORT_STATE_READY &&
+                            state != PLANK_TRANSPORT_STATE_SETUP_READY) {
+                        break;
+                    }
+                    usleep(10000);
+                }
+            }
         }
         plank_transport_native_endpoint_stop(transport->endpoint);
         plank_transport_native_endpoint_destroy(transport->endpoint);

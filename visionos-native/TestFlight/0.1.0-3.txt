@@ -1,0 +1,8 @@
+Test the native PLANK Vision Pro client with a PLANK 1.1.024 workstation Host.
+
+- Connect, sign in, disconnect, and reconnect to the same workstation.
+- Check moving video, mouse clicks and dragging, scroll wheel, and keyboard input.
+- With the separately paired network Wacom Relay, check pen movement, tip clicks, dragging, side buttons, and light versus firm pressure after each reconnect.
+- Report the exact connection stage and whether the video picture continues updating if input appears stuck.
+
+The Bluetooth tablet Relay is a separate experiment and is not part of this build. Use the existing network Relay for Wacom tests.

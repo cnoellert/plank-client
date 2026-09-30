@@ -6,6 +6,7 @@ struct HostBrowserView: View {
     @StateObject private var discovery = HostDiscovery()
     @State private var selection: HostBookmark.ID?
     @State private var showingAddHost = false
+    @State private var editingHost: HostBookmark?
     @State private var showingSettings = false
 
     private var selectedHost: HostBookmark? {
@@ -63,7 +64,9 @@ struct HostBrowserView: View {
             }
         } detail: {
             if let selectedHost {
-                HostDetailView(host: selectedHost, store: store, client: client)
+                HostDetailView(host: selectedHost, store: store, client: client) {
+                    editingHost = $0
+                }
             } else {
                 ContentUnavailableView(
                     "Choose a Workstation",
@@ -73,7 +76,10 @@ struct HostBrowserView: View {
             }
         }
         .sheet(isPresented: $showingAddHost) {
-            AddHostView(store: store)
+            AddHostView(store: store, client: client)
+        }
+        .sheet(item: $editingHost) { host in
+            AddHostView(store: store, client: client, host: host)
         }
         .sheet(isPresented: $showingSettings) {
             NavigationStack {
@@ -86,6 +92,8 @@ struct HostBrowserView: View {
             }
         }
         .task { discovery.start() }
-        .onDisappear { discovery.stop() }
+        .onDisappear {
+            discovery.stop()
+        }
     }
 }
