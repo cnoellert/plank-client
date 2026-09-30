@@ -10,6 +10,8 @@ final class PlankRelayLiveLink: @unchecked Sendable {
         static let sessionEnd: UInt16 = 6
         static let hostFrame: UInt16 = 7
         static let clientFrame: UInt16 = 8
+        static let clientFrameBatch: UInt16 = 15
+        static let frameBatchFeature: UInt32 = 0x8000_0000
         static let status: UInt16 = 9
         static let ping: UInt16 = 10
         static let pong: UInt16 = 11
@@ -282,7 +284,8 @@ final class PlankRelayLiveLink: @unchecked Sendable {
                 if !sessionReady {
                     var ready = Data(repeating: 0, count: 5)
                     for i in 0..<4 {
-                        ready[i] = UInt8(truncatingIfNeeded: hostFeatures >> (i * 8))
+                        ready[i] = UInt8(truncatingIfNeeded:
+                            (hostFeatures | Message.frameBatchFeature) >> (i * 8))
                     }
                     ready[4] = active ? 1 : 0
                     send(Message.sessionReady, ready)
@@ -295,30 +298,35 @@ final class PlankRelayLiveLink: @unchecked Sendable {
             case Message.clientFrame:
                 guard sessionReady, body.count > 8 else { closeOnQueue(); return }
                 let frame = Data(body.dropFirst(8))
-                let valid = frame.withUnsafeBytes { bytes in
-                    plank_vision_raw_hid_frame_valid(
-                        bytes.bindMemory(to: UInt8.self).baseAddress,
-                        frame.count, PLANK_VISION_RAW_HID_TO_HOST
-                    )
-                }
-                if valid == 1 {
-                    let type = UInt16(frame[6]) | (UInt16(frame[7]) << 8)
-                    let generation = UInt16(frame[10]) | (UInt16(frame[11]) << 8)
-                    if type == 1 {
-                        guard generation != 0, acceptGeneration(generation) else {
-                            closeOnQueue()
-                            return
-                        }
-                        attachedGeneration = generation
-                    } else if (type == 9 || type == 13),
-                              attachedGeneration == generation {
-                        attachedGeneration = nil
+                if !deliverValidatedTabletFrame(frame) { return }
+            case Message.clientFrameBatch:
+                guard sessionReady, body.count > 1, body[0] >= 2,
+                      body[0] <= 4 else { closeOnQueue(); return }
+                var offset = 1
+                var frames: [Data] = []
+                for _ in 0..<Int(body[0]) {
+                    guard offset + 10 <= body.count else { closeOnQueue(); return }
+                    let size = Int(body[offset + 8]) | (Int(body[offset + 9]) << 8)
+                    offset += 10
+                    guard size >= 20, offset + size <= body.count else {
+                        closeOnQueue(); return
                     }
-                    deliverTabletFrame(frame)
+                    let frame = Data(body[offset..<(offset + size)])
+                    let valid = frame.withUnsafeBytes { bytes in
+                        plank_vision_raw_hid_frame_valid(
+                            bytes.bindMemory(to: UInt8.self).baseAddress,
+                            frame.count, PLANK_VISION_RAW_HID_TO_HOST
+                        )
+                    }
+                    guard valid == 1, frame[6] == 3, frame[7] == 0 else {
+                        closeOnQueue(); return
+                    }
+                    frames.append(frame)
+                    offset += size
                 }
-                else {
-                    invalidTabletFrames += 1
-                    if invalidTabletFrames >= 3 { closeOnQueue(); return }
+                guard offset == body.count else { closeOnQueue(); return }
+                for frame in frames {
+                    if !deliverValidatedTabletFrame(frame) { return }
                 }
             case Message.ping:
                 guard body.count == 16 else { closeOnQueue(); return }
@@ -339,6 +347,34 @@ final class PlankRelayLiveLink: @unchecked Sendable {
                 closeOnQueue()
             }
         }
+    }
+
+    private func deliverValidatedTabletFrame(_ frame: Data) -> Bool {
+        let valid = frame.withUnsafeBytes { bytes in
+            plank_vision_raw_hid_frame_valid(
+                bytes.bindMemory(to: UInt8.self).baseAddress,
+                frame.count, PLANK_VISION_RAW_HID_TO_HOST
+            )
+        }
+        guard valid == 1, frame.count >= 12 else {
+            invalidTabletFrames += 1
+            if invalidTabletFrames >= 3 { closeOnQueue(); return false }
+            return true
+        }
+        let type = UInt16(frame[6]) | (UInt16(frame[7]) << 8)
+        let generation = UInt16(frame[10]) | (UInt16(frame[11]) << 8)
+        if type == 1 {
+            guard generation != 0, acceptGeneration(generation) else {
+                closeOnQueue()
+                return false
+            }
+            attachedGeneration = generation
+        } else if (type == 9 || type == 13),
+                  attachedGeneration == generation {
+            attachedGeneration = nil
+        }
+        deliverTabletFrame(frame)
+        return true
     }
 
     private func send(_ type: UInt16, _ payload: Data) {
