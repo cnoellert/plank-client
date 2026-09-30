@@ -97,7 +97,10 @@ final class PlankRelayLiveLink: @unchecked Sendable {
                             }
                         }, onClose: { [weak self] in
                             guard let self else { return }
-                            self.queue.async { self.closeOnQueue() }
+                            self.queue.async {
+                                if self.closed { self.completeClose() }
+                                else { self.closeOnQueue() }
+                            }
                         })
                     self.queue.async { [self] in
                         guard !closed else {
@@ -422,7 +425,7 @@ final class PlankRelayLiveLink: @unchecked Sendable {
             }
         } else if let bluetooth {
             let previous = bluetoothWriteTail
-            Task { @MainActor [weak self] in
+            Task { @MainActor in
                 await previous?.value
                 if let inactiveRecord { bluetooth.send(inactiveRecord) }
                 if let finalRecord {
@@ -431,7 +434,12 @@ final class PlankRelayLiveLink: @unchecked Sendable {
                 } else {
                     bluetooth.stop()
                 }
-                self?.queue.async { self?.completeClose() }
+            }
+            if !sendEnd { completeClose() }
+            else {
+                queue.asyncAfter(deadline: .now() + .seconds(2)) { [self] in
+                    completeClose()
+                }
             }
         } else {
             completeClose()
