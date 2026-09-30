@@ -17,7 +17,11 @@ final class PlankRelayLiveLink: @unchecked Sendable {
     }
 
     private let queue = DispatchQueue(label: "la.instinctual.plank.tablet-relay.session")
-    private let connection: NWConnection
+    private let connection: NWConnection?
+    private let bluetoothIdentifier: UUID?
+    private var bluetooth: PlankRelayBluetoothChannel?
+    private var bluetoothWriteTail: Task<Void, Never>?
+    private var bluetoothQueuedBytes = 0
     private let hostFeatures: UInt32
     private let preflight: PlankWacomPreflight
     private let deliverTabletFrame: @Sendable (Data) -> Void
@@ -37,7 +41,8 @@ final class PlankRelayLiveLink: @unchecked Sendable {
     private var invalidTabletFrames = 0
     private var attachedGeneration: UInt16?
 
-    init(address: String, port: UInt16, hostFeatures: UInt32,
+    init(endpoint: NWEndpoint?, bluetoothIdentifier: UUID? = nil,
+         hostFeatures: UInt32,
          preflight: PlankWacomPreflight,
          clientPrivateKey: Data, relayPublicKey: Data,
          deliverTabletFrame: @escaping @Sendable (Data) -> Void,
@@ -46,20 +51,22 @@ final class PlankRelayLiveLink: @unchecked Sendable {
          onUnexpectedClose: @escaping @Sendable () -> Void,
          acceptGeneration: @escaping @Sendable (UInt16) -> Bool) throws {
         guard clientPrivateKey.count == 32, relayPublicKey.count == 32,
-              !address.isEmpty, port != 0 else { throw PlankRelayLiveError.invalidConfiguration }
+              (endpoint != nil) != (bluetoothIdentifier != nil) else {
+            throw PlankRelayLiveError.invalidConfiguration
+        }
         let created = clientPrivateKey.withUnsafeBytes { clientBytes in
             relayPublicKey.withUnsafeBytes { relayBytes in
                 pltr_client_link_create(
                     clientBytes.bindMemory(to: UInt8.self).baseAddress,
                     relayBytes.bindMemory(to: UInt8.self).baseAddress,
-                    2 // TCP has its own authenticated Noise prologue.
+                    bluetoothIdentifier == nil ? 2 : 1
                 )
             }
         }
         guard let created else { throw PlankRelayLiveError.invalidConfiguration }
         codec = created
-        connection = NWConnection(host: NWEndpoint.Host(address),
-                                  port: NWEndpoint.Port(rawValue: port)!, using: .tcp)
+        connection = endpoint.map { NWConnection(to: $0, using: .tcp) }
+        self.bluetoothIdentifier = bluetoothIdentifier
         self.hostFeatures = hostFeatures
         self.preflight = preflight
         self.deliverTabletFrame = deliverTabletFrame
@@ -72,21 +79,39 @@ final class PlankRelayLiveLink: @unchecked Sendable {
     func start() {
         queue.async { [self] in
             guard !closed else { return }
+            if let bluetoothIdentifier {
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    let channel = PlankRelayBluetoothChannel(identifier: bluetoothIdentifier,
+                        onReady: { [weak self] in
+                            guard let self else { return }
+                            self.queue.async { self.transportReady() }
+                        }, onBytes: { [weak self] bytes in
+                            guard let self else { return }
+                            self.queue.async {
+                                guard !self.closed else { return }
+                                self.lastReceive = DispatchTime.now().uptimeNanoseconds
+                                self.accept(bytes)
+                            }
+                        }, onClose: { [weak self] in
+                            guard let self else { return }
+                            self.queue.async { self.closeOnQueue() }
+                        })
+                    self.queue.async { [self] in
+                        guard !closed else {
+                            Task { @MainActor in channel.stop() }
+                            return
+                        }
+                        bluetooth = channel
+                        Task { @MainActor in channel.start() }
+                    }
+                }
+            } else if let connection {
             connection.stateUpdateHandler = { [weak self] state in
                 guard let self else { return }
                 switch state {
                 case .ready:
-                    self.connectionReady = true
-                    self.reportState("Relay connected; verifying its identity…")
-                    self.lastReceive = DispatchTime.now().uptimeNanoseconds
-                    var bytes = [UInt8](repeating: 0, count: 256)
-                    var written = 0
-                    guard let codec = self.codec,
-                          pltr_client_link_start(codec, &bytes, bytes.count, &written) == 0 else {
-                        self.closeOnQueue()
-                        return
-                    }
-                    self.write(Data(bytes.prefix(written)))
+                    self.transportReady()
                     self.receiveNext()
                 case .failed, .cancelled:
                     self.closeOnQueue()
@@ -95,12 +120,28 @@ final class PlankRelayLiveLink: @unchecked Sendable {
                 }
             }
             connection.start(queue: queue)
+            }
             let timer = DispatchSource.makeTimerSource(queue: queue)
             timer.schedule(deadline: .now() + .seconds(1), repeating: .seconds(1))
             timer.setEventHandler { [weak self] in self?.tick() }
             heartbeat = timer
             timer.resume()
         }
+    }
+
+    private func transportReady() {
+        guard !closed else { return }
+        connectionReady = true
+        reportState("Relay connected; verifying its identity…")
+        lastReceive = DispatchTime.now().uptimeNanoseconds
+        var bytes = [UInt8](repeating: 0, count: 256)
+        var written = 0
+        guard let codec,
+              pltr_client_link_start(codec, &bytes, bytes.count, &written) == 0 else {
+            closeOnQueue()
+            return
+        }
+        write(Data(bytes.prefix(written)))
     }
 
     func forwardHostFrame(_ frame: Data) {
@@ -147,7 +188,9 @@ final class PlankRelayLiveLink: @unchecked Sendable {
     private func tick() {
         guard !closed else { return }
         let elapsed = DispatchTime.now().uptimeNanoseconds - lastReceive
-        guard elapsed < UInt64(sessionReady ? 3 : 10) * 1_000_000_000 else {
+        let timeout = sessionReady ? (bluetoothIdentifier == nil ? 3 : 6) :
+            (bluetoothIdentifier == nil ? 10 : 20)
+        guard elapsed < UInt64(timeout) * 1_000_000_000 else {
             closeOnQueue()
             return
         }
@@ -163,7 +206,7 @@ final class PlankRelayLiveLink: @unchecked Sendable {
     }
 
     private func receiveNext() {
-        guard !closed else { return }
+        guard !closed, let connection else { return }
         connection.receive(minimumIncompleteLength: 1, maximumLength: 4096) {
             [weak self] data, _, complete, error in
             guard let self, !self.closed else { return }
@@ -299,9 +342,28 @@ final class PlankRelayLiveLink: @unchecked Sendable {
     }
 
     private func write(_ data: Data) {
-        connection.send(content: data, completion: .contentProcessed { [weak self] error in
-            if error != nil { self?.closeOnQueue() }
-        })
+        if let connection {
+            connection.send(content: data, completion: .contentProcessed { [weak self] error in
+                if error != nil { self?.closeOnQueue() }
+            })
+        } else if let bluetooth {
+            guard bluetoothQueuedBytes + data.count <= 64 * 1024 else {
+                closeOnQueue()
+                return
+            }
+            bluetoothQueuedBytes += data.count
+            let previous = bluetoothWriteTail
+            bluetoothWriteTail = Task { @MainActor [weak self] in
+                await previous?.value
+                bluetooth.send(data)
+                guard let self else { return }
+                self.queue.async { [self] in
+                    bluetoothQueuedBytes -= data.count
+                }
+            }
+        } else {
+            closeOnQueue()
+        }
     }
 
     private func closeOnQueue(sendEnd: Bool = false) {
@@ -315,11 +377,10 @@ final class PlankRelayLiveLink: @unchecked Sendable {
             }
         }
         attachedGeneration = nil
+        var inactiveRecord: Data?
         var finalRecord: Data?
         if sendEnd && sessionReady {
-            if let suspend = encode(Message.sessionActive, Data([0])) {
-                write(suspend)
-            }
+            inactiveRecord = encode(Message.sessionActive, Data([0]))
             finalRecord = encode(Message.sessionEnd, Data([1]))
         }
         closed = true
@@ -329,18 +390,32 @@ final class PlankRelayLiveLink: @unchecked Sendable {
         heartbeat = nil
         pendingHostFrames.removeAll()
         pendingHostBytes = 0
-        connection.stateUpdateHandler = nil
+        connection?.stateUpdateHandler = nil
         if let codec { pltr_client_link_destroy(codec) }
         codec = nil
-        if let finalRecord {
+        if let finalRecord, let connection {
+            if let inactiveRecord {
+                connection.send(content: inactiveRecord, completion: .contentProcessed { _ in })
+            }
             connection.send(content: finalRecord, completion: .contentProcessed {
-                [weak self] _ in self?.connection.cancel()
+                [connection] _ in connection.cancel()
             })
-            queue.asyncAfter(deadline: .now() + .seconds(1)) { [weak self] in
-                self?.connection.cancel()
+            queue.asyncAfter(deadline: .now() + .seconds(1)) { [connection] in
+                connection.cancel()
             }
         } else {
-            connection.cancel()
+            connection?.cancel()
+            if let bluetooth {
+                let previous = bluetoothWriteTail
+                Task { @MainActor in
+                    await previous?.value
+                    if let inactiveRecord { bluetooth.send(inactiveRecord) }
+                    if let finalRecord {
+                        bluetooth.send(finalRecord)
+                        bluetooth.finish()
+                    } else { bluetooth.stop() }
+                }
+            }
         }
         if !sendEnd { onUnexpectedClose() }
     }
@@ -383,20 +458,16 @@ final class PlankRelaySessionBridge: @unchecked Sendable {
             reportState("Host does not advertise the required tablet controls.")
             return
         }
-        let defaults = UserDefaults.standard
-        guard let address = defaults.string(forKey: "plank.vision.relayAddress"),
-              let port = UInt16(exactly: defaults.integer(forKey: "plank.vision.relayPort")),
-              port > 0,
+        guard let saved = PlankRelayKeys.savedLiveConnection(),
               let privateKey = try? PlankRelayKeys.clientPrivateKey(),
-              let relayKey = try? PlankRelayKeys.read(
-                  PlankRelayKeys.relayAccount(address: address, port: port)
-              ) else {
+              let relayKey = try? PlankRelayKeys.read(saved.account) else {
             reportState("Pair the Wacom Relay in Settings before connecting.")
             return
         }
         let identifier = UUID()
         let candidate = try? PlankRelayLiveLink(
-            address: address, port: port, hostFeatures: hostFeatures,
+            endpoint: saved.endpoint, bluetoothIdentifier: saved.bluetoothIdentifier,
+            hostFeatures: hostFeatures,
             preflight: preflight,
             clientPrivateKey: privateKey, relayPublicKey: relayKey,
             deliverTabletFrame: { [inputQueue] frame in
