@@ -340,17 +340,17 @@ missing padding without that evidence.
 - Evaluate pairing the Wacom tablet to the headless Relay NUC over Bluetooth
   instead of USB. Confirm that Linux exposes the raw reports, pad keys, and
   pressure needed by the existing Host path before treating it as supported.
-- Implement and qualify a Bluetooth LE link between the Relay NUC and Vision
-  Pro, using the same authenticated session semantics as the local TCP link.
-  Alan's [`visionos-tablet-setup` Relay branch](https://github.com/instinctual/plank-tablet-relay/tree/visionos-tablet-setup)
-  provides a separately packaged BLE readings and setup workflow, not yet
-  production raw-HID forwarding. Its physical Intel 7265/BlueZ/visionOS 27
-  qualification found an opt-in controller address-resolution workaround and
-  a BlueZ battery-plugin conflict; port the bounded startup and recovery
-  behavior before testing the production path. The running USB/TCP Relay on
-  the development NUC remains the working baseline. The same branch fixes
-  re-approval of an already saved headset key; assess that independently of
-  the BLE transport work.
+- Qualify the draft Bluetooth LE link between the Relay and Vision Pro on
+  physical hardware. The Client branch discovers the Relay with CoreBluetooth,
+  reads its LE L2CAP PSM, pairs through the physical tablet button gesture,
+  and uses the existing pinned-key/Noise and raw-HID session protocol with
+  the Bluetooth link type. The Relay branch has passing Linux package checks
+  on amd64 and arm64, and the Client builds for visionOS. Neither branch has
+  passed a physical LE CoC session yet. The development NUC advertises on its
+  AX900 radio, while the working USB/TCP Relay remains the fallback. Alan's
+  [`visionos-tablet-setup` branch](https://github.com/instinctual/plank-tablet-relay/tree/visionos-tablet-setup)
+  identified a controller address-resolution workaround and a BlueZ battery
+  plugin conflict to consider during physical qualification.
 - Discover a headless Relay without knowing its IP address in advance, then
   pair it through the tablet's ExpressKeys. The signed Client now browses
   `_plank-tablet._tcp`, and the NUC advertises its identity and pairing-window

@@ -120,8 +120,11 @@ if(PLANK_RELAY_SOURCE_DIR)
     target_sources(PlankVision PRIVATE
         Sources/Services/PlankRelayPairing.swift
         Sources/Services/PlankRelayLiveLink.swift
+        Sources/Services/PlankRelayBluetoothChannel.swift
+        Sources/Services/PlankRelayBluetoothPairing.swift
         Sources/Services/PlankWacomPreflight.swift
         Sources/Services/PlankTabletInputPolicy.swift)
+    target_link_libraries(PlankVision PRIVATE "-framework CoreBluetooth")
 endif()
 
 set(PLANK_FFMPEG_DIR "" CACHE PATH "Path to the visionOS FFmpeg installation")

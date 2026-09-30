@@ -58,12 +58,13 @@ struct SettingsView: View {
                 if tabletRelay.paired {
                     Label("Pairing saved", systemImage: "checkmark.shield.fill")
                         .foregroundStyle(.green)
-                    Text("PLANK connects to this Relay when a desktop session starts. Changing its address does not require pairing again.")
+                    Text("PLANK connects to the selected Relay when a desktop session starts. A saved pairing can be selected again without repeating the button sequence.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
                 Picker("Connection setup", selection: $tabletRelay.setupMethod) {
                     Text("Find Nearby").tag(PlankRelaySetupMethod.nearby)
+                    Text("Bluetooth").tag(PlankRelaySetupMethod.bluetooth)
                     Text("Manual Address").tag(PlankRelaySetupMethod.manual)
                 }
                 .pickerStyle(.segmented)
@@ -96,6 +97,29 @@ struct SettingsView: View {
                     }
                     if !tabletRelay.selectedServiceID.isEmpty &&
                         !tabletRelay.selectedConnectionIsActive {
+                        Button("Use This Relay") { tabletRelay.useSavedPairing() }
+                    }
+                } else if tabletRelay.setupMethod == .bluetooth {
+                    Picker("Nearby Bluetooth Relay", selection: $tabletRelay.selectedBluetoothID) {
+                        Text("Choose a Relay").tag("")
+                        ForEach(tabletRelay.nearbyBluetoothRelays) { relay in
+                            Text(relay.name).tag(relay.id.uuidString)
+                        }
+                        if !tabletRelay.selectedBluetoothID.isEmpty &&
+                           !tabletRelay.nearbyBluetoothRelays.contains(where: {
+                               $0.id.uuidString == tabletRelay.selectedBluetoothID
+                           }) {
+                            Text("Paired Relay (not nearby)")
+                                .tag(tabletRelay.selectedBluetoothID)
+                        }
+                    }
+                    .onChange(of: tabletRelay.selectedBluetoothID) {
+                        tabletRelay.refreshPairedState()
+                    }
+                    Text("Pair by pressing the Wacom center button three times. The Relay must be nearby.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    if tabletRelay.paired && !tabletRelay.selectedConnectionIsActive {
                         Button("Use This Relay") { tabletRelay.useSavedPairing() }
                     }
                 } else {
@@ -153,7 +177,9 @@ struct SettingsView: View {
 #if PLANK_TABLET_RELAY
     private var pairingControls: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Only replace pairing after resetting or replacing the Relay. Hold Wacom ExpressKeys 1 and 8 for five seconds, then tap Pair.")
+            Text(tabletRelay.setupMethod == .bluetooth ?
+                 "Only replace pairing after resetting or replacing the Relay. Tap Pair, then press the Wacom center button three times." :
+                 "Only replace pairing after resetting or replacing the Relay. Hold Wacom ExpressKeys 1 and 8 for five seconds, then tap Pair.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             if tabletRelay.setupMethod == .nearby &&
@@ -166,7 +192,9 @@ struct SettingsView: View {
                 Button("Pair Wacom Relay") { tabletRelay.beginPairing() }
                     .disabled(tabletRelay.isPairing ||
                               (tabletRelay.setupMethod == .nearby &&
-                               !tabletRelay.selectedNearbyRelayAvailable))
+                               !tabletRelay.selectedNearbyRelayAvailable) ||
+                              (tabletRelay.setupMethod == .bluetooth &&
+                               tabletRelay.selectedBluetoothID.isEmpty))
                 if tabletRelay.isPairing {
                     Button("Cancel") { tabletRelay.cancelPairing() }
                 }

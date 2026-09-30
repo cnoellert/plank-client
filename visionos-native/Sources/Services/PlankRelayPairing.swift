@@ -2,6 +2,7 @@ import Combine
 import Foundation
 import Network
 import Security
+@preconcurrency import CoreBluetooth
 
 private enum PlankRelayError: LocalizedError {
     case invalidAddress
@@ -84,8 +85,23 @@ enum PlankRelayKeys {
         "relay-service-\(name).\(domain)"
     }
 
-    static func savedConnection(preferManualFallback: Bool = false) ->
-        (endpoint: NWEndpoint, account: String)? {
+    static func bluetoothAccount(identifier: UUID) -> String {
+        "relay-ble-\(identifier.uuidString.lowercased())"
+    }
+
+    static func savedLiveConnection(preferManualFallback: Bool = false) ->
+        (endpoint: NWEndpoint?, bluetoothIdentifier: UUID?, account: String)? {
+        let defaults = UserDefaults.standard
+        if defaults.string(forKey: "plank.vision.relayMode") == "bluetooth" {
+            guard let value = defaults.string(forKey: "plank.vision.relayBluetoothIdentifier"),
+                  let identifier = UUID(uuidString: value) else { return nil }
+            return (nil, identifier, bluetoothAccount(identifier: identifier))
+        }
+        guard let tcp = savedConnection(preferManualFallback: preferManualFallback) else { return nil }
+        return (tcp.endpoint, nil, tcp.account)
+    }
+
+    static func savedConnection(preferManualFallback: Bool = false) -> (endpoint: NWEndpoint, account: String)? {
         let defaults = UserDefaults.standard
         if defaults.string(forKey: "plank.vision.relayMode") == "bonjour",
            let name = defaults.string(forKey: "plank.vision.relayServiceName"),
@@ -128,8 +144,14 @@ struct PlankDiscoveredRelay: Identifiable, Equatable {
 enum PlankRelaySetupMethod: String, CaseIterable, Identifiable {
     case nearby
     case manual
+    case bluetooth
 
     var id: String { rawValue }
+}
+
+struct PlankBluetoothRelay: Identifiable, Equatable {
+    let id: UUID
+    let name: String
 }
 
 private final class PlankConnectWaiter: @unchecked Sendable {
@@ -204,13 +226,16 @@ private final class PlankRelayTCP: @unchecked Sendable {
 }
 
 @MainActor
-final class PlankRelayPairing: ObservableObject {
+final class PlankRelayPairing: NSObject, ObservableObject,
+    @preconcurrency CBCentralManagerDelegate {
     @Published var address = ""
     @Published var port = "28990"
     @Published private(set) var nearbyRelays: [PlankDiscoveredRelay] = []
     @Published var setupMethod: PlankRelaySetupMethod = .manual
     @Published var selectedServiceID = ""
     @Published private(set) var discoveryStatus = "Searching the local network for Relays…"
+    @Published private(set) var nearbyBluetoothRelays: [PlankBluetoothRelay] = []
+    @Published var selectedBluetoothID = ""
     @Published private(set) var code: [UInt8]?
     @Published private(set) var status = "Pair a Wacom tablet connected to a local Relay."
     @Published private(set) var isPairing = false
@@ -226,8 +251,12 @@ final class PlankRelayPairing: ObservableObject {
 
     var selectedConnectionIsActive: Bool {
         let defaults = UserDefaults.standard
+        if setupMethod == .bluetooth {
+            return defaults.string(forKey: "plank.vision.relayMode") == "bluetooth" &&
+                selectedBluetoothID == defaults.string(forKey: "plank.vision.relayBluetoothIdentifier")
+        }
         if setupMethod == .manual {
-            return defaults.string(forKey: "plank.vision.relayMode") != "bonjour" &&
+            return defaults.string(forKey: "plank.vision.relayMode") == "manual" &&
                 address.trimmingCharacters(in: .whitespacesAndNewlines) ==
                     defaults.string(forKey: "plank.vision.relayAddress") &&
                 UInt16(port).map { Int($0) } == defaults.object(forKey: "plank.vision.relayPort") as? Int
@@ -242,6 +271,11 @@ final class PlankRelayPairing: ObservableObject {
 
     var activeConnectionDescription: String {
         let defaults = UserDefaults.standard
+        if defaults.string(forKey: "plank.vision.relayMode") == "bluetooth",
+           let identifier = defaults.string(forKey: "plank.vision.relayBluetoothIdentifier") {
+            let name = nearbyBluetoothRelays.first { $0.id.uuidString == identifier }?.name
+            return "Selected Bluetooth Relay: \(name ?? "paired device")"
+        }
         if defaults.string(forKey: "plank.vision.relayMode") == "bonjour",
            let name = defaults.string(forKey: "plank.vision.relayServiceName") {
             return "Selected Relay: \(name)"
@@ -264,9 +298,19 @@ final class PlankRelayPairing: ObservableObject {
         let saved = PlankDiscoveredRelay(name: name, domain: domain)
         return nearbyRelays.contains(saved) ? nil : saved
     }
+    private var central: CBCentralManager?
+    private var discovering = false
 
-    init() {
+    override init() {
+        super.init()
         let defaults = UserDefaults.standard
+        if defaults.string(forKey: "plank.vision.relayMode") == "bluetooth",
+           let value = defaults.string(forKey: "plank.vision.relayBluetoothIdentifier") {
+            setupMethod = .bluetooth
+            selectedBluetoothID = value
+        } else if defaults.string(forKey: "plank.vision.relayMode") == "manual" {
+            setupMethod = .manual
+        }
         if let savedAddress = defaults.string(forKey: "plank.vision.relayAddress") {
             address = savedAddress
         }
@@ -284,6 +328,9 @@ final class PlankRelayPairing: ObservableObject {
     }
 
     func startDiscovery() {
+        discovering = true
+        if central == nil { central = CBCentralManager(delegate: self, queue: .main) }
+        else if let central { centralManagerDidUpdateState(central) }
         guard browser == nil else { return }
         let generation = UUID()
         discoveryGeneration = generation
@@ -349,15 +396,41 @@ final class PlankRelayPairing: ObservableObject {
 
     func stopDiscovery() {
         discoveryGeneration = UUID()
+        discovering = false
         browser?.cancel()
         browser = nil
         nearbyRelays = []
+        if central?.state == .poweredOn { central?.stopScan() }
+        nearbyBluetoothRelays = []
+    }
+
+    func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        if discovering && central.state == .poweredOn {
+            central.scanForPeripherals(withServices: [
+                CBUUID(string: "462F3A10-7A31-4AB3-9E7F-C36AF495ECF0")])
+        }
+    }
+
+    func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
+                        advertisementData: [String: Any], rssi RSSI: NSNumber) {
+        let name = advertisementData[CBAdvertisementDataLocalNameKey] as? String ??
+            peripheral.name ?? "Tablet Relay"
+        let relay = PlankBluetoothRelay(id: peripheral.identifier,
+                                        name: String(name.prefix(64)))
+        if let index = nearbyBluetoothRelays.firstIndex(where: { $0.id == relay.id }) {
+            nearbyBluetoothRelays[index] = relay
+        } else if nearbyBluetoothRelays.count < 32 {
+            nearbyBluetoothRelays.append(relay)
+        }
     }
 
     func refreshPairedState() {
         let defaults = UserDefaults.standard
         let account: String?
-        if setupMethod == .nearby {
+        if setupMethod == .bluetooth,
+           let identifier = UUID(uuidString: selectedBluetoothID) {
+            account = PlankRelayKeys.bluetoothAccount(identifier: identifier)
+        } else if setupMethod == .nearby {
             if let service = nearbyRelays.first(where: { $0.id == selectedServiceID }) {
                 account = PlankRelayKeys.serviceAccount(name: service.name,
                                                          domain: service.domain)
@@ -368,20 +441,56 @@ final class PlankRelayPairing: ObservableObject {
             } else {
                 account = nil
             }
-        } else if let number = UInt16(port), number > 0 {
+        } else if setupMethod == .manual,
+                  let number = UInt16(port), number > 0 {
             account = PlankRelayKeys.relayAccount(address: address, port: number)
         } else {
             account = nil
         }
         paired = account.flatMap { try? PlankRelayKeys.read($0) }?.count == 32
-        status = paired ? "Saved pairing found for this Relay." :
-            "Choose a Relay with a saved pairing or pair a new one."
+        if paired {
+            if account == PlankRelayKeys.savedLiveConnection()?.account {
+                status = "Paired Wacom Relay. Start a PLANK desktop session to use it."
+            } else {
+                status = "Pairing is saved. Select Use Saved Pairing to use this Relay."
+            }
+        } else if !isPairing {
+            status = "Choose and pair a Relay to use it with the next desktop session."
+        }
     }
 
     func useSavedPairing() {
-        guard !selectedServiceID.isEmpty,
-              let service = nearbyRelays.first(where: { $0.id == selectedServiceID }) else {
-            status = "Choose a nearby Relay first."
+        if setupMethod == .bluetooth {
+            guard let identifier = UUID(uuidString: selectedBluetoothID),
+                  let key = try? PlankRelayKeys.read(
+                    PlankRelayKeys.bluetoothAccount(identifier: identifier)), key.count == 32 else {
+                status = "Select a nearby Relay with a saved Bluetooth pairing."
+                return
+            }
+            UserDefaults.standard.set("bluetooth", forKey: "plank.vision.relayMode")
+            UserDefaults.standard.set(identifier.uuidString,
+                                      forKey: "plank.vision.relayBluetoothIdentifier")
+            paired = true
+            status = "Saved Bluetooth pairing selected."
+            return
+        }
+        guard !selectedServiceID.isEmpty else {
+            status = "Select a nearby Relay first."
+            return
+        }
+        let defaults = UserDefaults.standard
+        if defaults.string(forKey: "plank.vision.relayMode") == "bonjour",
+           let name = defaults.string(forKey: "plank.vision.relayServiceName"),
+           let domain = defaults.string(forKey: "plank.vision.relayServiceDomain"),
+           PlankDiscoveredRelay(name: name, domain: domain).id == selectedServiceID,
+           let key = try? PlankRelayKeys.read(
+               PlankRelayKeys.serviceAccount(name: name, domain: domain)), key.count == 32 {
+            paired = true
+            status = "Saved nearby pairing selected. It will connect when the Relay is reachable."
+            return
+        }
+        guard let service = nearbyRelays.first(where: { $0.id == selectedServiceID }) else {
+            status = "Relay not nearby. Wait for discovery or use its address."
             return
         }
         do {
@@ -446,11 +555,23 @@ final class PlankRelayPairing: ObservableObject {
 
     func beginPairing() {
         guard !isPairing else { return }
-        let endpoint: NWEndpoint
+        let endpoint: NWEndpoint?
+        let bluetoothIdentifier: UUID?
         let account: String
         let service: PlankDiscoveredRelay?
         let manual: (address: String, port: UInt16)?
-        if setupMethod == .nearby {
+        if setupMethod == .bluetooth {
+            guard let identifier = UUID(uuidString: selectedBluetoothID) else {
+                status = "Choose a nearby Bluetooth Relay first."
+                return
+            }
+            bluetoothIdentifier = identifier
+            endpoint = nil
+            service = nil
+            manual = nil
+            account = PlankRelayKeys.bluetoothAccount(identifier: identifier)
+        } else if setupMethod == .nearby, !selectedServiceID.isEmpty {
+            bluetoothIdentifier = nil
             guard let found = nearbyRelays.first(where: { $0.id == selectedServiceID }) else {
                 status = "Relay not nearby. Wait for discovery or use its address."
                 return
@@ -461,7 +582,8 @@ final class PlankRelayPairing: ObservableObject {
                                 domain: found.domain, interface: nil)
             account = PlankRelayKeys.serviceAccount(name: found.name,
                                                      domain: found.domain)
-        } else {
+        } else if setupMethod == .manual {
+            bluetoothIdentifier = nil
             service = nil
             let address = address.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !address.isEmpty, let number = UInt16(port), number != 0,
@@ -472,6 +594,9 @@ final class PlankRelayPairing: ObservableObject {
             endpoint = .hostPort(host: NWEndpoint.Host(address), port: endpointPort)
             account = PlankRelayKeys.relayAccount(address: address, port: number)
             manual = (address, number)
+        } else {
+            status = "Choose a nearby Wi-Fi Relay first."
+            return
         }
         var random = [UInt8](repeating: 0, count: 5)
         guard SecRandomCopyBytes(kSecRandomDefault, random.count, &random) == errSecSuccess else {
@@ -479,16 +604,19 @@ final class PlankRelayPairing: ObservableObject {
             return
         }
         let digits = random.map { UInt8(49 + ($0 & 7)) }
-        code = digits.map { $0 - 48 }
+        code = bluetoothIdentifier == nil ? digits.map { $0 - 48 } : nil
         let previouslyPaired = paired
         isPairing = true
-        status = "Connecting to the Relay pairing window…"
+        status = bluetoothIdentifier == nil ? "Connecting to the Relay pairing window…" :
+            "Connecting over Bluetooth. Press and release the Wacom center button three times when prompted."
         task = Task {
             do {
-                try await pair(endpoint: endpoint, account: account,
-                               service: service, manual: manual, digits: digits)
+                try await pair(endpoint: endpoint, bluetoothIdentifier: bluetoothIdentifier,
+                               account: account, service: service, manual: manual, digits: digits)
                 paired = true
-                status = "Wacom Relay paired and its identity verified."
+                status = bluetoothIdentifier == nil ?
+                    "Wacom Relay paired and its identity verified." :
+                    "Bluetooth Relay paired. Its key is pinned for future sessions."
             } catch {
                 paired = previouslyPaired
                 if Task.isCancelled {
@@ -508,14 +636,21 @@ final class PlankRelayPairing: ObservableObject {
 
     func cancelPairing() { task?.cancel() }
 
-    private func pair(endpoint: NWEndpoint, account: String,
+    private func pair(endpoint: NWEndpoint?, bluetoothIdentifier: UUID?, account: String,
                       service: PlankDiscoveredRelay?,
                       manual: (address: String, port: UInt16)?,
                       digits: [UInt8]) async throws {
         let privateKey = try PlankRelayKeys.clientPrivateKey()
         let name = Array("Apple Vision Pro".utf8)
         let pair: OpaquePointer? = privateKey.withUnsafeBytes { privateBytes in
-            digits.withUnsafeBufferPointer { codeBytes in
+            if bluetoothIdentifier != nil {
+                return name.withUnsafeBufferPointer { nameBytes in
+                    pltr_client_pair_create_button(
+                        privateBytes.bindMemory(to: UInt8.self).baseAddress,
+                        nameBytes.baseAddress, nameBytes.count)
+                }
+            }
+            return digits.withUnsafeBufferPointer { codeBytes in
                 name.withUnsafeBufferPointer { nameBytes in
                     pltr_client_pair_create(
                         privateBytes.bindMemory(to: UInt8.self).baseAddress,
@@ -527,26 +662,33 @@ final class PlankRelayPairing: ObservableObject {
         }
         guard let pair else { throw PlankRelayError.crypto }
         defer { pltr_client_pair_destroy(pair) }
-        let stream = PlankRelayTCP(endpoint: endpoint)
-        defer { stream.cancel() }
+        let tcp = endpoint.map { PlankRelayTCP(endpoint: $0) }
+        let bluetooth = bluetoothIdentifier.map { PlankRelayBluetoothPairing(identifier: $0) }
+        defer { tcp?.cancel(); bluetooth?.cancel() }
         let timeout = Task {
             try? await Task.sleep(for: .seconds(70))
-            if !Task.isCancelled { stream.cancel() }
+            if !Task.isCancelled { tcp?.cancel(); bluetooth?.cancel() }
         }
         defer { timeout.cancel() }
         try await withTaskCancellationHandler {
-            try await stream.connect()
+            if let bluetooth { try await bluetooth.connect() }
+            else if let tcp { try await tcp.connect() }
+            else { throw PlankRelayError.invalidAddress }
             var outgoing = [UInt8](repeating: 0, count: 256)
             var written = 0
             guard pltr_client_pair_start(pair, &outgoing, outgoing.count, &written) == 0 else {
                 throw PlankRelayError.crypto
             }
-            try await stream.send(Data(outgoing.prefix(written)))
-            status = "Press the five displayed ExpressKeys on the tablet."
+            if let bluetooth { try await bluetooth.send(Data(outgoing.prefix(written))) }
+            else { try await tcp!.send(Data(outgoing.prefix(written))) }
+            status = bluetooth == nil ? "Press the five displayed ExpressKeys on the tablet." :
+                "Press and release the Wacom center button three times."
             let deadline = ContinuousClock.now.advanced(by: .seconds(65))
             while ContinuousClock.now < deadline {
                 try Task.checkCancellation()
-                let data = try await stream.receive()
+                let data: Data
+                if let bluetooth { data = try await bluetooth.receive() }
+                else { data = try await tcp!.receive() }
                 var offset = 0
                 while offset < data.count {
                     var consumed = 0
@@ -562,12 +704,25 @@ final class PlankRelayPairing: ObservableObject {
                     }
                     guard result >= 0, consumed > 0 else { throw PlankRelayError.pairingRejected }
                     offset += consumed
-                    if replySize > 0 { try await stream.send(Data(outgoing.prefix(replySize))) }
+                    if result == 3, bluetooth != nil {
+                        var approval = [UInt8](repeating: 0, count: 8)
+                        if pltr_client_pair_approval_status(pair, &approval) == 0 {
+                            status = "Wacom approval: \(approval[2]) of 3 presses received."
+                        }
+                    }
+                    if replySize > 0 {
+                        if let bluetooth { try await bluetooth.send(Data(outgoing.prefix(replySize))) }
+                        else { try await tcp!.send(Data(outgoing.prefix(replySize))) }
+                    }
                     if result == 2 {
                         try PlankRelayKeys.write(
                             Data(relayKey), account: account
                         )
-                        if let service {
+                        if let bluetoothIdentifier {
+                            UserDefaults.standard.set("bluetooth", forKey: "plank.vision.relayMode")
+                            UserDefaults.standard.set(bluetoothIdentifier.uuidString,
+                                                      forKey: "plank.vision.relayBluetoothIdentifier")
+                        } else if let service {
                             UserDefaults.standard.set("bonjour", forKey: "plank.vision.relayMode")
                             UserDefaults.standard.set(service.name,
                                                       forKey: "plank.vision.relayServiceName")
@@ -586,7 +741,8 @@ final class PlankRelayPairing: ObservableObject {
             }
             throw PlankRelayError.pairingRejected
         } onCancel: {
-            stream.cancel()
+            tcp?.cancel()
+            Task { @MainActor in bluetooth?.cancel() }
         }
     }
 }
