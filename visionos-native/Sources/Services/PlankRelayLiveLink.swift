@@ -143,8 +143,12 @@ final class PlankRelayLiveLink: @unchecked Sendable {
         var written = 0
         guard let codec,
               pltr_client_link_start(codec, &bytes, bytes.count, &written) == 0 else {
+            print("PLANK Bluetooth identity handshake could not start")
             closeOnQueue()
             return
+        }
+        if bluetoothIdentifier != nil {
+            print("PLANK Bluetooth identity handshake sending \(written) bytes")
         }
         write(Data(bytes.prefix(written)))
     }

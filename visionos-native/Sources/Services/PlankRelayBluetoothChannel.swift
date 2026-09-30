@@ -18,6 +18,7 @@ final class PlankRelayBluetoothChannel: NSObject,
     private let onClose: () -> Void
     private var central: CBCentralManager!
     private var peripheral: CBPeripheral?
+    private var channel: CBL2CAPChannel?
     private var input: InputStream?
     private var output: OutputStream?
     private var pending: [Data] = []
@@ -87,6 +88,7 @@ final class PlankRelayBluetoothChannel: NSObject,
         }
         input = nil
         output = nil
+        channel = nil
         pending.removeAll()
         pendingBytes = 0
         onClose()
@@ -152,7 +154,14 @@ final class PlankRelayBluetoothChannel: NSObject,
     }
 
     func peripheral(_ device: CBPeripheral, didOpen channel: CBL2CAPChannel?, error: Error?) {
-        guard !closed, error == nil, let channel else { stop(); return }
+        guard !closed, error == nil, let channel else {
+            print("PLANK Bluetooth channel failed to open: \(String(describing: error))")
+            stop(); return
+        }
+        // Keep the channel itself alive for the entire stream. Retaining only
+        // its InputStream and OutputStream can release the underlying CoC as
+        // soon as this delegate callback returns.
+        self.channel = channel
         input = channel.inputStream
         output = channel.outputStream
         guard let input, let output else { stop(); return }
@@ -181,6 +190,7 @@ final class PlankRelayBluetoothChannel: NSObject,
         case .hasSpaceAvailable:
             flush()
         case .errorOccurred, .endEncountered:
+            print("PLANK Bluetooth stream closed: \(String(describing: stream.streamError))")
             stop()
         default:
             break
