@@ -65,11 +65,12 @@ The native target currently provides:
 - authenticated topology, application-list and Desktop launch requests;
 - a native Rust transport bridge with bounded negotiation, frame receive and
   graceful disconnect handling;
-- live HEVC 10-bit 4:4:4 video from a physical Linux Host, decoded by FFmpeg;
-- direct planar 10-bit to BGRA conversion on ARM and a native UIKit layer that
-  presents the latest complete frame at up to 60 fps;
-- a separate, plain remote-desktop window with Standard and Wide single-display
-  modes and aspect-preserving resize;
+- live HEVC 10-bit 4:4:4 video from a physical Linux Host, decoded by
+  VideoToolbox into exact-color `xf44` planes with an FFmpeg fallback;
+- native-resolution Metal presentation through an identity-GBR shader; the
+  stream requests 60 fps, while sustained displayed fps remains to be measured;
+- a separate, plain remote-desktop window with bookmark-owned single-display
+  resolution and stream frame-rate choices and aspect-preserving resize;
 - absolute pointer movement, primary click and drag, keyboard forwarding, and
   native mouse-button forwarding for primary, secondary and middle buttons;
 - a local TCP Wacom Relay link with physical ExpressKey pairing, pinned Relay
@@ -129,19 +130,188 @@ endurance session remains pending.
 
 ## Qualification backlog
 
+The current development build has virtual-display and stream-frame-rate
+choices in saved bookmarks (24, 25, 30, 48, 50, 60, 90, 120 fps presets and
+custom 1–240 fps; 60 fps for existing bookmarks),
+editable workstation fields, one-active-session gating in the host browser,
+and live frame diagnostics confined to the desktop window. The physical
+Vision Pro has passed a short live test of hardware-only HEVC 4:4:4 10-bit
+decode with native-resolution Metal presentation. The initial negotiated stream
+was 60 fps; neither actual display refresh nor sustained presentation rate has
+been measured yet.
+
+The first frame-rate bookmark build sent the selected rate in the native
+stream request but still launched the Host at 60 fps. The Host requires these
+rates to match, so 48 and 50 fps connections failed. Build 10 sends the saved
+rate in both requests. The physical Vision Pro subsequently connected and
+displayed video at both 48 and 50 fps bookmark settings in build 10. Sustained
+delivered frame rate and playback pacing at those settings remain unmeasured.
+Build 11 adds an opt-in display-link timing readout and a 96 Hz timing hint for
+24/48 fps bookmarks. Compare the automatic and hinted readings on the physical
+headset; this does not assert that an app can force the compositor's display
+mode. Confirm physical refresh separately with Xcode's Display instrument when
+the headset is available to Instruments.
+The first visual comparison was inconclusive; no actual display-mode change has
+been established.
+In the follow-up headset check, switching between PLANK and Mac Virtual Display
+returned cleanly in build 12. The operator perceived no benefit from alternate
+stream rates and saw visible flicker/judder at 48 fps, so 60 fps remains the
+working baseline. A possible pen-tip failure at non-60 fps is unconfirmed;
+compare fresh 48/50 and 60 fps sessions with the six Wacom preflight gates and
+Host pen-button events before attributing it to stream cadence. The display-link
+readout is app callback timing, not proof of the headset's physical refresh.
+
+The September 28 native Client input gate passed several physical-headset
+connect/disconnect cycles: the paired Wacom Relay attached before desktop
+input started, and the pen worked on each reconnect. This is short-session
+acceptance; longer sessions and Relay-offline behavior remain to be checked.
+The workstation's Remove action now lives in Edit Workstation behind a
+confirmation, away from Start Session. Its placement was confirmed on the
+physical headset in build 5; deletion itself was not exercised.
+
+- Qualify the hardware decode path over a sustained session at the usual
+  resolution and a shorter 5120x2160 stress run. Measure actual presented fps,
+  frame intervals, receive/decode/presentation gaps, end-to-end latency,
+  thermal behavior, fallback recovery, and whether the earlier frozen-picture
+  failure recurs.
+- Investigate intermittent Wacom first attachment when raw-device setup is
+  delayed. Subsequent clean session attachments restored tip clicks and
+  pressure; capture application-level XI2 events during a failing session
+  before changing device mapping or attachment order.
 - Rebase the native Vision Pro Client branch onto the current upstream Client
-  after the pen-latency comparison. Review shared transport and submodule
-  changes, then rebuild and rerun the Host, streaming and Wacom preflights.
+  after preserving the accepted hardware-decode build. Review shared transport
+  and submodule changes, then rebuild and rerun the Host, streaming and Wacom
+  preflights.
 - Measure end-to-end pointer and video latency under sustained use, including
   thermal behavior and frame pacing over longer sessions.
 - Isolate tablet latency by measuring capture-to-Client, Client-to-Host, and
   Host-to-visible-frame time. A short A/B comparison with the preflight Client
   and its immediate predecessor felt about the same, so the preflight change
   has no observed latency regression. Investigate the high volume of HEVC
-  reference-frame errors seen with the developer console attached.
-- Evaluate VideoToolbox and a native pixel-buffer or Metal path if further
-  performance work is warranted; the current UIKit layer and direct color
-  conversion passed the live smooth-playback check.
+  reference-frame errors seen with the developer console attached. In a
+  5120x2160@60 Vision Pro session, thousands of frames reached the Client but
+  decoding stalled and the picture froze while remote clicks still worked.
+  A temporary repeated-IDR recovery build made dragging unacceptably latent;
+  it was removed from the installed Client. Measure receive-queue drops,
+  decode time, and frame gaps before choosing a recovery policy.
+- Qualify exact-color output with reference charts and gradients on the
+  headset, including whether the spatial compositor preserves 10-bit steps.
+  Keep the working `xf44` shader path and compare latency and power with the
+  FFmpeg fallback under equal conditions.
+
+### September 27 exact-color decode investigation
+
+The 5120x2160 Vision Pro freeze was recorded while the Linux Host used NvFBC,
+whose source is 8-bit and expanded to the negotiated HEVC 10-bit 4:4:4 stream.
+The Host sent 5,262 frames over roughly 89 seconds with zero QUIC packet loss.
+A separate native depth-30 X11/XShm session sent 4,779 frames over roughly 80
+seconds. These send counts show sustained Host output in those runs; they do
+not measure individual capture or encode latency. Reducing native X11 capture
+cost is therefore a separate optimization from the observed Vision Pro freeze.
+
+The earlier Vision Pro path software-decoded GBRP10LE, converted it to 8-bit
+BGRA, copies a complete frame into `Data`, then creates a `CGImage` for the
+window. A 5120x2160 BGRA frame is 44,236,800 bytes before subsequent copies.
+The macOS Client instead maps VideoToolbox 10-bit 4:4:4 pixel-buffer planes to
+Metal textures and applies its identity-GBR shader. The `xf44` plane values
+must reach that shader without VideoToolbox's ordinary BT.709 RGB conversion.
+
+An isolated, signed Vision Pro test app decoded the owned HEVC 4:4:4 10-bit
+chart on the physical headset with hardware-only VideoToolbox sessions. Native
+output was `pf44`; requested exact output was `xf44`, with the expected
+identity-GBR red-bar codes `0, 0, 1023`. The 8-bit BGRA and half-float RGBA
+output requests also succeeded but would apply VideoToolbox colour conversion,
+so they are unsuitable for PLANK's exact-colour transport. The user saw a
+slightly smoother 10-bit gradient than the 8-bit reference on two half-float
+Metal surfaces; that visual check does not prove the compositor preserves all
+10 bits.
+
+The native Client now builds with a hardware-only VideoToolbox decoder and an
+`xf44`-to-Metal identity-GBR presentation path. A Mac smoke test decoded all
+ten fixture frames through the new decoder, with parameter sets delivered in
+a separate packet. It falls back to FFmpeg if the hardware session fails;
+subsequent frames may require a new keyframe before that fallback shows video.
+The first live hardware run decoded and presented continuously (2,655 received,
+decoded, and shown frames in the user's capture, with 7.6 ms average decode),
+but the user reported a soft image. The Metal layer initially allocated its
+drawable at the 1280-point spatial-window size despite a higher-resolution
+remote frame. A follow-up build allocates the drawable at the decoded frame's
+native pixel size. The user then confirmed sharp Flame detail and smooth
+dragging/playback on the physical headset; the photo showed 8,221 frames each
+received, decoded, and shown, with 7.6 ms average decode and zero reported
+drops or gaps. This is short-run acceptance of the hardware decode and native
+resolution presentation path, not a sustained thermal or colour-precision
+qualification. In the same run the Wacom pen moved the pointer and its side
+button responded, but the tip did not draw in GNOME's tablet test area. The
+Host's XInput recorder observed tip button 1 presses, releases, and pressure;
+the failure is under investigation and must not be attributed to missing raw
+tablet packets. A Host-side hold check showed button 1 remained down at full
+pressure. The NUC Relay log also showed an 11-second raw-device attach retry
+on a later connection. During that retry, Xorg briefly registered PLANK's
+normalized fallback tablet, then removed it when the exact Wacom endpoints
+arrived. A stale application tablet binding is a plausible cause, but has not
+been established; compare application-level XI2 events before changing button
+mapping or declaring a Relay packet loss problem.
+In four subsequent connections, exact Wacom attachments (Relay generations
+35–38) completed without retries. The user confirmed that closing and reopening
+PLANK restored clicks and normal pen behavior immediately. This contrasts with
+generation 34's 11-second attach retry and strengthens the device-switch
+timing hypothesis without proving it. The observed recovery followed a fresh
+session attachment; recovery within the failing session remains unverified.
+Preserve the working build and capture application-level XI2 events if the
+failure recurs before changing button mapping or the Relay protocol.
+On September 28, the failure recurred when the mouse was used before the
+Wacom appeared in Linux Settings. The Host's raw evdev and XInput recorders
+both received tip contact, pressure, and button-1 press/release. An X11 event
+window then received four complete left clicks at the spot the user targeted;
+a second window visibly counted both mouse and pen clicks in the same PLANK
+session. Reopening GNOME Settings after the Wacom attached restored its test
+button and pen drawing. This rules out a general loss of tip packets during
+that run, but does not yet identify why the earlier Settings window stopped
+responding. An earlier signed Client held mouse pointer, button, and wheel
+input once the Host transport was ready until Wacom preflight passed, with a
+ten-second fallback if the Relay could not attach. The current Client also
+holds keyboard and pen reports and removes that automatic fallback. It shows a
+"Connecting Wacom tablet…" message during this wait. In live tests after the
+change, the user confirmed pen tip, pen dragging, and mouse input on successive
+connections; the final build showed the connection message and all three
+inputs worked after it disappeared. This is short-run acceptance of startup
+sequencing. The earlier Settings-window failure has not been reproduced after
+the change, but its precise GNOME cause and longer-session reliability remain
+open. A later September 28 connection again felt as though mouse and pen clicks
+failed on the Linux wallpaper. A large X11 click-test window in that same
+session visibly counted both input sources. This confirms that those presses
+reached Linux; it does not establish why the wallpaper or the previous small
+application target looked unresponsive.
+The Host cursor shape is now capped to a minimum half-size display scale
+(a 24-pixel Host arrow draws at about 12 points in the current spatial window).
+The received/decoded/shown
+frame counts and decoder name are now hidden by default and available through
+Settings → Debug Overlays → Show video decoding statistics.
+Closing the spatial desktop window previously had no onDisappear session
+cleanup. The development Client now disconnects the stream when that window
+closes, and its browser waits for the old transport task to finish before
+offering another session. This builds and is installed on the Vision Pro, but
+normal close/reconnect acceptance is pending. It is a lifecycle correction,
+not yet a demonstrated cure for the intermittent tablet symptom.
+The September 28 Mac Client comparison used an older PR7 Contact Test build.
+Its log recorded exclusive Wacom ownership at 11:20:14, release three seconds
+later, and a corresponding Host raw-HID suspend. It attached again after
+focus returned. A second release followed toolbar minimize. That comparison
+shows a focus/suspend path worth investigating; it does not isolate a Host
+tablet decoding defect. The Host and Mac Client were then moved to Alan's
+matched, signed upstream 1.1.024 packages from source commit 89afd664, with
+the Host service reporting ready. The Mac Wacom check on that pair is pending.
+The hardware decoder also fell back to FFmpeg mid-session while received
+frames continued and the picture froze. The candidate Client now requests a
+fresh IDR when the hardware decoder fails or decoding stalls, and waits for
+that keyframe before decoding again. This recovery path builds and is installed
+but still needs an observed natural-failure test; rising receive counts alone
+do not prove that the displayed picture is current.
+The Vision Pro decoder's compressed-frame input now reserves and zeroes the
+FFmpeg-required padding after each packet; this change builds, but has not
+received a live streaming acceptance test. Do not attribute the freeze to
+missing padding without that evidence.
 - Arbitrate gaze/pinch and Bluetooth mouse input so switching sources does not
   create duplicate movement or button events.
 - Present local pointer shapes that match the remote cursor instead of the
@@ -158,14 +328,122 @@ endurance session remains pending.
 - Add host audio output and verify sleep, wake and reconnect behavior.
 - Qualify the Wacom Relay across longer Vision Pro sleeps and sessions,
   including repeated tablet hotplug cycles.
+- Qualify reconnect after a normal Vision Pro disconnect. A September 27
+  recording showed a generic format error followed by a Try Again path that
+  discarded the saved sign-in state. Host source and the desktop Client show
+  that an XML authentication failure from a replacement Host worker could
+  account for the format error. The Vision Pro client now recognizes the Host's XML
+  status envelope, refreshes authentication over the existing pinned TLS
+  session, and offers Retry Session without prompting for credentials. The
+  signed build passed compilation; live disconnect/reconnect acceptance and
+  Host reservation-release timing still need verification.
 - Evaluate pairing the Wacom tablet to the headless Relay NUC over Bluetooth
   instead of USB. Confirm that Linux exposes the raw reports, pad keys, and
   pressure needed by the existing Host path before treating it as supported.
 - Implement and qualify a Bluetooth LE link between the Relay NUC and Vision
   Pro, using the same authenticated session semantics as the local TCP link.
+  Alan's [`visionos-tablet-setup` Relay branch](https://github.com/instinctual/plank-tablet-relay/tree/visionos-tablet-setup)
+  provides a separately packaged BLE readings and setup workflow, not yet
+  production raw-HID forwarding. Its physical Intel 7265/BlueZ/visionOS 27
+  qualification found an opt-in controller address-resolution workaround and
+  a BlueZ battery-plugin conflict; port the bounded startup and recovery
+  behavior before testing the production path. The running USB/TCP Relay on
+  the development NUC remains the working baseline. The same branch fixes
+  re-approval of an already saved headset key; assess that independently of
+  the BLE transport work.
 - Discover a headless Relay without knowing its IP address in advance, then
-  pair it through the tablet's ExpressKeys. Keep manual address entry as a
-  fallback when local discovery is unavailable.
+  pair it through the tablet's ExpressKeys. The signed Client now browses
+  `_plank-tablet._tcp`, and the NUC advertises its identity and pairing-window
+  state. The running Relay also watches for the five-second ExpressKey chord.
+  Live acceptance of discovery and physical pairing remains pending. The
+  current Mac and NUC are on different routed subnets, where local multicast
+  does not reach Portofino; manual address remains the fallback there.
+
+On September 27, a Vision Pro screen recording showed a saved Nearby Relay
+marked “not nearby,” a disconnected live link, and a failed Re-pair attempt.
+The Relay service, USB Wacom and TCP listener were healthy, but its journal
+showed no new authenticated session attempt. The headset's saved settings
+selected Bonjour while retaining the NUC's routable manual address. The
+previous Client always chose the unresolved Bonjour endpoint for the live
+link; it never tried that saved address. Re-pair also showed a raw connection
+reset when the Relay's short pairing window was closed and left the Settings
+status looking both paired and disconnected. The development build now tries
+the pinned manual address after a bounded Bonjour attempt, keeps the same
+Relay identity pin on that fallback, bounds pairing-connect waits, preserves
+saved trust if re-pairing fails, and separates saved pairing from live-link
+status in Settings. It is installed on the physical headset but still needs a
+live reconnect and pen-pressure acceptance test.
+
+On September 28, the standalone Tablet Setup BLE lab passed on the development
+NUC's Realtek Bluetooth controller and physical Vision Pro. Its unauthenticated
+transport check returned matching 64-, 512-, and 1024-byte payloads (three
+round trips). Initial headset approval consistently disconnected after the
+first button press. A controller trace showed BlueZ reading the headset's
+Battery Level, receiving an authentication error, attempting OS-level pairing,
+then terminating the BLE connection locally. A reversible runtime BlueZ
+`--noplugin=battery` override removed that conflict; controller address
+resolution did not need a workaround on this radio. Three short Wacom center
+button presses then completed the app's authenticated pairing. Live position,
+pressure, and button readings worked with the Wacom on USB and after bonding
+it to the NUC over Bluetooth Classic HID. The tablet sleep/wake check resumed
+all readings without re-pairing. This qualifies the separate BLE readings lab,
+not PLANK's production raw-HID forwarding over BLE. The existing TCP/USB
+Relay remains the desktop-session baseline.
+
+The native Client treats a saved Wacom pairing as
+part of session startup. It presents a blocking tablet-connection screen and
+holds mouse, keyboard, scroll, and pen reports until the current Relay
+generation passes the six Host/Relay preflight checks, including the Host's
+attachment acknowledgment. Attachment and control messages continue so the
+tablet can become ready. There is no silent timeout; the operator may explicitly
+continue that session without Wacom. A lost Relay closes the input gate again
+and releases any mouse buttons or keys already held at the Host. Disconnect and
+reset also keep new connections blocked until the old transport worker and
+Relay link close; the next Start issues a fresh Host launch and transport.
+The Host may still be finishing its reservation after the transport exits, so
+the existing bounded Host-busy retry remains necessary. The input-policy
+transitions pass local
+tests, and several short physical-headset reconnects passed. Sustained use,
+Relay restart, and Relay-offline handling still need live qualification.
+
+The operator reports a further input-routing correlation: repeated reconnects
+worked when the physical mouse was dedicated to Vision Pro and Mac Virtual
+Display stayed closed. Earlier pen or mouse failures happened with Mac Virtual
+Display open and/or the mouse paired to the Mac; those two changes were not
+isolated. [Apple documents](https://support.apple.com/en-gb/guide/apple-vision-pro/tan357ede966/26/visionos/26)
+that Mac Virtual Display can share the Mac pointer across Mac and visionOS
+windows. PLANK currently suspends the tablet Relay when its desktop scene
+becomes inactive, then reattaches on return. The report suggests a focus and
+reattachment interaction but does not establish it as the cause. Reproduce
+with three controlled cases: PLANK alone with a Vision Pro mouse, Mac Virtual
+Display open with a Vision Pro mouse, and Mac Virtual Display open with a
+Mac-shared mouse. Record scene activity and the Wacom preflight gates through
+each switch before changing Relay or Host input behavior.
+
+A controlled Vision Pro-mouse run with Mac Virtual Display open narrowed the
+failure: after switching back to PLANK, the Wacom tip still clicked, but the
+Host cursor stopped following ordinary mouse movement. A mouse click moved the
+Host cursor to the mouse position; subsequent pen movement moved it to the pen
+position again. Closing Mac Virtual Display restored mouse tracking. The
+Client uses a recent `GCMouse` motion callback to distinguish physical mouse
+hover from gaze hover, so a missed mouse callback after window handoff can
+explain this behavior. The next build refreshes that callback on scene
+activation and when the PLANK window becomes key. Its first live test hit a
+different focus-return failure: after the Relay suspended, PLANK remained on
+“Connecting Wacom tablet…” instead of resuming, so mouse recovery could not
+be judged. A follow-up build also resumes the Relay when the desktop window
+becomes key. The operator's next short run found switching generally smooth when the mouse
+remained paired to Vision Pro, including pen input. Keeping the mouse paired to
+the Mac and using it through Mac Virtual Display remains a separate unqualified
+path; the observed mouse-pointer handoff issue can still occur there.
+
+Build 11 exposed another intermittent focus-return stall at “Connecting Wacom
+tablet…”. The Relay log showed a completed Host attachment, but the Client's
+preflight could still wait forever: an attached Relay status can reach the
+preflight before the transport's asynchronous DEVICE-send callback, which then
+reset the independent ownership gate to pending. Build 12 preserves that Relay
+ownership fact across the send callback. A local regression test covers this
+event order and passes; the physical-headset focus-return retest passed.
 
 ## Build
 
@@ -218,3 +496,43 @@ cmake -G Xcode \
 
 Streaming is not considered implemented until the native target connects to a
 real Host and independently verifies video, audio and input on the headset.
+
+## Next integration target: Relay connection handoff
+
+The standalone Setup app already learns fresh network routes through its
+authenticated Relay management connection, including Bluetooth rendezvous when
+multicast discovery cannot cross subnets. The native Client still maintains a
+separate saved drawing endpoint and trust record. Changing the Relay from
+Ethernet to Wi-Fi currently requires a manual address selection in the Client.
+There is no implemented Setup-to-Client handoff; management authorization and
+drawing authorization are separate today.
+
+Proposed operator flow:
+
+- Setup owns tablet pairing, network configuration and Relay administration.
+- A **Use in PLANK** action offers the configured Relay to the Client.
+- PLANK selects the Relay by its verified identity and displays its name and
+  actual active network path. Address and port entry remain an advanced fallback.
+- Reconnection refreshes available routes without treating an address change as
+  a new Relay or requiring the operator to repeat pairing.
+
+Implement a versioned handoff contract before adding the button. It must
+distinguish management and drawing endpoints and identities, retain the current
+authenticated drawing transport, and never put private keys or pairing secrets
+in a launch URL. Incoming route suggestions are untrusted until the Client
+verifies the saved drawing identity. A first-time authorization flow needs an
+explicit design; the existing Setup approval does not automatically authorize
+the independent drawing service. Do not import tablet-management UI or capture
+ownership into PLANK.
+
+Acceptance must cover changing network addresses, reachable routes across
+subnets, missing or unreachable Relays, a mismatched identity, and a network
+interface disappearing during an active stroke. Starting another connection
+must release the old transport and input state before resuming tablet input.
+This section describes planned work, not an implemented handoff or seamless
+network failover.
+
+The coordinated implementation assignments and gates are in
+[Relay connection handoff execution plan](plans/relay-connection-handoff.md).
+The first slice updates routes for an already approved drawing identity; new
+Client enrollment remains explicit and separate.

@@ -31,13 +31,15 @@ final class PlankRelayLiveLink: @unchecked Sendable {
     private var sessionReady = false
     private var active = false
     private var closed = false
+    private var closeCompleted = false
+    private var closeWaiters: [CheckedContinuation<Void, Never>] = []
     private var lastReceive = DispatchTime.now().uptimeNanoseconds
     private var pendingHostFrames: [Data] = []
     private var pendingHostBytes = 0
     private var invalidTabletFrames = 0
     private var attachedGeneration: UInt16?
 
-    init(address: String, port: UInt16, hostFeatures: UInt32,
+    init(endpoint: NWEndpoint, hostFeatures: UInt32,
          preflight: PlankWacomPreflight,
          clientPrivateKey: Data, relayPublicKey: Data,
          deliverTabletFrame: @escaping @Sendable (Data) -> Void,
@@ -45,8 +47,9 @@ final class PlankRelayLiveLink: @unchecked Sendable {
          onReady: @escaping @Sendable () -> Void,
          onUnexpectedClose: @escaping @Sendable () -> Void,
          acceptGeneration: @escaping @Sendable (UInt16) -> Bool) throws {
-        guard clientPrivateKey.count == 32, relayPublicKey.count == 32,
-              !address.isEmpty, port != 0 else { throw PlankRelayLiveError.invalidConfiguration }
+        guard clientPrivateKey.count == 32, relayPublicKey.count == 32 else {
+            throw PlankRelayLiveError.invalidConfiguration
+        }
         let created = clientPrivateKey.withUnsafeBytes { clientBytes in
             relayPublicKey.withUnsafeBytes { relayBytes in
                 pltr_client_link_create(
@@ -58,8 +61,7 @@ final class PlankRelayLiveLink: @unchecked Sendable {
         }
         guard let created else { throw PlankRelayLiveError.invalidConfiguration }
         codec = created
-        connection = NWConnection(host: NWEndpoint.Host(address),
-                                  port: NWEndpoint.Port(rawValue: port)!, using: .tcp)
+        connection = NWConnection(to: endpoint, using: .tcp)
         self.hostFeatures = hostFeatures
         self.preflight = preflight
         self.deliverTabletFrame = deliverTabletFrame
@@ -144,10 +146,22 @@ final class PlankRelayLiveLink: @unchecked Sendable {
 
     func close() { queue.async { [self] in closeOnQueue(sendEnd: true) } }
 
+    func waitForClose() async {
+        await withCheckedContinuation { continuation in
+            queue.async { [self] in
+                if closeCompleted { continuation.resume() }
+                else { closeWaiters.append(continuation) }
+            }
+        }
+    }
+
     private func tick() {
         guard !closed else { return }
         let elapsed = DispatchTime.now().uptimeNanoseconds - lastReceive
-        guard elapsed < UInt64(sessionReady ? 3 : 10) * 1_000_000_000 else {
+        // A service name on another subnet can remain unresolved without ever
+        // reaching the Relay. Move to the pinned address promptly in that case.
+        let timeoutSeconds = sessionReady ? 3 : (connectionReady ? 10 : 4)
+        guard elapsed < UInt64(timeoutSeconds) * 1_000_000_000 else {
             closeOnQueue()
             return
         }
@@ -333,16 +347,25 @@ final class PlankRelayLiveLink: @unchecked Sendable {
         if let codec { pltr_client_link_destroy(codec) }
         codec = nil
         if let finalRecord {
-            connection.send(content: finalRecord, completion: .contentProcessed {
-                [weak self] _ in self?.connection.cancel()
+            connection.send(content: finalRecord, completion: .contentProcessed { [self] _ in
+                completeClose()
             })
-            queue.asyncAfter(deadline: .now() + .seconds(1)) { [weak self] in
-                self?.connection.cancel()
+            queue.asyncAfter(deadline: .now() + .seconds(1)) { [self] in
+                completeClose()
             }
         } else {
-            connection.cancel()
+            completeClose()
         }
         if !sendEnd { onUnexpectedClose() }
+    }
+
+    private func completeClose() {
+        guard !closeCompleted else { return }
+        closeCompleted = true
+        connection.cancel()
+        let waiters = closeWaiters
+        closeWaiters.removeAll()
+        for waiter in waiters { waiter.resume() }
     }
 }
 
@@ -359,6 +382,7 @@ final class PlankRelaySessionBridge: @unchecked Sendable {
     private let preflight: PlankWacomPreflight
     private let reportState: @Sendable (String) -> Void
     private var link: PlankRelayLiveLink?
+    private var closingLink: PlankRelayLiveLink?
     private var linkID: UUID?
     private var lastGeneration: UInt16?
     private var retryCount = 0
@@ -376,6 +400,7 @@ final class PlankRelaySessionBridge: @unchecked Sendable {
     func startIfPaired(hostFeatures: UInt32) {
         lock.lock()
         let canStart = !ended && link == nil
+        let preferManualFallback = retryCount % 2 == 1
         lock.unlock()
         guard canStart else { return }
         guard hostFeatures & PlankHostFeature.tabletRelayRequired ==
@@ -383,24 +408,21 @@ final class PlankRelaySessionBridge: @unchecked Sendable {
             reportState("Host does not advertise the required tablet controls.")
             return
         }
-        let defaults = UserDefaults.standard
-        guard let address = defaults.string(forKey: "plank.vision.relayAddress"),
-              let port = UInt16(exactly: defaults.integer(forKey: "plank.vision.relayPort")),
-              port > 0,
+        guard let saved = PlankRelayKeys.savedConnection(
+                  preferManualFallback: preferManualFallback
+              ),
               let privateKey = try? PlankRelayKeys.clientPrivateKey(),
-              let relayKey = try? PlankRelayKeys.read(
-                  PlankRelayKeys.relayAccount(address: address, port: port)
-              ) else {
+              let relayKey = try? PlankRelayKeys.read(saved.account) else {
             reportState("Pair the Wacom Relay in Settings before connecting.")
             return
         }
         let identifier = UUID()
         let candidate = try? PlankRelayLiveLink(
-            address: address, port: port, hostFeatures: hostFeatures,
+            endpoint: saved.endpoint, hostFeatures: hostFeatures,
             preflight: preflight,
             clientPrivateKey: privateKey, relayPublicKey: relayKey,
-            deliverTabletFrame: { [inputQueue] frame in
-                inputQueue.append(.rawHid(frame))
+            deliverTabletFrame: { [weak self] frame in
+                self?.deliverTabletFrame(frame)
             }, reportState: reportState,
             onReady: { [weak self] in self?.relayReady(identifier) },
             onUnexpectedClose: { [weak self] in
@@ -423,7 +445,11 @@ final class PlankRelaySessionBridge: @unchecked Sendable {
         lock.unlock()
         if shouldStart {
             preflight.beginRelayConnection()
-            reportState("Connecting to the paired Wacom Relay…")
+            if case .hostPort = saved.endpoint {
+                reportState("Connecting to the paired Wacom Relay by address…")
+            } else {
+                reportState("Finding the paired Wacom Relay nearby…")
+            }
             candidate.setActive(initialActive)
             candidate.start()
         } else {
@@ -436,6 +462,19 @@ final class PlankRelaySessionBridge: @unchecked Sendable {
         let current = link
         lock.unlock()
         current?.forwardHostFrame(frame)
+    }
+
+    private func deliverTabletFrame(_ frame: Data) {
+        lock.lock()
+        let canDeliver = !ended
+        let canForwardReports = active
+        lock.unlock()
+        guard canDeliver, frame.count >= 8 else { return }
+        let type = UInt16(frame[6]) | UInt16(frame[7]) << 8
+        // Attachment and control messages must pass to make the tablet ready.
+        // Pen reports are user input and wait for the Host's attach result.
+        guard type != 3 || (canForwardReports && preflight.snapshot.ready) else { return }
+        inputQueue.append(.rawHid(frame))
     }
 
     func setActive(_ next: Bool) {
@@ -451,8 +490,17 @@ final class PlankRelaySessionBridge: @unchecked Sendable {
         ended = true
         let current = link
         link = nil
+        if let current { closingLink = current }
         lock.unlock()
         current?.close()
+    }
+
+    func waitForClose() async {
+        let current = lock.withLock { closingLink }
+        await current?.waitForClose()
+        lock.withLock {
+            if closingLink === current { closingLink = nil }
+        }
     }
 
     private func relayReady(_ identifier: UUID) {

@@ -1,6 +1,7 @@
 #include "PlankVideoDecoder.h"
 
 #include <libavcodec/avcodec.h>
+#include <libavcodec/defs.h>
 #include <libavutil/error.h>
 #include <libavutil/pixfmt.h>
 #include <libswscale/swscale.h>
@@ -17,6 +18,10 @@ struct PlankVideoDecoder {
     AVPacket *packet;
     struct SwsContext *scale;
 };
+
+size_t plank_video_decoder_input_padding(void) {
+    return AV_INPUT_BUFFER_PADDING_SIZE;
+}
 
 static void set_error(char *error, size_t capacity, const char *message) {
     if (error == NULL || capacity == 0) return;

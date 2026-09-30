@@ -61,6 +61,48 @@ struct PlankWacomPreflightTests {
         preflight.observeHostFrame(frame(type: 10, generation: 7,
                                          payload: [0, 0, 0, 0]))
         assert(preflight.snapshot.gates[.hostAcknowledgement] == .pending)
+
+        // A fast Host ACK can arrive before the sender records its final
+        // descriptor. The two independent facts must still converge to ready.
+        let fastHost = PlankWacomPreflight(clientVersion: "0.1.0", hostVersion: "1.0.154")
+        fastHost.observeHostFeatures(rawHid: true, focusSuspend: true)
+        fastHost.beginRelayConnection()
+        fastHost.relayAuthenticated(version: "0.1.1")
+        fastHost.observeSentTabletFrame(frame(type: 1, generation: 8,
+                                              payload: [2, 0]))
+        fastHost.observeSentTabletFrame(frame(type: 2, generation: 8,
+                                              interface: 0))
+        fastHost.observeHostFrame(frame(type: 10, generation: 8,
+                                        payload: [0, 0, 0, 0]))
+        assert(fastHost.snapshot.gates[.hostAcknowledgement] == .passed)
+        assert(!fastHost.snapshot.ready)
+        fastHost.observeSentTabletFrame(frame(type: 2, generation: 8,
+                                              interface: 1))
+        fastHost.observeRelayStatus(attachedStatus)
+        assert(fastHost.snapshot.ready)
+
+        // The Relay can report attachment before the transport callback
+        // records the attach frame. All six gates must still converge.
+        let earlyRelay = PlankWacomPreflight(clientVersion: "0.1.0", hostVersion: "1.0.154")
+        earlyRelay.observeHostFeatures(rawHid: true, focusSuspend: true)
+        earlyRelay.beginRelayConnection()
+        earlyRelay.relayAuthenticated(version: "0.1.1")
+        earlyRelay.observeRelayStatus(attachedStatus)
+        assert(earlyRelay.snapshot.gates[.deviceOwnership] == .passed)
+        earlyRelay.observeSentTabletFrame(frame(type: 1, generation: 9,
+                                                payload: [2, 0]))
+        assert(earlyRelay.snapshot.gates[.deviceOwnership] == .passed)
+        earlyRelay.observeSentTabletFrame(frame(type: 2, generation: 9,
+                                                interface: 0))
+        earlyRelay.observeSentTabletFrame(frame(type: 2, generation: 9,
+                                                interface: 1))
+        earlyRelay.observeHostFrame(frame(type: 10, generation: 9,
+                                          payload: [0, 0, 0, 0]))
+        assert(earlyRelay.snapshot.ready)
+        earlyRelay.observeRelayStatus(Data([4, 0, 0, 0, 0, 0, 0, 0]))
+        assert(!earlyRelay.snapshot.ready)
+        earlyRelay.observeRelayStatus(attachedStatus)
+        assert(earlyRelay.snapshot.ready)
     }
 }
 
