@@ -44,6 +44,8 @@ final class PlankRelayLiveLink: @unchecked Sendable {
     private var pendingHostBytes = 0
     private var invalidTabletFrames = 0
     private var attachedGeneration: UInt16?
+    private var pacedInputFrames: [Data] = []
+    private var inputPaceTimer: DispatchSourceTimer?
 
     init(endpoint: NWEndpoint?, bluetoothIdentifier: UUID? = nil,
          hostFeatures: UInt32,
@@ -373,8 +375,52 @@ final class PlankRelayLiveLink: @unchecked Sendable {
                   attachedGeneration == generation {
             attachedGeneration = nil
         }
-        deliverTabletFrame(frame)
-        return true
+        if bluetoothIdentifier != nil, type == 3 {
+            paceInputFrame(frame)
+        } else {
+            drainPacedInputFrames()
+            deliverTabletFrame(frame)
+        }
+        return !closed
+    }
+
+    private func paceInputFrame(_ frame: Data) {
+        // LE delivers several reports together at each connection event.
+        // Spread a short burst over a few milliseconds, but bound the queued
+        // time. The tablet can report slightly faster than 200 Hz, so a fixed
+        // 5 ms replay interval can accumulate visible lag during a stroke.
+        if inputPaceTimer == nil {
+            deliverTabletFrame(frame)
+            let timer = DispatchSource.makeTimerSource(queue: queue)
+            timer.schedule(deadline: .now() + .milliseconds(4),
+                           repeating: .milliseconds(4),
+                           leeway: .milliseconds(1))
+            timer.setEventHandler { [weak self] in
+                guard let self, !self.closed else { return }
+                if self.pacedInputFrames.isEmpty {
+                    self.inputPaceTimer?.cancel()
+                    self.inputPaceTimer = nil
+                } else {
+                    self.deliverTabletFrame(self.pacedInputFrames.removeFirst())
+                }
+            }
+            inputPaceTimer = timer
+            timer.resume()
+        } else {
+            pacedInputFrames.append(frame)
+            // Flush excess reports in order instead of allowing replay to
+            // drift ever farther behind live pen movement. No report drops.
+            while pacedInputFrames.count > 4 {
+                deliverTabletFrame(pacedInputFrames.removeFirst())
+            }
+        }
+    }
+
+    private func drainPacedInputFrames() {
+        inputPaceTimer?.cancel()
+        inputPaceTimer = nil
+        for frame in pacedInputFrames { deliverTabletFrame(frame) }
+        pacedInputFrames.removeAll(keepingCapacity: true)
     }
 
     private func send(_ type: UInt16, _ payload: Data) {
@@ -440,6 +486,9 @@ final class PlankRelayLiveLink: @unchecked Sendable {
             finalRecord = encode(Message.sessionEnd, Data([1]))
         }
         closed = true
+        inputPaceTimer?.cancel()
+        inputPaceTimer = nil
+        pacedInputFrames.removeAll()
         preflight.beginRelayConnection()
         reportState("Relay disconnected.")
         heartbeat?.cancel()
