@@ -66,6 +66,29 @@ enum StreamFrameRate {
     }
 }
 
+/// Startup encoder target sent as `video.encoder_target_kbps`. The range,
+/// step and HEVC 10-bit 4:4:4 default match the desktop Client's per-profile
+/// bitrate (`app/settings/streamingpreferences.h`). This is a Host encoder
+/// target, not a guaranteed received rate.
+enum StreamBitrate {
+    static let minimumKbps = 10_000
+    static let maximumKbps = 150_000
+    static let stepKbps = 500
+    static let defaultKbps = 50_000
+
+    /// Clamps to the supported range and rounds to the nearest step, so a
+    /// saved or edited value can never leave the qualified bounds.
+    static func normalized(_ kbps: Int) -> Int {
+        let clamped = min(max(kbps, minimumKbps), maximumKbps)
+        let steps = (clamped - minimumKbps + stepKbps / 2) / stepKbps
+        return min(minimumKbps + steps * stepKbps, maximumKbps)
+    }
+
+    static func megabitsLabel(_ kbps: Int) -> String {
+        kbps % 1_000 == 0 ? "\(kbps / 1_000) Mbps" : String(format: "%.1f Mbps", Double(kbps) / 1_000)
+    }
+}
+
 struct HostBookmark: Identifiable, Codable, Hashable, Sendable {
     var id: UUID
     var name: String
@@ -74,6 +97,7 @@ struct HostBookmark: Identifiable, Codable, Hashable, Sendable {
     var lastConnectedAt: Date?
     var spatialDisplaySize: SpatialDisplaySize
     var streamFrameRate: Int
+    var videoBitrateKbps: Int
 
     init(
         id: UUID = UUID(),
@@ -82,7 +106,8 @@ struct HostBookmark: Identifiable, Codable, Hashable, Sendable {
         port: UInt16 = 28989,
         lastConnectedAt: Date? = nil,
         spatialDisplaySize: SpatialDisplaySize = .standard,
-        streamFrameRate: Int = StreamFrameRate.defaultValue
+        streamFrameRate: Int = StreamFrameRate.defaultValue,
+        videoBitrateKbps: Int = StreamBitrate.defaultKbps
     ) {
         self.id = id
         self.name = name
@@ -91,10 +116,12 @@ struct HostBookmark: Identifiable, Codable, Hashable, Sendable {
         self.lastConnectedAt = lastConnectedAt
         self.spatialDisplaySize = spatialDisplaySize
         self.streamFrameRate = StreamFrameRate.normalized(streamFrameRate)
+        self.videoBitrateKbps = StreamBitrate.normalized(videoBitrateKbps)
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, name, address, port, lastConnectedAt, spatialDisplaySize, streamFrameRate
+        case videoBitrateKbps
     }
 
     init(from decoder: Decoder) throws {
@@ -111,6 +138,13 @@ struct HostBookmark: Identifiable, Codable, Hashable, Sendable {
         streamFrameRate = StreamFrameRate.normalized(
             (try? values.decodeIfPresent(Int.self, forKey: .streamFrameRate)) ??
             StreamFrameRate.defaultValue
+        )
+        // Bookmarks saved before this field existed keep the previous fixed
+        // 50 Mbps target. A malformed value must not throw: HostStore decodes
+        // the whole list, so one failure would drop every bookmark.
+        videoBitrateKbps = StreamBitrate.normalized(
+            (try? values.decodeIfPresent(Int.self, forKey: .videoBitrateKbps)) ??
+            StreamBitrate.defaultKbps
         )
     }
 }
@@ -130,6 +164,19 @@ struct PlankAuthentication: Equatable, Sendable {
 struct PlankApplication: Equatable, Sendable {
     let id: Int
     let title: String
+}
+
+/// Bookmark edits compare against the settings retained by the authenticated
+/// connection, not against an editor's possibly newer saved snapshot.
+enum PlankBookmarkSessionPolicy {
+    static func requiresClosure(edited: HostBookmark, connected: HostBookmark?,
+                                authenticated: Bool) -> Bool {
+        guard authenticated, let connected, edited.id == connected.id else { return false }
+        return edited.spatialDisplaySize != connected.spatialDisplaySize ||
+            StreamFrameRate.normalized(edited.streamFrameRate) !=
+                StreamFrameRate.normalized(connected.streamFrameRate) ||
+            edited.address != connected.address || edited.port != connected.port
+    }
 }
 
 struct PlankTopology: Equatable, Sendable {

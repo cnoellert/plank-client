@@ -4,6 +4,7 @@ struct HostBrowserView: View {
     @ObservedObject var store: HostStore
     @ObservedObject var client: PlankCoreClient
     @StateObject private var discovery = HostDiscovery()
+    @State private var browserVisible = false
     @State private var selection: HostBookmark.ID?
     @State private var showingAddHost = false
     @State private var editingHost: HostBookmark?
@@ -91,9 +92,22 @@ struct HostBrowserView: View {
                     }
             }
         }
-        .task { discovery.start() }
+        .task {
+            browserVisible = true
+            updateDiscovery()
+        }
+        .onChange(of: client.hasActiveDesktopSession) { _, _ in updateDiscovery() }
         .onDisappear {
+            browserVisible = false
             discovery.stop()
+        }
+    }
+
+    private func updateDiscovery() {
+        if !browserVisible || client.hasActiveDesktopSession {
+            discovery.stop()
+        } else {
+            discovery.start()
         }
     }
 }

@@ -9,7 +9,21 @@ final class PlankHardwareVideoDecoder {
     enum Outcome {
         case frame(CVPixelBuffer)
         case waiting
+        /// VideoToolbox rejected the bitstream as damaged
+        /// (kVTVideoDecoderBadDataErr). The decoder still works; both native
+        /// statuses are kept as returned.
+        case badData(decodeStatus: OSStatus, frameStatus: OSStatus)
+        /// Creation, capability or any other decoder failure; see lastError.
         case unavailable
+    }
+
+    /// The bad-data outcome when every failing status is
+    /// kVTVideoDecoderBadDataErr; nil for success or any other failure.
+    static func badDataOutcome(decodeStatus: OSStatus, frameStatus: OSStatus) -> Outcome? {
+        let failures = [decodeStatus, frameStatus].filter { $0 != noErr }
+        guard !failures.isEmpty,
+              failures.allSatisfy({ $0 == kVTVideoDecoderBadDataErr }) else { return nil }
+        return .badData(decodeStatus: decodeStatus, frameStatus: frameStatus)
     }
 
     private final class Output: @unchecked Sendable {
@@ -93,6 +107,9 @@ final class PlankHardwareVideoDecoder {
         }
         VTDecompressionSessionWaitForAsynchronousFrames(session)
         guard status == noErr, output.status == noErr else {
+            if let rejected = Self.badDataOutcome(decodeStatus: status, frameStatus: output.status) {
+                return reject(rejected, "VideoToolbox bad data: \(status)/\(output.status)")
+            }
             return fail("VideoToolbox decode: \(status)/\(output.status)")
         }
         guard let image = output.image else { return .waiting }
@@ -154,6 +171,16 @@ final class PlankHardwareVideoDecoder {
         if let session { VTDecompressionSessionInvalidate(session) }
         session = nil
         return .unavailable
+    }
+
+    /// Damaged input, not a decoder fault: drop the session without marking the
+    /// decoder failed. The caller rebuilds and waits for a keyframe.
+    private func reject(_ outcome: Outcome, _ reason: String) -> Outcome {
+        lastError = reason
+        if let session { VTDecompressionSessionInvalidate(session) }
+        session = nil
+        format = nil
+        return outcome
     }
 
     private static func nalType(_ nal: [UInt8]) -> Int { Int((nal[0] >> 1) & 63) }

@@ -22,7 +22,60 @@ typedef struct PlankVisionVideoStats {
     uint64_t frames_received;
     uint64_t receive_drops;
     uint64_t fec_symbols_unrecovered;
+    // Input packets the native endpoint has handed to QUIC. Comparing this
+    // with the Client's accepted count gives the native send backlog.
+    uint64_t input_packets_sent;
+    uint64_t quic_rtt_us;
+    uint64_t quic_packets_lost;
+    uint64_t kyproto_packets_dropped;
 } PlankVisionVideoStats;
+
+typedef struct PlankVisionAudioPacket {
+    // Samples per Opus frame announced by the Host's codec header.
+    uint16_t frame_samples;
+    // Non-zero for a transport hole: the packet has no payload and this many
+    // samples were lost. The receiver conceals them; it never invents data.
+    uint32_t missing_samples;
+    uint64_t pts_48khz;
+} PlankVisionAudioPacket;
+
+typedef struct PlankVisionAudioStats {
+    uint64_t packets_received;
+    uint64_t bytes_received;
+    // Packets the transport's bounded receive queue evicted before the
+    // Client claimed them.
+    uint64_t receive_drops;
+} PlankVisionAudioStats;
+
+// The first terminal transport result is preserved for diagnostics. The
+// public calls keep their existing return values.
+enum {
+    PLANK_VISION_FAILURE_NONE = 0,
+    // The endpoint failed: the peer closed or the connection broke.
+    PLANK_VISION_FAILURE_TERMINATED = 1,
+    // The endpoint was stopped locally.
+    PLANK_VISION_FAILURE_CANCELLED = 2,
+    PLANK_VISION_FAILURE_INVALID_PAYLOAD = 3,
+    PLANK_VISION_FAILURE_BUFFER_LIMIT = 4,
+    // The native input send queue was full.
+    PLANK_VISION_FAILURE_QUEUE_FULL = 5,
+    // Invalid argument or a contained native panic.
+    PLANK_VISION_FAILURE_INTERNAL = 6,
+};
+
+enum {
+    PLANK_VISION_LANE_VIDEO = 1,
+    PLANK_VISION_LANE_INPUT = 2,
+    PLANK_VISION_LANE_DATA = 3,
+    PLANK_VISION_LANE_AUDIO = 4,
+};
+
+typedef struct PlankVisionTransportFailure {
+    uint32_t kind;
+    uint32_t lane;
+    int32_t native_result;
+    uint32_t endpoint_state;
+} PlankVisionTransportFailure;
 
 typedef struct PlankVisionCursorEvent {
     uint16_t type;
@@ -39,12 +92,18 @@ typedef struct PlankVisionCursorEvent {
     uint32_t hotspot_y;
     uint32_t image_size;
     uint32_t chunk_offset;
+    // PLANK_VISION_BITRATE_APPLIED: the Host's acknowledgement of a live
+    // target: as requested, after its ceiling, and the resulting peak.
+    uint32_t bitrate_requested_kbps;
+    uint32_t bitrate_applied_kbps;
+    uint32_t bitrate_peak_kbps;
 } PlankVisionCursorEvent;
 
 enum {
     PLANK_VISION_RAW_HID_EVENT = 2,
     PLANK_VISION_CURSOR_SHAPE = 3,
     PLANK_VISION_CURSOR_POSITION = 4,
+    PLANK_VISION_BITRATE_APPLIED = 5,
     PLANK_VISION_CURSOR_VISIBLE = 1,
     PLANK_VISION_CURSOR_FIRST_CHUNK = 2,
     PLANK_VISION_CURSOR_LAST_CHUNK = 4,
@@ -55,6 +114,8 @@ enum {
     PLANK_VISION_TRANSPORT_OK = 0,
     PLANK_VISION_TRANSPORT_TIMEOUT = 1,
     PLANK_VISION_TRANSPORT_BUFFER_TOO_SMALL = 2,
+    // A valid data event was consumed but has no presentation handler.
+    PLANK_VISION_TRANSPORT_DATA_IGNORED = 3,
     PLANK_VISION_TRANSPORT_ERROR = -1,
     PLANK_VISION_TRANSPORT_UNAVAILABLE = -2,
 };
@@ -89,7 +150,28 @@ int32_t plank_vision_transport_receive_video(
 int32_t plank_vision_transport_video_stats(
     PlankVisionTransport *transport, PlankVisionVideoStats *stats);
 
+// Bounded wait for one Host audio packet or hole. Safe to call from a
+// dedicated thread concurrently with the video, data and input lanes. A hole
+// returns OK with a zero payload size and non-zero missing_samples.
+int32_t plank_vision_transport_receive_audio(
+    PlankVisionTransport *transport,
+    PlankVisionAudioPacket *packet,
+    uint8_t *payload,
+    size_t payload_capacity,
+    size_t *payload_size,
+    uint32_t timeout_ms);
+
+int32_t plank_vision_transport_audio_stats(
+    PlankVisionTransport *transport, PlankVisionAudioStats *stats);
+
 int32_t plank_vision_transport_request_idr(PlankVisionTransport *transport);
+
+// Live encoder target for the running session (native control
+// SET_VIDEO_BITRATE). Only for Hosts advertising feature 0x08. The Host ends
+// the session for a value outside 500-500000 kbps, so those are refused here.
+// The Host answers with a PLANK_VISION_BITRATE_APPLIED data event.
+int32_t plank_vision_transport_set_video_bitrate(
+    PlankVisionTransport *transport, uint32_t bitrate_kbps);
 
 int32_t plank_vision_transport_send_mouse_position(
     PlankVisionTransport *transport,
@@ -132,6 +214,14 @@ int32_t plank_vision_transport_receive_data_event(
     size_t chunk_capacity,
     size_t *chunk_size,
     uint32_t timeout_ms);
+
+// Copies the first recorded terminal failure (kind NONE when there is none)
+// and the native endpoint's own error text, which carries any close reason.
+int32_t plank_vision_transport_first_failure(
+    PlankVisionTransport *transport,
+    PlankVisionTransportFailure *failure,
+    char *reason,
+    size_t reason_capacity);
 
 void plank_vision_transport_disconnect(PlankVisionTransport *transport);
 

@@ -6,9 +6,12 @@ struct SettingsView: View {
     @AppStorage("plank.vision.debugPrefer96Hz") private var debugPrefer96Hz = false
     @AppStorage("plank.vision.preferHEVC") private var preferHEVC = true
     @AppStorage("plank.vision.keyboardFunctionKeyMode") private var keyboardFunctionKeyMode = KeyboardFunctionKeyMode.pc.rawValue
+    @AppStorage(PlankAudioPreferences.playOnHostKey) private var playAudioOnHost = true
+    @AppStorage("plank.vision.timingCapture") private var timingCapture = false
 #if PLANK_TABLET_RELAY
-    @StateObject private var tabletRelay = PlankRelayPairing()
-    @State private var showRelayOptions = false
+    @ObservedObject private var relayHandoff = PlankRelayHandoffInbox.shared
+    @Environment(\.openURL) private var openURL
+    @State private var setupOpenFailed = false
 #endif
 
     private var desktopSessionActive: Bool {
@@ -24,9 +27,20 @@ struct SettingsView: View {
                 Toggle("Prefer HEVC", isOn: $preferHEVC)
             }
 
+            Section("Audio") {
+                Toggle("Also play on workstation speakers", isOn: $playAudioOnHost)
+                Text("Applies to the next connection. Workstation audio always plays in the headset; volume and mute are in the session controls at the top of the desktop window.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Debug Overlays") {
                 Toggle("Show video decoding statistics", isOn: $showStatistics)
                 Text("Shows frame counts, the active decoder, and display-link timing in the desktop window.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                Toggle("Record video timing capture", isOn: $timingCapture)
+                Text("Logs one line per second (up to 15 minutes per session) with Host frame sizes, arrival, decode, hand-off and presentation timing. Independent of the statistics overlay.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 if showStatistics {
@@ -52,47 +66,47 @@ struct SettingsView: View {
             }
 
 #if PLANK_TABLET_RELAY
-            Section("Tablet Connection") {
-                Text(tabletRelay.activeConnectionDescription)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                if tabletRelay.hasSavedConnection {
-                    Label("Saved Relay trusted by this headset", systemImage: "checkmark.shield.fill")
-                        .foregroundStyle(.green)
+            Section("Tablet Relay") {
+                Picker("Tablet Relay", selection: relaySelection) {
+                    Text("Off").tag(RelayChoice.off.tag)
+                    ForEach(relayHandoff.registry.relays, id: \.drawingIdentity) { relay in
+                        Text(relayHandoff.registry.displayName(for: relay.drawingIdentity) ?? relay.name)
+                            .tag(RelayChoice.relay(relay.drawingIdentity).tag)
+                    }
+                    if showsEarlierPairing {
+                        Text("Earlier paired Relay").tag(RelayChoice.earlierPairing.tag)
+                    }
+                    Text("Set up a Relay…").tag(RelayChoice.setUp.tag)
                 }
-                Text(desktopSessionActive ? client.tabletRelayStatus :
-                     "Tablet link idle; start a desktop session to connect.")
+                LabeledContent("Status", value: relayStatus.title)
+                Text(relayStatus.detail)
                     .font(.footnote)
                     .foregroundStyle(.secondary)
-                if desktopSessionActive {
-                    Text(client.tabletPreflightSummary)
+                if desktopSessionActive && relayHandoff.registry.selection != .off {
+                    Text(client.tabletRelayStatus)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
-                if tabletRelay.hasSavedConnection {
-                    DisclosureGroup("Connection options", isExpanded: $showRelayOptions) {
-                        relaySelectionControls
-                        DisclosureGroup(tabletRelay.paired ?
-                                        "Reauthorize this headset" :
-                                        "Approve this headset for the selected Relay") {
-                            pairingControls
+                if setupOpenFailed {
+                    Label("Relay Setup could not be opened. Install PLANK AVP Relay Setup on this headset, then choose Set up a Relay… again.",
+                          systemImage: "exclamationmark.triangle")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                }
+                if showsHandoffBanner {
+                    handoffBanner
+                }
+                DisclosureGroup("Connection details") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        LabeledContent("PLANK drawing connection", value: drawingRouteLabel)
+                        if desktopSessionActive {
+                            Text(client.tabletPreflightSummary)
                         }
+                        Text("PLANK draws over the network link to the selected Relay. Discovery, tablet setup, network settings and connection tests are in Relay Setup.")
                     }
-                } else {
-                    relaySelectionControls
-                    pairingControls
-                }
-                if let code = tabletRelay.code {
-                    Text("Press ExpressKeys \(code.map(String.init).joined(separator: " · ")) on the tablet, in order.")
-                        .font(.title3)
-                }
-                if !tabletRelay.status.isEmpty {
-                    Text(tabletRelay.status)
-                        .foregroundStyle(.secondary)
-                }
-                Text("Set up the Wacom's USB or Bluetooth connection in the separate Tablet Setup app.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                }
             }
 #endif
 
@@ -101,91 +115,145 @@ struct SettingsView: View {
                 LabeledContent("Version", value: "0.1.0")
             }
         }
+        .onChange(of: timingCapture) { _, enabled in
+            PlankTimingCapture.shared.setEnabled(enabled)
+        }
         .navigationTitle("Settings")
         .frame(minWidth: 560, minHeight: 420)
 #if PLANK_TABLET_RELAY
-        .onAppear { tabletRelay.startDiscovery() }
-        .onDisappear { tabletRelay.stopDiscovery() }
+        .onAppear { relayHandoff.reloadRegistry() }
 #endif
     }
 
 #if PLANK_TABLET_RELAY
-    @ViewBuilder
-    private var relaySelectionControls: some View {
-        Picker("Find Relay", selection: $tabletRelay.setupMethod) {
-            Text("Find Nearby").tag(PlankRelaySetupMethod.nearby)
-            Text("Manual Address").tag(PlankRelaySetupMethod.manual)
+    private enum RelayChoice: Equatable {
+        case off, earlierPairing, setUp
+        case relay(String)
+
+        var tag: String {
+            switch self {
+            case .off: "off"
+            case .earlierPairing: "earlier"
+            case .setUp: "setup"
+            case let .relay(identity): "relay:" + identity
+            }
         }
-        .pickerStyle(.segmented)
-        .onChange(of: tabletRelay.setupMethod) {
-            tabletRelay.refreshPairedState()
+
+        init(_ selection: PlankRelaySelection) {
+            switch selection {
+            case .off: self = .off
+            case .earlierPairing: self = .earlierPairing
+            case let .relay(identity): self = .relay(identity)
+            }
         }
-        if tabletRelay.setupMethod == .nearby {
-            Picker("Nearby Relay", selection: $tabletRelay.selectedServiceID) {
-                Text("Choose a Relay").tag("")
-                ForEach(tabletRelay.nearbyRelays) { relay in
-                    Text(relay.name).tag(relay.id)
-                }
-                if let saved = tabletRelay.savedRelayNotNearby {
-                    Text("\(saved.name) (not nearby)")
-                        .tag(saved.id)
-                        .disabled(true)
-                }
+
+        init?(tag: String) {
+            switch tag {
+            case "off": self = .off
+            case "earlier": self = .earlierPairing
+            case "setup": self = .setUp
+            default:
+                guard tag.hasPrefix("relay:") else { return nil }
+                self = .relay(String(tag.dropFirst("relay:".count)))
             }
-            .onChange(of: tabletRelay.selectedServiceID) {
-                tabletRelay.refreshPairedState()
-            }
-            Text(tabletRelay.discoveryStatus)
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-            if tabletRelay.savedRelayNotNearby != nil,
-               !tabletRelay.address.isEmpty {
-                Text("The saved Relay is outside local discovery. PLANK will try its saved address when the desktop starts.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-            if tabletRelay.paired && !tabletRelay.selectedConnectionIsActive {
-                Button("Use This Relay") { tabletRelay.useSavedPairing() }
-            }
-        } else {
-            TextField("Relay address", text: $tabletRelay.address)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .onChange(of: tabletRelay.address) {
-                    tabletRelay.refreshPairedState()
-                }
-            TextField("Port", text: $tabletRelay.port)
-                .keyboardType(.numberPad)
-                .onChange(of: tabletRelay.port) {
-                    tabletRelay.refreshPairedState()
-                }
-            if tabletRelay.hasSavedConnection && !tabletRelay.selectedConnectionIsActive {
-                Button("Use Manual Address") { tabletRelay.useManualPairing() }
+        }
+
+        var selection: PlankRelaySelection? {
+            switch self {
+            case .off: .off
+            case .earlierPairing: .earlierPairing
+            case let .relay(identity): .relay(identity)
+            case .setUp: nil
             }
         }
     }
 
-    private var pairingControls: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("To approve this headset, hold Wacom ExpressKeys 1 and 8 for five seconds, then follow the code shown here. Reauthorize only after replacing or resetting the Relay.")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-            if tabletRelay.setupMethod == .nearby &&
-               !tabletRelay.selectedNearbyRelayAvailable {
-                Text("This Relay is not discoverable here. Choose Manual Address to replace its pairing.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-            HStack {
-                Button(tabletRelay.paired ?
-                       "Reauthorize Headset" : "Approve This Headset") {
-                    tabletRelay.beginPairing()
+    /// Shows the choice the user made; a change made during a desktop
+    /// session is applied after disconnect and the status says so.
+    private var relaySelection: Binding<String> {
+        Binding(
+            get: {
+                RelayChoice(relayHandoff.registry.pendingSelection ??
+                            relayHandoff.registry.selection).tag
+            },
+            set: { tag in
+                guard let choice = RelayChoice(tag: tag) else { return }
+                guard let selection = choice.selection else {
+                    openRelaySetup()
+                    return
                 }
-                .disabled(tabletRelay.isPairing ||
-                          (tabletRelay.setupMethod == .nearby &&
-                           !tabletRelay.selectedNearbyRelayAvailable))
-                if tabletRelay.isPairing {
-                    Button("Cancel") { tabletRelay.cancelPairing() }
+                relayHandoff.select(selection, desktopSessionActive: desktopSessionActive)
+                client.clearTabletRelayObservation()
+            }
+        )
+    }
+
+    /// Transitional only: shown while the earlier address/service pairing is
+    /// actually selected or pending, never as a way to add a Relay.
+    private var showsEarlierPairing: Bool {
+        relayHandoff.registry.offersEarlierPairing
+    }
+
+    private func name(for selection: PlankRelaySelection?) -> String? {
+        switch selection {
+        case let .relay(identity): relayHandoff.registry.displayName(for: identity)
+        case .earlierPairing: "Earlier paired Relay"
+        case .off, nil: nil
+        }
+    }
+
+    private var relayStatus: PlankRelayStatus {
+        let registry = relayHandoff.registry
+        return PlankRelayStatus.make(
+            selection: registry.selection,
+            relayName: name(for: registry.selection),
+            approvalPending: relayHandoff.registration.pending != nil,
+            link: client.tabletRelayLink,
+            deferredName: registry.pendingSelection.map { name(for: $0) ?? "Off" }
+        )
+    }
+
+    /// The actual route or interface when known. Never inferred: a headset on
+    /// Wi-Fi says nothing about how the Relay is attached.
+    private var drawingRouteLabel: String {
+        switch relayHandoff.registry.selection {
+        case .off: "None"
+        case .earlierPairing: "Saved network address"
+        case .relay: relayHandoff.registry.activeRouteSelection?.routeLabel ?? "Network"
+        }
+    }
+
+    private func openRelaySetup() {
+        guard let url = URL(string: "plank-relay-setup://open") else { return }
+        setupOpenFailed = false
+        openURL(url) { accepted in setupOpenFailed = !accepted }
+    }
+
+    private var showsHandoffBanner: Bool {
+        switch relayHandoff.state {
+        case .idle, .needsApproval: false
+        default: true
+        }
+    }
+
+    @ViewBuilder
+    private var handoffBanner: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(relayHandoff.state.message)
+                .font(.footnote)
+            HStack {
+                switch relayHandoff.state {
+                case .identityChanged, .migrationConflict:
+                    Button("Open Relay Setup") { openRelaySetup() }
+                        .buttonStyle(.bordered)
+                default:
+                    EmptyView()
+                }
+                if case .migrationConflict = relayHandoff.state {
+                    EmptyView()
+                } else {
+                    Button("Dismiss") { relayHandoff.dismiss() }
+                        .buttonStyle(.borderless)
                 }
             }
         }

@@ -3,6 +3,7 @@
 #include "PlankRawHidFrame.h"
 
 #include <CommonCrypto/CommonDigest.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,6 +24,9 @@ struct PlankVisionTransport {
 #else
     void *endpoint;
 #endif
+    // Packed kind | lane << 8 | state << 16 | native result << 32. Zero until
+    // the first terminal result; later failures never replace it.
+    _Atomic uint64_t first_failure;
 };
 
 static void set_error(char *error, size_t capacity, const char *message) {
@@ -31,6 +35,58 @@ static void set_error(char *error, size_t capacity, const char *message) {
 }
 
 #if PLANK_NATIVE_TRANSPORT
+// The endpoint state decides first: once it has failed or stopped, every lane
+// reports that, whatever the individual call returned.
+static void record_failure(
+    PlankVisionTransport *transport, uint32_t lane, int32_t native_result,
+    uint32_t kind_when_ready) {
+    const uint32_t state = plank_transport_native_endpoint_state(transport->endpoint);
+    uint32_t kind = kind_when_ready;
+    if (state == PLANK_TRANSPORT_STATE_FAILED) {
+        kind = PLANK_VISION_FAILURE_TERMINATED;
+    } else if (state == PLANK_TRANSPORT_STATE_STOPPING ||
+               state == PLANK_TRANSPORT_STATE_STOPPED) {
+        kind = PLANK_VISION_FAILURE_CANCELLED;
+    } else if (kind == PLANK_VISION_FAILURE_NONE) {
+        switch (native_result) {
+        case PLANK_TRANSPORT_ERROR_RUNTIME:
+            kind = PLANK_VISION_FAILURE_TERMINATED;
+            break;
+        case PLANK_TRANSPORT_ERROR_INVALID_STATE:
+            kind = PLANK_VISION_FAILURE_CANCELLED;
+            break;
+        case PLANK_TRANSPORT_ERROR_BUFFER_TOO_SMALL:
+            kind = PLANK_VISION_FAILURE_BUFFER_LIMIT;
+            break;
+        default:
+            kind = PLANK_VISION_FAILURE_INTERNAL;
+            break;
+        }
+    }
+    const uint64_t packed = (uint64_t)(kind & 0xffu) |
+                            ((uint64_t)(lane & 0xffu) << 8) |
+                            ((uint64_t)(state & 0xffu) << 16) |
+                            ((uint64_t)(uint32_t)native_result << 32);
+    uint64_t expected = 0;
+    atomic_compare_exchange_strong(&transport->first_failure, &expected, packed);
+}
+
+// Keeps the existing OK/ERROR contract while preserving why a send failed.
+// A full native input queue returns TIMEOUT from the endpoint.
+static int32_t finish_input_send(PlankVisionTransport *transport, int32_t result) {
+    if (result == PLANK_TRANSPORT_OK) return PLANK_VISION_TRANSPORT_OK;
+    record_failure(transport, PLANK_VISION_LANE_INPUT, result,
+                   result == PLANK_TRANSPORT_TIMEOUT ?
+                       PLANK_VISION_FAILURE_QUEUE_FULL : PLANK_VISION_FAILURE_NONE);
+    return PLANK_VISION_TRANSPORT_ERROR;
+}
+
+static int32_t invalid_data_event(PlankVisionTransport *transport) {
+    record_failure(transport, PLANK_VISION_LANE_DATA, PLANK_TRANSPORT_OK,
+                   PLANK_VISION_FAILURE_INVALID_PAYLOAD);
+    return PLANK_VISION_TRANSPORT_ERROR;
+}
+
 static int approve_expected_peer_certificate(
     PlankTransportNativeEndpoint *endpoint,
     const char *expected_sha256,
@@ -284,7 +340,15 @@ int32_t plank_vision_transport_receive_video(
     if (result == PLANK_TRANSPORT_ERROR_BUFFER_TOO_SMALL) {
         return PLANK_VISION_TRANSPORT_BUFFER_TOO_SMALL;
     }
-    if (result != PLANK_TRANSPORT_OK) return PLANK_VISION_TRANSPORT_ERROR;
+    if (result != PLANK_TRANSPORT_OK) {
+        record_failure(transport, PLANK_VISION_LANE_VIDEO, result,
+                       PLANK_VISION_FAILURE_NONE);
+        return PLANK_VISION_TRANSPORT_ERROR;
+    }
+    if (payload_size != NULL && *payload_size == 0) {
+        record_failure(transport, PLANK_VISION_LANE_VIDEO, result,
+                       PLANK_VISION_FAILURE_INVALID_PAYLOAD);
+    }
 
     frame->codec = info.codec;
     frame->flags = info.flags;
@@ -314,6 +378,98 @@ int32_t plank_vision_transport_video_stats(
     stats->receive_drops = native_stats.video_receive_drops;
     stats->fec_symbols_unrecovered =
         native_stats.video_fec_source_symbols_unrecovered;
+    stats->input_packets_sent = native_stats.input_packets_sent;
+    stats->quic_rtt_us = native_stats.quic_rtt_us;
+    stats->quic_packets_lost = native_stats.quic_packets_lost;
+    stats->kyproto_packets_dropped = native_stats.kyproto_packets_dropped;
+    return PLANK_VISION_TRANSPORT_OK;
+#endif
+}
+
+int32_t plank_vision_transport_receive_audio(
+    PlankVisionTransport *transport,
+    PlankVisionAudioPacket *packet,
+    uint8_t *payload,
+    size_t payload_capacity,
+    size_t *payload_size,
+    uint32_t timeout_ms) {
+#if !PLANK_NATIVE_TRANSPORT
+    (void)transport; (void)packet; (void)payload; (void)payload_capacity;
+    (void)payload_size; (void)timeout_ms;
+    return PLANK_VISION_TRANSPORT_UNAVAILABLE;
+#else
+    if (transport == NULL || transport->endpoint == NULL || packet == NULL ||
+            payload == NULL || payload_size == NULL) {
+        return PLANK_VISION_TRANSPORT_ERROR;
+    }
+    *payload_size = 0;
+    PlankTransportNativeAudioPacketInfo info = {0};
+    info.struct_size = sizeof(info);
+    const int32_t result = plank_transport_native_audio_receive(
+        transport->endpoint, &info, payload, payload_capacity,
+        payload_size, timeout_ms);
+    if (result == PLANK_TRANSPORT_TIMEOUT) return PLANK_VISION_TRANSPORT_TIMEOUT;
+    if (result == PLANK_TRANSPORT_ERROR_BUFFER_TOO_SMALL) {
+        return PLANK_VISION_TRANSPORT_BUFFER_TOO_SMALL;
+    }
+    if (result != PLANK_TRANSPORT_OK) {
+        record_failure(transport, PLANK_VISION_LANE_AUDIO, result,
+                       PLANK_VISION_FAILURE_NONE);
+        return PLANK_VISION_TRANSPORT_ERROR;
+    }
+    packet->frame_samples = info.frame_samples;
+    packet->missing_samples = info.missing_samples;
+    packet->pts_48khz = info.pts;
+    return PLANK_VISION_TRANSPORT_OK;
+#endif
+}
+
+int32_t plank_vision_transport_audio_stats(
+    PlankVisionTransport *transport, PlankVisionAudioStats *stats) {
+#if !PLANK_NATIVE_TRANSPORT
+    (void)transport; (void)stats;
+    return PLANK_VISION_TRANSPORT_UNAVAILABLE;
+#else
+    if (transport == NULL || transport->endpoint == NULL || stats == NULL) {
+        return PLANK_VISION_TRANSPORT_ERROR;
+    }
+    PlankTransportNativeStats native_stats = {0};
+    native_stats.struct_size = sizeof(native_stats);
+    if (plank_transport_native_endpoint_stats(
+            transport->endpoint, &native_stats) != PLANK_TRANSPORT_OK) {
+        return PLANK_VISION_TRANSPORT_ERROR;
+    }
+    stats->packets_received = native_stats.audio_packets_received;
+    stats->bytes_received = native_stats.audio_bytes_received;
+    stats->receive_drops = native_stats.audio_receive_drops;
+    return PLANK_VISION_TRANSPORT_OK;
+#endif
+}
+
+int32_t plank_vision_transport_set_video_bitrate(
+    PlankVisionTransport *transport, uint32_t bitrate_kbps) {
+#if !PLANK_NATIVE_TRANSPORT
+    (void)transport; (void)bitrate_kbps;
+    return PLANK_VISION_TRANSPORT_UNAVAILABLE;
+#else
+    if (transport == NULL || transport->endpoint == NULL ||
+            bitrate_kbps < 500 || bitrate_kbps > 500000) {
+        return PLANK_VISION_TRANSPORT_ERROR;
+    }
+    uint8_t packet[PLANK_TRANSPORT_CONTROL_MAX_PACKET_SIZE];
+    size_t packet_size = 0;
+    if (plank_transport_control_encode(
+            PLANK_TRANSPORT_CONTROL_SET_VIDEO_BITRATE, &bitrate_kbps, 1,
+            packet, sizeof(packet), &packet_size) != 0) {
+        return PLANK_VISION_TRANSPORT_ERROR;
+    }
+    const int32_t result = plank_transport_native_data_send(
+        transport->endpoint, packet, packet_size);
+    if (result != PLANK_TRANSPORT_OK) {
+        record_failure(transport, PLANK_VISION_LANE_DATA, result,
+                       PLANK_VISION_FAILURE_NONE);
+        return PLANK_VISION_TRANSPORT_ERROR;
+    }
     return PLANK_VISION_TRANSPORT_OK;
 #endif
 }
@@ -330,9 +486,14 @@ int32_t plank_vision_transport_request_idr(PlankVisionTransport *transport) {
     size_t packet_size = 0;
     if (plank_transport_control_encode(
             PLANK_TRANSPORT_CONTROL_REQUEST_IDR, NULL, 0,
-            packet, sizeof(packet), &packet_size) != 0 ||
-            plank_transport_native_data_send(
-                transport->endpoint, packet, packet_size) != PLANK_TRANSPORT_OK) {
+            packet, sizeof(packet), &packet_size) != 0) {
+        return PLANK_VISION_TRANSPORT_ERROR;
+    }
+    const int32_t result = plank_transport_native_data_send(
+        transport->endpoint, packet, packet_size);
+    if (result != PLANK_TRANSPORT_OK) {
+        record_failure(transport, PLANK_VISION_LANE_DATA, result,
+                       PLANK_VISION_FAILURE_NONE);
         return PLANK_VISION_TRANSPORT_ERROR;
     }
     return PLANK_VISION_TRANSPORT_OK;
@@ -357,10 +518,9 @@ int32_t plank_vision_transport_send_mouse_position(
     uint8_t payload[PLANK_TRANSPORT_INPUT_ABSOLUTE_MOUSE_SIZE];
     plank_transport_input_encode_absolute_mouse(
         payload, x, y, maximum_x, maximum_y);
-    return plank_transport_native_input_send(
+    return finish_input_send(transport, plank_transport_native_input_send(
         transport->endpoint, PLANK_TRANSPORT_INPUT_ABSOLUTE_MOUSE,
-        payload, sizeof(payload)) == PLANK_TRANSPORT_OK ?
-        PLANK_VISION_TRANSPORT_OK : PLANK_VISION_TRANSPORT_ERROR;
+        payload, sizeof(payload)));
 #endif
 }
 
@@ -380,10 +540,9 @@ int32_t plank_vision_transport_send_mouse_button(
         pressed ? PLANK_TRANSPORT_INPUT_ACTION_PRESS :
                   PLANK_TRANSPORT_INPUT_ACTION_RELEASE,
     };
-    return plank_transport_native_input_send(
+    return finish_input_send(transport, plank_transport_native_input_send(
         transport->endpoint, PLANK_TRANSPORT_INPUT_MOUSE_BUTTON,
-        payload, sizeof(payload)) == PLANK_TRANSPORT_OK ?
-        PLANK_VISION_TRANSPORT_OK : PLANK_VISION_TRANSPORT_ERROR;
+        payload, sizeof(payload)));
 #endif
 }
 
@@ -403,9 +562,8 @@ int32_t plank_vision_transport_send_scroll(
     const uint8_t type = horizontal ?
         PLANK_TRANSPORT_INPUT_HORIZONTAL_SCROLL :
         PLANK_TRANSPORT_INPUT_VERTICAL_SCROLL;
-    return plank_transport_native_input_send(
-        transport->endpoint, type, payload, sizeof(payload)) == PLANK_TRANSPORT_OK ?
-        PLANK_VISION_TRANSPORT_OK : PLANK_VISION_TRANSPORT_ERROR;
+    return finish_input_send(transport, plank_transport_native_input_send(
+        transport->endpoint, type, payload, sizeof(payload)));
 #endif
 }
 
@@ -427,10 +585,9 @@ int32_t plank_vision_transport_send_key(
                            PLANK_TRANSPORT_INPUT_ACTION_RELEASE;
     payload[3] = modifiers;
     payload[4] = 0;
-    return plank_transport_native_input_send(
+    return finish_input_send(transport, plank_transport_native_input_send(
         transport->endpoint, PLANK_TRANSPORT_INPUT_KEYBOARD,
-        payload, sizeof(payload)) == PLANK_TRANSPORT_OK ?
-        PLANK_VISION_TRANSPORT_OK : PLANK_VISION_TRANSPORT_ERROR;
+        payload, sizeof(payload)));
 #endif
 }
 
@@ -446,10 +603,9 @@ int32_t plank_vision_transport_send_utf8(
             text_size == 0 || text_size > PLANK_TRANSPORT_INPUT_MAX_PAYLOAD_SIZE) {
         return PLANK_VISION_TRANSPORT_ERROR;
     }
-    return plank_transport_native_input_send(
+    return finish_input_send(transport, plank_transport_native_input_send(
         transport->endpoint, PLANK_TRANSPORT_INPUT_UTF8_TEXT,
-        text, text_size) == PLANK_TRANSPORT_OK ?
-        PLANK_VISION_TRANSPORT_OK : PLANK_VISION_TRANSPORT_ERROR;
+        text, text_size));
 #endif
 }
 
@@ -482,10 +638,9 @@ int32_t plank_vision_transport_send_raw_hid(
                 frame, frame_size, PLANK_VISION_RAW_HID_TO_HOST)) {
         return PLANK_VISION_TRANSPORT_ERROR;
     }
-    return plank_transport_native_input_send(
+    return finish_input_send(transport, plank_transport_native_input_send(
         transport->endpoint, PLANK_TRANSPORT_INPUT_RAW_HID_WACOM,
-        frame, frame_size) == PLANK_TRANSPORT_OK ?
-        PLANK_VISION_TRANSPORT_OK : PLANK_VISION_TRANSPORT_ERROR;
+        frame, frame_size));
 #endif
 }
 
@@ -511,19 +666,41 @@ int32_t plank_vision_transport_receive_data_event(
     const int32_t result = plank_transport_native_data_receive(
         transport->endpoint, packet, sizeof(packet), &packet_size, timeout_ms);
     if (result == PLANK_TRANSPORT_TIMEOUT) return PLANK_VISION_TRANSPORT_TIMEOUT;
-    if (result != PLANK_TRANSPORT_OK) return PLANK_VISION_TRANSPORT_ERROR;
+    if (result != PLANK_TRANSPORT_OK) {
+        record_failure(transport, PLANK_VISION_LANE_DATA, result,
+                       PLANK_VISION_FAILURE_NONE);
+        return PLANK_VISION_TRANSPORT_ERROR;
+    }
+
+    memset(cursor_event, 0, sizeof(*cursor_event));
+    // Native control records share the reliable data lane. Only the bitrate
+    // acknowledgement is handled here; any other control record is still
+    // rejected as before.
+    if (packet_size >= sizeof(uint32_t) &&
+            plank_transport_control_read_u32(packet) == PLANK_TRANSPORT_CONTROL_MAGIC) {
+        PlankTransportControlPacket control = {0};
+        if (plank_transport_control_decode(packet, packet_size, &control) != 0 ||
+                control.type != PLANK_TRANSPORT_CONTROL_VIDEO_BITRATE_APPLIED ||
+                control.payload_size != 3 * sizeof(uint32_t)) {
+            return invalid_data_event(transport);
+        }
+        cursor_event->type = PLANK_VISION_BITRATE_APPLIED;
+        cursor_event->bitrate_requested_kbps = plank_transport_control_read_u32(control.payload);
+        cursor_event->bitrate_applied_kbps = plank_transport_control_read_u32(control.payload + 4);
+        cursor_event->bitrate_peak_kbps = plank_transport_control_read_u32(control.payload + 8);
+        return PLANK_VISION_TRANSPORT_OK;
+    }
 
     PlankTransportEventPacket event = {0};
     if (plank_transport_event_decode(packet, packet_size, &event) != 0) {
-        return PLANK_VISION_TRANSPORT_ERROR;
+        return invalid_data_event(transport);
     }
-    memset(cursor_event, 0, sizeof(*cursor_event));
     const uint8_t *payload = event.payload;
     if (event.type == PLANK_TRANSPORT_EVENT_RAW_HID_WACOM) {
         if (!plank_vision_raw_hid_frame_valid(
                 payload, event.payload_size, PLANK_VISION_RAW_HID_FROM_HOST) ||
                 event.payload_size > chunk_capacity) {
-            return PLANK_VISION_TRANSPORT_ERROR;
+            return invalid_data_event(transport);
         }
         cursor_event->type = PLANK_VISION_RAW_HID_EVENT;
         memcpy(chunk, payload, event.payload_size);
@@ -532,12 +709,12 @@ int32_t plank_vision_transport_receive_data_event(
     }
     if (event.type != PLANK_TRANSPORT_EVENT_CURSOR_POSITION &&
             event.type != PLANK_TRANSPORT_EVENT_CURSOR_SHAPE) {
-        return PLANK_VISION_TRANSPORT_TIMEOUT;
+        return PLANK_VISION_TRANSPORT_DATA_IGNORED;
     }
     if (event.type == PLANK_TRANSPORT_EVENT_CURSOR_POSITION) {
         if (event.payload_size != 32 || read_le32(payload) != 0x504c4350u ||
                 read_le16(payload + 4) != 1 || read_le16(payload + 6) != 0) {
-            return PLANK_VISION_TRANSPORT_ERROR;
+            return invalid_data_event(transport);
         }
         cursor_event->type = PLANK_VISION_CURSOR_POSITION;
         cursor_event->sequence = read_le64(payload + 8);
@@ -549,7 +726,7 @@ int32_t plank_vision_transport_receive_data_event(
                 cursor_event->frame_height == 0 ||
                 cursor_event->x >= cursor_event->frame_width ||
                 cursor_event->y >= cursor_event->frame_height) {
-            return PLANK_VISION_TRANSPORT_ERROR;
+            return invalid_data_event(transport);
         }
         return PLANK_VISION_TRANSPORT_OK;
     }
@@ -558,7 +735,7 @@ int32_t plank_vision_transport_receive_data_event(
     // Validate every peer supplied size before copying into the caller's buffer.
     if (event.payload_size < 52 || read_le32(payload) != 0x504c4352u ||
             read_le16(payload + 4) != 1 || read_le16(payload + 6) != 1) {
-        return PLANK_VISION_TRANSPORT_ERROR;
+        return invalid_data_event(transport);
     }
     cursor_event->type = PLANK_VISION_CURSOR_SHAPE;
     cursor_event->flags = read_le32(payload + 8);
@@ -582,12 +759,33 @@ int32_t plank_vision_transport_receive_data_event(
             size > chunk_capacity || event.payload_size != 48u + size ||
             cursor_event->chunk_offset > cursor_event->image_size ||
             size > cursor_event->image_size - cursor_event->chunk_offset) {
-        return PLANK_VISION_TRANSPORT_ERROR;
+        return invalid_data_event(transport);
     }
     memcpy(chunk, payload + 48, size);
     *chunk_size = size;
     return PLANK_VISION_TRANSPORT_OK;
 #endif
+}
+
+int32_t plank_vision_transport_first_failure(
+    PlankVisionTransport *transport,
+    PlankVisionTransportFailure *failure,
+    char *reason,
+    size_t reason_capacity) {
+    if (reason != NULL && reason_capacity > 0) reason[0] = '\0';
+    if (transport == NULL || failure == NULL) return PLANK_VISION_TRANSPORT_ERROR;
+    const uint64_t packed = atomic_load(&transport->first_failure);
+    failure->kind = (uint32_t)(packed & 0xffu);
+    failure->lane = (uint32_t)((packed >> 8) & 0xffu);
+    failure->endpoint_state = (uint32_t)((packed >> 16) & 0xffu);
+    failure->native_result = (int32_t)(uint32_t)(packed >> 32);
+#if PLANK_NATIVE_TRANSPORT
+    if (transport->endpoint != NULL && reason != NULL && reason_capacity > 0) {
+        plank_transport_native_endpoint_last_error(
+            transport->endpoint, reason, reason_capacity);
+    }
+#endif
+    return PLANK_VISION_TRANSPORT_OK;
 }
 
 void plank_vision_transport_disconnect(PlankVisionTransport *transport) {

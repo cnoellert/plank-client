@@ -314,7 +314,12 @@ final class PlankHTTPClient: @unchecked Sendable {
         return delegate.applications
     }
 
-    func launchDesktop(topology: PlankTopology, applicationID: Int, frameRate: Int) async throws -> PlankLaunchCredentials {
+    func launchDesktop(
+        topology: PlankTopology,
+        applicationID: Int,
+        frameRate: Int,
+        playAudioOnHost: Bool
+    ) async throws -> PlankLaunchCredentials {
         let encodingMode = "hevc-10-444-nvenc"
         let udpPayloadMTU: UInt32 = 1200
         var query: [URLQueryItem] = [
@@ -326,7 +331,8 @@ final class PlankHTTPClient: @unchecked Sendable {
             .init(name: "clientHdrCapSupportedFlagsInUint32", value: "0"),
             .init(name: "clientHdrCapMetaDataId", value: "1"),
             .init(name: "clientHdrCapDisplayData", value: "0x0x0x0x0x0x0x0x0x0x0"),
-            .init(name: "localAudioPlayMode", value: "1"),
+            .init(name: "localAudioPlayMode",
+                  value: PlankAudioPreferences.localAudioPlayMode(playOnHost: playAudioOnHost)),
             .init(name: "surroundAudioInfo", value: "196610"),
             .init(name: "remoteControllersBitmap", value: "0"),
             .init(name: "gcmap", value: "0"),

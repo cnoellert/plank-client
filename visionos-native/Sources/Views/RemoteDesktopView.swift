@@ -7,28 +7,22 @@ import SwiftUI
 import UIKit
 
 @MainActor
-private final class PlankDisplayTimingProbe: NSObject, ObservableObject {
-    @Published private(set) var summary = "Display link: measuring…"
-
+private final class PlankDisplayTimingHint: NSObject, ObservableObject {
+    @Published private(set) var summary = "Display timing: automatic"
     private var displayLink: CADisplayLink?
-    private var prefer96 = false
-    private var windowStart = 0.0
-    private var callbacks = 0
-    private var targetIntervals: [Double] = []
-    private var durations: [Double] = []
 
     func start(enabled: Bool, prefer96: Bool) {
-        guard enabled else { stop(); return }
-        if displayLink != nil && self.prefer96 == prefer96 { return }
+        // The link exists only for the explicit timing hint. Playback no longer
+        // collects and publishes a second set of periodic display statistics.
+        let requests96 = enabled && prefer96
+        if requests96 && displayLink != nil { return }
         stop()
-        self.prefer96 = prefer96
-        summary = "Display link: measuring… \(prefer96 ? "96 Hz hint" : "automatic")"
+        guard requests96 else { return }
+        summary = "Display timing: 96 Hz requested"
         let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
-        if prefer96 {
-            link.preferredFrameRateRange = CAFrameRateRange(
-                minimum: 96, maximum: 96, preferred: 96
-            )
-        }
+        link.preferredFrameRateRange = CAFrameRateRange(
+            minimum: 96, maximum: 96, preferred: 96
+        )
         link.add(to: .main, forMode: .common)
         displayLink = link
     }
@@ -36,44 +30,10 @@ private final class PlankDisplayTimingProbe: NSObject, ObservableObject {
     func stop() {
         displayLink?.invalidate()
         displayLink = nil
-        windowStart = 0
-        callbacks = 0
-        targetIntervals.removeAll()
-        durations.removeAll()
+        summary = "Display timing: automatic"
     }
 
-    @objc private func tick(_ link: CADisplayLink) {
-        let targetInterval = link.targetTimestamp - link.timestamp
-        if (0.005...0.05).contains(targetInterval) {
-            targetIntervals.append(targetInterval)
-        }
-        if (0.005...0.05).contains(link.duration) {
-            durations.append(link.duration)
-        }
-        if windowStart == 0 { windowStart = link.timestamp }
-        callbacks += 1
-        let elapsed = link.timestamp - windowStart
-        guard elapsed >= 2 else { return }
-
-        let callbackRate = Double(max(0, callbacks - 1)) / elapsed
-        let targetRate = Self.medianRate(targetIntervals)
-        let durationRate = Self.medianRate(durations)
-        summary = String(
-            format: "Display link: target %.1f Hz · callbacks %.1f/s · duration %.1f Hz · %@",
-            targetRate, callbackRate, durationRate,
-            prefer96 ? "96 Hz hint" : "automatic"
-        )
-        windowStart = link.timestamp
-        callbacks = 1
-        targetIntervals.removeAll(keepingCapacity: true)
-        durations.removeAll(keepingCapacity: true)
-    }
-
-    private static func medianRate(_ intervals: [Double]) -> Double {
-        guard !intervals.isEmpty else { return 0 }
-        let sorted = intervals.sorted()
-        return 1 / sorted[sorted.count / 2]
-    }
+    @objc private func tick(_ link: CADisplayLink) {}
 }
 
 struct RemoteDesktopView: View {
@@ -84,60 +44,30 @@ struct RemoteDesktopView: View {
     @AppStorage("plank.vision.keyboardFunctionKeyMode") private var keyboardFunctionKeyMode = KeyboardFunctionKeyMode.pc.rawValue
     @AppStorage("plank.vision.showStatistics") private var showStatistics = false
     @AppStorage("plank.vision.debugPrefer96Hz") private var debugPrefer96Hz = false
-    @StateObject private var displayTiming = PlankDisplayTimingProbe()
+    @AppStorage(PlankAudioPreferences.volumeKey) private var audioVolume = 1.0
+    @AppStorage(PlankAudioPreferences.mutedKey) private var audioMuted = false
+    @StateObject private var displayTiming = PlankDisplayTimingHint()
     @State private var keyboardFocusGeneration = 0
     @State private var mouseReleaseGeneration = 0
     @State private var mouseTrackingGeneration = 0
+    @State private var showingSessionControls = false
+    @StateObject private var controlWindows = PlankSessionControlWindows()
+    @StateObject private var mouseCapture = PlankMouseCaptureRequest()
+    @AppStorage(PlankMouseSensitivity.storageKey) private var mouseSensitivity = PlankMouseSensitivity.defaultValue
+    @AppStorage("plank.vision.allowWindowResizing") private var allowWindowResizing = false
+    @AppStorage("plank.vision.timingCapture") private var timingCapture = false
     var body: some View {
         ZStack {
             Color.black
 
-            GeometryReader { proxy in
-                ZStack {
-                    VideoSurface(client: client)
-                    if let frame = client.frameDimensions {
-                        RemoteInputSurface(
-                            releaseGeneration: mouseReleaseGeneration,
-                            trackingGeneration: mouseTrackingGeneration,
-                            onPointer: { location in
-                                sendPointer(location, in: proxy.size, frame: frame)
-                            },
-                            onButton: { number, pressed in
-                                client.setMouseButton(number: number, pressed: pressed)
-                                // Taking keyboard focus during mouse-down can cancel
-                                // the gesture before its matching mouse-up arrives.
-                                if !pressed { requestKeyboardFocus() }
-                            },
-                            onScroll: { vertical, horizontal in
-                                requestKeyboardFocus()
-                                client.scroll(vertical: vertical, horizontal: horizontal)
-                            },
-                            onWindowFocus: { focused in
-                                // Mac Virtual Display can change the key
-                                // window without a SwiftUI scene-phase change.
-                                client.setTabletActive(focused)
-                                if focused {
-                                    requestKeyboardFocus()
-                                } else {
-                                    mouseReleaseGeneration &+= 1
-                                }
-                            }
-                        )
-                    } else {
-                        VStack(spacing: 18) {
-                            ProgressView()
-                            Text("Starting secure stream from \(host.name)…")
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            }
+            sessionCanvas
 
             VStack {
                 HStack {
                     if showStatistics {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(client.videoDiagnosticText)
+                            Text(client.audioDiagnosticText)
                             Text(displayTiming.summary)
                         }
                         .font(.caption2.monospacedDigit())
@@ -151,24 +81,152 @@ struct RemoteDesktopView: View {
             .padding(12)
             .allowsHitTesting(false)
 
-            KeyboardCapture(
-                focusGeneration: keyboardFocusGeneration,
-                functionKeyMode: KeyboardFunctionKeyMode(rawValue: keyboardFunctionKeyMode) ?? .pc,
-                onCharacters: handleKeyboardCharacters,
-                onKeyEvent: { code, pressed, modifiers in
-                    client.sendKey(code: code, pressed: pressed, modifiers: modifiers)
-                }
-            )
-            .allowsHitTesting(false)
+            keyboardSurface
 
             WindowGeometryConfigurator(
                 pixelWidth: host.spatialDisplaySize.pixelSize.width,
-                pixelHeight: host.spatialDisplaySize.pixelSize.height
+                pixelHeight: host.spatialDisplaySize.pixelSize.height,
+                allowsUserResize: allowWindowResizing
             )
             .frame(width: 0, height: 0)
             .allowsHitTesting(false)
 
 #if PLANK_TABLET_RELAY
+            tabletWaitOverlay
+#endif
+        }
+        .frame(minWidth: 640, maxWidth: 2560,
+               minHeight: 640 / desktopAspectRatio,
+               maxHeight: 2560 / desktopAspectRatio)
+        .ignoresSafeArea()
+        .ornament(attachmentAnchor: .scene(.top), contentAlignment:
+                    Alignment3D(horizontal: .center, vertical: .sessionControlsAttachment, depth: .back)) {
+            sessionControlsOrnament
+        }
+        .onAppear {
+            mouseCapture.beginDesktop()
+            applyAudioVolume()
+            PlankAudioOutput.shared.setSceneActive(scenePhase != .background)
+            client.setVideoDiagnosticsEnabled(showStatistics)
+            PlankTimingCapture.shared.setEnabled(timingCapture)
+            client.setTabletActive(scenePhase == .active)
+            updateDisplayTiming()
+            requestKeyboardFocus()
+        }
+        .onChange(of: showStatistics) { _, enabled in
+            client.setVideoDiagnosticsEnabled(enabled)
+            updateDisplayTiming()
+        }
+        .onChange(of: debugPrefer96Hz) { _, _ in updateDisplayTiming() }
+        .onChange(of: showingSessionControls) { _, shown in
+            NSLog("PLANK session controls: %@", shown ? "opened" : "closed")
+            if shown { mouseReleaseGeneration &+= 1 }
+            else { requestKeyboardFocus() }
+        }
+        .onChange(of: audioVolume) { _, _ in applyAudioVolume() }
+        .onChange(of: audioMuted) { _, _ in applyAudioVolume() }
+        .onChange(of: scenePhase) { _, phase in handleScenePhase(phase) }
+#if PLANK_TABLET_RELAY
+        .onChange(of: client.waitingForTablet) { _, waiting in
+            if waiting { mouseReleaseGeneration &+= 1 }
+        }
+#endif
+        .onChange(of: client.phase) { _, phase in
+            if !isSessionActive(phase) {
+                dismissWindow(id: "plank-desktop")
+            }
+        }
+        .onDisappear {
+            mouseCapture.endDesktop()
+            client.setVideoDiagnosticsEnabled(false)
+            displayTiming.stop()
+            // Closing the spatial window must end its stream too. Otherwise
+            // the Host keeps a live reservation behind a vanished window.
+            if client.activeHostID == host.id && isSessionActive(client.phase) {
+                client.disconnectSession()
+            }
+        }
+    }
+
+    private var desktopAspectRatio: CGFloat {
+        let size = host.spatialDisplaySize.pixelSize
+        return CGFloat(max(1, size.width)) / CGFloat(max(1, size.height))
+    }
+
+    private var sessionCanvas: some View {
+            GeometryReader { proxy in
+                ZStack {
+                    VideoSurface(client: client)
+                    if let frame = client.frameDimensions {
+                        RemoteInputSurface(
+                            releaseGeneration: mouseReleaseGeneration,
+                            trackingGeneration: mouseTrackingGeneration,
+                            controlsPresented: showingSessionControls,
+                            mouseSensitivity: mouseSensitivity,
+                            controlWindows: controlWindows,
+                            sceneInBackground: scenePhase == .background,
+                            sceneIsActive: scenePhase == .active,
+                            mouseCapture: mouseCapture,
+                            frameDimensions: frame,
+                            pointerPosition: { client.currentPointerPosition() },
+                            onPointer: { location in
+                                guard !showingSessionControls else { return }
+                                sendPointer(location, in: proxy.size, frame: frame)
+                            },
+                            onButton: { number, pressed in
+                                guard !showingSessionControls || !pressed else { return }
+                                client.setMouseButton(number: number, pressed: pressed)
+                                // Taking keyboard focus during mouse-down can cancel
+                                // the gesture before its matching mouse-up arrives.
+                                if !pressed && !showingSessionControls { requestKeyboardFocus() }
+                            },
+                            onScroll: { vertical, horizontal in
+                                guard !showingSessionControls else { return }
+                                requestKeyboardFocus()
+                                client.scroll(vertical: vertical, horizontal: horizontal)
+                            },
+                            onWindowFocus: { effects in
+                                // Mac Virtual Display can change the key
+                                // window without a SwiftUI scene-phase change.
+                                // PLANK's own session controls keep the tablet.
+                                if let active = effects.tabletActive {
+                                    client.setTabletActive(active)
+                                }
+                                if effects.releaseMouse { mouseReleaseGeneration &+= 1 }
+                                if effects.reacquireDesktop { requestKeyboardFocus() }
+                            }
+                        )
+                    } else {
+                        VStack(spacing: 18) {
+                            ProgressView()
+                            Text("Starting secure stream from \(host.name)…")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+
+    }
+
+    private var keyboardSurface: some View {
+            KeyboardCapture(
+                focusGeneration: keyboardFocusGeneration,
+                functionKeyMode: KeyboardFunctionKeyMode(rawValue: keyboardFunctionKeyMode) ?? .pc,
+                onCharacters: { characters in
+                    guard !showingSessionControls else { return }
+                    handleKeyboardCharacters(characters)
+                },
+                onKeyEvent: { code, pressed, modifiers in
+                    guard !showingSessionControls || !pressed else { return }
+                    client.sendKey(code: code, pressed: pressed, modifiers: modifiers)
+                }
+            )
+            .allowsHitTesting(false)
+
+    }
+
+#if PLANK_TABLET_RELAY
+    @ViewBuilder private var tabletWaitOverlay: some View {
             if client.waitingForTablet {
                 if client.showingTabletWaitScreen {
                     Color.black
@@ -221,44 +279,67 @@ struct RemoteDesktopView: View {
                     .padding(20)
                 }
             }
+    }
 #endif
-        }
-        .ignoresSafeArea()
-        .onAppear {
-            client.setTabletActive(scenePhase == .active)
-            updateDisplayTiming()
-            requestKeyboardFocus()
-        }
-        .onChange(of: showStatistics) { _, _ in updateDisplayTiming() }
-        .onChange(of: debugPrefer96Hz) { _, _ in updateDisplayTiming() }
-        .onChange(of: scenePhase) { _, phase in
+
+    private func handleScenePhase(_ phase: ScenePhase) {
+            // Audio follows visibility, not focus: looking at another window
+            // keeps the stream audible.
+            PlankAudioOutput.shared.setSceneActive(phase != .background)
             if phase == .active {
                 client.setTabletActive(true)
                 mouseTrackingGeneration &+= 1
                 requestKeyboardFocus()
             } else {
-                client.setTabletActive(false)
                 mouseReleaseGeneration &+= 1
+                // An ornament can move keyboard focus to its own UIWindow
+                // without moving away from this session. The input coordinator
+                // evaluates the registered window instead of treating every
+                // inactive notification as a departure.
+                if phase == .background {
+                    showingSessionControls = false
+                    client.setTabletActive(false)
+                }
             }
-        }
-#if PLANK_TABLET_RELAY
-        .onChange(of: client.waitingForTablet) { _, waiting in
-            if waiting { mouseReleaseGeneration &+= 1 }
-        }
-#endif
-        .onChange(of: client.phase) { _, phase in
-            if !isSessionActive(phase) {
-                dismissWindow(id: "plank-desktop")
+    }
+
+    private var sessionControlsOrnament: some View {
+            // Anchor at the button, independent of the expanded menu height.
+            // The whole menu participates in layout and hit testing; an overlay
+            // outside a button-sized ornament would not own its full surface.
+            VStack(spacing: 8) {
+                sessionControlsButton
+                if showingSessionControls {
+                    PlankSessionControls(
+                        client: client, volume: $audioVolume, muted: $audioMuted,
+                        allowWindowResizing: $allowWindowResizing,
+                        mouseSensitivity: $mouseSensitivity,
+                        onDone: { showingSessionControls = false }
+                    )
+                    .glassBackgroundEffect()
+                }
             }
+            .alignmentGuide(.sessionControlsAttachment) { _ in 52 }
+            .background(SessionControlWindowMarker(owner: controlWindows))
+    }
+
+    /// One compact button; the controls themselves stay hidden until opened.
+    private var sessionControlsButton: some View {
+        Button {
+            showingSessionControls.toggle()
+        } label: {
+            Image(systemName: audioMuted ? "speaker.slash" : "slider.horizontal.3")
+                .font(.footnote)
+                .frame(width: 20, height: 20)
         }
-        .onDisappear {
-            displayTiming.stop()
-            // Closing the spatial window must end its stream too. Otherwise
-            // the Host keeps a live reservation behind a vanished window.
-            if client.activeHostID == host.id && isSessionActive(client.phase) {
-                client.disconnectSession()
-            }
-        }
+        .buttonStyle(.borderless)
+        .padding(8)
+        .glassBackgroundEffect()
+        .accessibilityLabel("Session controls")
+    }
+
+    private func applyAudioVolume() {
+        PlankAudioOutput.shared.setVolume(Float(audioVolume), muted: audioMuted)
     }
 
     private func updateDisplayTiming() {
@@ -299,9 +380,13 @@ struct RemoteDesktopView: View {
             x: (availableSize.width - imageSize.width) / 2,
             y: (availableSize.height - imageSize.height) / 2
         )
-        let x = Int(((location.x - origin.x) / scale).rounded())
-        let y = Int(((location.y - origin.y) / scale).rounded())
-        guard x >= 0, y >= 0, x < frame.width, y < frame.height else { return }
+        let local = CGPoint(x: location.x - origin.x, y: location.y - origin.y)
+        guard local.x >= 0, local.y >= 0,
+              local.x <= imageSize.width, local.y <= imageSize.height else { return }
+        // Include the final row/column instead of rounding to an out-of-range
+        // coordinate and dropping events at the far edge of the canvas.
+        let x = min(frame.width - 1, Int((local.x / imageSize.width * CGFloat(frame.width - 1)).rounded()))
+        let y = min(frame.height - 1, Int((local.y / imageSize.height * CGFloat(frame.height - 1)).rounded()))
         client.movePointer(x: x, y: y, width: frame.width, height: frame.height)
     }
 
@@ -587,13 +672,132 @@ private final class VideoSurfaceView: UIView {
     }
 }
 
-private struct RemoteInputSurface: UIViewRepresentable {
+private enum SessionControlsAttachment: AlignmentID {
+    static func defaultValue(in context: ViewDimensions) -> CGFloat { context[.top] + 52 }
+}
+
+private extension VerticalAlignment {
+    static let sessionControlsAttachment = VerticalAlignment(SessionControlsAttachment.self)
+}
+
+/// Explicit ownership of the ornament's UIKit window. visionOS may host it
+/// outside the desktop's UIWindowScene; scene equality is not an ownership test.
+@MainActor
+private final class PlankSessionControlWindows: ObservableObject {
+    private final class WeakWindow {
+        weak var window: UIWindow?
+        init(_ window: UIWindow) { self.window = window }
+    }
+    private var windows: [UUID: WeakWindow] = [:]
+    @Published private(set) var generation = 0
+    private var publicationScheduled = false
+
+    var hasKeyWindow: Bool {
+        // Only a registered window can prove controls ownership. A key
+        // sibling in its scene can be the desktop itself, not the controls.
+        windows.values.contains { $0.window?.isKeyWindow == true }
+    }
+
+    func register(_ newWindow: UIWindow?, marker: UUID) {
+        guard windows[marker]?.window !== newWindow else { return }
+        if let newWindow { windows[marker] = WeakWindow(newWindow) }
+        else { windows.removeValue(forKey: marker) }
+        // didMoveToWindow may run inside a SwiftUI update; notify observers
+        // after that update, coalescing register/deregister in the same pass.
+        if !publicationScheduled {
+            publicationScheduled = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.publicationScheduled = false
+                self.generation &+= 1
+            }
+        }
+        NSLog("PLANK session controls window: attached=%d key=%d", newWindow != nil ? 1 : 0,
+              newWindow?.isKeyWindow == true ? 1 : 0)
+    }
+}
+
+private struct SessionControlWindowMarker: UIViewRepresentable {
+    let owner: PlankSessionControlWindows
+
+    func makeUIView(context: Context) -> Marker {
+        let view = Marker()
+        view.owner = owner
+        view.isUserInteractionEnabled = false
+        return view
+    }
+
+    func updateUIView(_ view: Marker, context: Context) {
+        view.owner = owner
+        owner.register(view.window, marker: view.identifier)
+    }
+
+    static func dismantleUIView(_ view: Marker, coordinator: ()) {
+        view.owner?.register(nil, marker: view.identifier)
+        view.owner = nil
+    }
+
+    final class Marker: UIView {
+        weak var owner: PlankSessionControlWindows?
+        let identifier = UUID()
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            owner?.register(window, marker: identifier)
+        }
+    }
+}
+
+@MainActor
+private final class RemoteInputController: UIViewController {
+    var didAttach: (() -> Void)?
+    private var lockRequested = false
+    private var requestLogBudget = 4
+    override var prefersPointerLocked: Bool { lockRequested }
+
+    override func loadView() {
+        let input = AttachedInputView()
+        input.didAttach = { [weak self] in self?.didAttach?() }
+        view = input
+    }
+    func updatePointerLockRequest(_ requested: Bool) {
+        guard lockRequested != requested else { return }
+        lockRequested = requested
+        NSLog("PLANK mouse capture preference: %d", requested ? 1 : 0)
+        var controller: UIViewController? = self
+        var chain: [String] = []
+        while let current = controller {
+            current.setNeedsUpdateOfPrefersPointerLocked()
+            if requested && requestLogBudget > 0 {
+                chain.append("\(type(of: current)):prefers=\(current.prefersPointerLocked),child=\(current.childViewControllerForPointerLock != nil)")
+            }
+            controller = current.parent
+        }
+        if !chain.isEmpty {
+            requestLogBudget -= 1
+            NSLog("PLANK mouse capture controller chain: %@", chain.joined(separator: " -> "))
+        }
+    }
+    private final class AttachedInputView: UIView {
+        var didAttach: (() -> Void)?
+        override func didMoveToWindow() { super.didMoveToWindow(); didAttach?() }
+    }
+}
+
+private struct RemoteInputSurface: UIViewControllerRepresentable {
     let releaseGeneration: Int
     let trackingGeneration: Int
+    let controlsPresented: Bool
+    let mouseSensitivity: Double
+    @ObservedObject var controlWindows: PlankSessionControlWindows
+    let sceneInBackground: Bool
+    let sceneIsActive: Bool
+    @ObservedObject var mouseCapture: PlankMouseCaptureRequest
+    let frameDimensions: PlankFrameDimensions
+    let pointerPosition: @MainActor () -> (x: Int, y: Int)?
     let onPointer: @MainActor (CGPoint) -> Void
     let onButton: @MainActor (UInt8, Bool) -> Void
     let onScroll: @MainActor (Int16, Int16) -> Void
-    let onWindowFocus: @MainActor (Bool) -> Void
+    let onWindowFocus: @MainActor (PlankSessionFocus.Effects) -> Void
 
     func makeCoordinator() -> Coordinator {
         Coordinator(
@@ -604,8 +808,17 @@ private struct RemoteInputSurface: UIViewRepresentable {
         )
     }
 
-    func makeUIView(context: Context) -> UIView {
-        let view = UIView(frame: .zero)
+    func makeUIViewController(context: Context) -> RemoteInputController {
+        let controller = RemoteInputController()
+        let view = controller.view!
+        context.coordinator.inputController = controller
+        controller.didAttach = { [weak coordinator = context.coordinator] in
+            coordinator?.observePointerLock()
+        }
+        context.coordinator.mouseSensitivity = PlankMouseSensitivity.normalized(mouseSensitivity)
+        context.coordinator.mouseCapture = mouseCapture
+        context.coordinator.frameDimensions = frameDimensions
+        context.coordinator.pointerPosition = pointerPosition
         view.backgroundColor = .clear
         view.isOpaque = false
 
@@ -615,19 +828,24 @@ private struct RemoteInputSurface: UIViewRepresentable {
         )
         hover.delegate = context.coordinator
         view.addGestureRecognizer(hover)
+        view.addInteraction(UIPointerInteraction(delegate: context.coordinator))
 
         let mousePress = PhysicalMousePressRecognizer()
         mousePress.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)]
         mousePress.cancelsTouchesInView = false
         mousePress.delegate = context.coordinator
         mousePress.onPointer = { [weak coordinator = context.coordinator] location in
-            coordinator?.onPointer(location)
+            coordinator?.absolutePointer(location)
         }
         mousePress.onButton = { [weak coordinator = context.coordinator] button, pressed in
-            coordinator?.onButton(button, pressed)
+            coordinator?.absoluteButton(button, pressed)
         }
         view.addGestureRecognizer(mousePress)
         context.coordinator.inputView = view
+        context.coordinator.controlsPresented = controlsPresented
+        context.coordinator.controlWindows = controlWindows
+        context.coordinator.sceneInBackground = sceneInBackground
+        context.coordinator.sceneIsActive = sceneIsActive
         context.coordinator.beginMouseMotionTracking()
 
         let wheel = WheelCaptureScrollView(frame: .zero)
@@ -649,27 +867,50 @@ private struct RemoteInputSurface: UIViewRepresentable {
             wheel.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
 
-        return view
+        return controller
     }
 
-    func updateUIView(_ view: UIView, context: Context) {
+    func updateUIViewController(_ controller: RemoteInputController, context: Context) {
+        let view = controller.view!
+        context.coordinator.mouseSensitivity = PlankMouseSensitivity.normalized(mouseSensitivity)
+        context.coordinator.mouseCapture = mouseCapture
+        context.coordinator.frameDimensions = frameDimensions
+        context.coordinator.pointerPosition = pointerPosition
         context.coordinator.onPointer = onPointer
         context.coordinator.onButton = onButton
         context.coordinator.onScroll = onScroll
         context.coordinator.onWindowFocus = onWindowFocus
+        context.coordinator.controlWindows = controlWindows
+        context.coordinator.sceneInBackground = sceneInBackground
+        context.coordinator.sceneIsActive = sceneIsActive
+        // Register/deregister of an ornament window is a focus event too.
+        context.coordinator.scheduleFocusEvaluation()
+        if context.coordinator.controlsPresented != controlsPresented {
+            let controlsClosed = !controlsPresented
+            context.coordinator.controlsPresented = controlsPresented
+            if controlsClosed { context.coordinator.returnFocusFromControls() }
+            context.coordinator.scheduleFocusEvaluation()
+            for interaction in view.interactions {
+                (interaction as? UIPointerInteraction)?.invalidate()
+            }
+        }
         if context.coordinator.trackingGeneration != trackingGeneration {
             context.coordinator.trackingGeneration = trackingGeneration
             context.coordinator.refreshMouseMotionTracking()
         }
         if context.coordinator.releaseGeneration != releaseGeneration {
             context.coordinator.releaseGeneration = releaseGeneration
+            context.coordinator.releaseButtons()
             for recognizer in view.gestureRecognizers ?? [] {
                 (recognizer as? PhysicalMousePressRecognizer)?.releaseIfNeeded()
             }
         }
+        context.coordinator.updateCaptureRequest()
     }
 
-    static func dismantleUIView(_ view: UIView, coordinator: Coordinator) {
+    static func dismantleUIViewController(_ controller: RemoteInputController, coordinator: Coordinator) {
+        controller.updatePointerLockRequest(false)
+        let view = controller.view!
         coordinator.stopMouseMotionTracking()
         for recognizer in view.gestureRecognizers ?? [] {
             (recognizer as? PhysicalMousePressRecognizer)?.releaseIfNeeded()
@@ -677,24 +918,50 @@ private struct RemoteInputSurface: UIViewRepresentable {
     }
 
     @MainActor
-    final class Coordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDelegate {
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate, UIScrollViewDelegate, UIPointerInteractionDelegate {
         var onPointer: @MainActor (CGPoint) -> Void
         var onButton: @MainActor (UInt8, Bool) -> Void
         var onScroll: @MainActor (Int16, Int16) -> Void
-        var onWindowFocus: @MainActor (Bool) -> Void
+        var onWindowFocus: @MainActor (PlankSessionFocus.Effects) -> Void
         var releaseGeneration = 0
         var trackingGeneration = 0
         weak var inputView: UIView?
+        weak var inputController: RemoteInputController?
+        weak var mouseCapture: PlankMouseCaptureRequest?
+        var frameDimensions = PlankFrameDimensions(width: 1, height: 1)
+        var pointerPosition: (@MainActor () -> (x: Int, y: Int)?)?
+        private var capturePolicy = PlankMouseCapturePolicy()
+        private var capturedPosition = PlankCapturedMousePosition()
+        private var heldButtons = PlankMouseButtons()
+        private var pointerLockObserver: NSObjectProtocol?
+        private var lastRawMovement = 0.0
+        private var lastAbsoluteMovement = 0.0
+        private var rawLogAt = 0.0
+        private var rawLogBudget = 16
+        private var rawCount = 0
+        private var absoluteCount = 0
         private var mouseObservers: [NSObjectProtocol] = []
-        private weak var trackedMouse: GCMouse?
+        private var trackedMice: [GCMouse] = []
+        private var mouseGeneration = 0
         private var sawPhysicalMouseMotion = false
         private var lastPhysicalMouseMotion = 0.0
+        var controlsPresented = false
+        var mouseSensitivity = PlankMouseSensitivity.defaultValue
+        weak var controlWindows: PlankSessionControlWindows?
+        var sceneInBackground = false
+        var sceneIsActive = false
+        private var pointerRequestLocation: CGPoint?
+        private var pointerRequestLogBudget = 8
+        private var focus = PlankSessionFocus.desktop
+        private var focusEvaluationScheduled = false
+        private var departureCheck: DispatchWorkItem?
+        private var focusLogBudget = 200
 
         init(
             onPointer: @escaping @MainActor (CGPoint) -> Void,
             onButton: @escaping @MainActor (UInt8, Bool) -> Void,
             onScroll: @escaping @MainActor (Int16, Int16) -> Void,
-            onWindowFocus: @escaping @MainActor (Bool) -> Void
+            onWindowFocus: @escaping @MainActor (PlankSessionFocus.Effects) -> Void
         ) {
             self.onPointer = onPointer
             self.onButton = onButton
@@ -703,84 +970,381 @@ private struct RemoteInputSurface: UIViewRepresentable {
         }
 
         func beginMouseMotionTracking() {
-            trackMouse(GCMouse.current)
+            trackMice()
             let center = NotificationCenter.default
+            for name in [NSNotification.Name.GCMouseDidConnect, NSNotification.Name.GCMouseDidDisconnect,
+                         NSNotification.Name.GCMouseDidBecomeCurrent] {
+                mouseObservers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.trackMice() }
+                })
+            }
             mouseObservers.append(center.addObserver(
-                forName: NSNotification.Name.GCMouseDidBecomeCurrent,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    self?.trackMouse(GCMouse.current)
-                }
-            })
-            mouseObservers.append(center.addObserver(
-                forName: NSNotification.Name.GCMouseDidStopBeingCurrent,
-                object: nil,
-                queue: .main
-            ) { [weak self] _ in
-                MainActor.assumeIsolated {
-                    self?.trackMouse(GCMouse.current)
-                }
-            })
-            mouseObservers.append(center.addObserver(
-                forName: UIWindow.didBecomeKeyNotification,
-                object: nil,
-                queue: .main
-            ) { [weak self] notification in
-                guard let window = notification.object as? UIWindow else { return }
-                let windowID = ObjectIdentifier(window)
+                forName: NSNotification.Name.GCMouseDidStopBeingCurrent, object: nil, queue: .main
+            ) { [weak self] note in
+                guard let mouse = note.object as? GCMouse else { return }
+                let identifier = ObjectIdentifier(mouse)
                 MainActor.assumeIsolated {
                     guard let self,
-                          let inputWindow = self.inputView?.window,
-                          ObjectIdentifier(inputWindow) == windowID else { return }
-                    self.refreshMouseMotionTracking()
-                    self.onWindowFocus(true)
+                          let source = self.trackedMice.firstIndex(where: { ObjectIdentifier($0) == identifier }),
+                          self.heldButtons.isHolding, self.heldButtons.accepts(source: source + 1) else { return }
+                    self.releaseButtons()
+                    self.capturedPosition.reset()
                 }
             })
-            mouseObservers.append(center.addObserver(
-                forName: UIWindow.didResignKeyNotification,
-                object: nil,
-                queue: .main
-            ) { [weak self] notification in
-                guard let window = notification.object as? UIWindow else { return }
-                let windowID = ObjectIdentifier(window)
+            for name in [UIScene.willDeactivateNotification, UIScene.didEnterBackgroundNotification] {
+                mouseObservers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                    guard let scene = note.object as? UIWindowScene else { return }
+                    MainActor.assumeIsolated {
+                        guard let self, scene === self.inputView?.window?.windowScene else { return }
+                        self.releaseButtons()
+                        self.capturedPosition.reset()
+                    }
+                })
+            }
+            // Any key-window change may move focus between the desktop, its
+            // own session controls (another window in the same scene) and
+            // elsewhere. Evaluate once both halves of a handoff are posted.
+            for name in [UIWindow.didBecomeKeyNotification, UIWindow.didResignKeyNotification] {
+                mouseObservers.append(center.addObserver(
+                    forName: name, object: nil, queue: .main
+                ) { [weak self] note in
+                    guard let window = note.object as? UIWindow else { return }
+                    let resigned = note.name == UIWindow.didResignKeyNotification
+                    MainActor.assumeIsolated {
+                        guard let self else { return }
+                        if resigned && window === self.inputView?.window {
+                            self.releaseButtons()
+                            self.capturedPosition.reset()
+                        }
+                        self.scheduleFocusEvaluation()
+                    }
+                })
+            }
+        }
+
+        func returnFocusFromControls() {
+            // Only an explicit close of this session's controls may reclaim
+            // its desktop. Never make the window key on arbitrary raw motion.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let window = self.inputView?.window,
+                      PlankSessionFocus.shouldReclaimDesktop(
+                        controlsPresented: self.controlsPresented,
+                        sceneActive: window.windowScene?.activationState == .foregroundActive,
+                        background: self.sceneInBackground,
+                        desktopIsKey: window.isKeyWindow,
+                        ownedControlsAreKey: self.controlWindows?.hasKeyWindow == true) else { return }
+                window.makeKey()
+                NSLog("PLANK focus: returned desktop key window after closing controls")
+                self.scheduleFocusEvaluation()
+                self.updateCaptureRequest()
+                // The controls used the system pointer style. Refresh only
+                // after the desktop is key, so that cached circle is replaced
+                // by this canvas's hidden style.
+                self.invalidatePointerAppearance()
+            }
+        }
+
+        private func invalidatePointerAppearance() {
+            for interaction in inputView?.interactions ?? [] {
+                (interaction as? UIPointerInteraction)?.invalidate()
+            }
+        }
+
+        func scheduleFocusEvaluation() {
+            guard !focusEvaluationScheduled else { return }
+            focusEvaluationScheduled = true
+            DispatchQueue.main.async { [weak self] in
                 MainActor.assumeIsolated {
-                    guard let self,
-                          let inputWindow = self.inputView?.window,
-                          ObjectIdentifier(inputWindow) == windowID else { return }
-                    self.onWindowFocus(false)
+                    guard let self else { return }
+                    self.focusEvaluationScheduled = false
+                    self.evaluateFocus(confirmed: false)
                 }
-            })
+            }
+        }
+
+        private func currentFocus() -> (PlankSessionFocus, String) {
+            guard let inputWindow = inputView?.window else { return (.away, "no window") }
+            if sceneInBackground { return (.away, "background") }
+            let keyWindow = inputWindow.windowScene?.windows.first(where: \.isKeyWindow)
+            let ownedControlsAreKey = controlWindows?.hasKeyWindow == true
+            let observed = PlankSessionFocus.classify(
+                desktopWindowIsKey: inputWindow.isKeyWindow,
+                sceneHasKeyWindow: keyWindow != nil,
+                controlsPresented: controlsPresented,
+                registeredControlsAreKey: ownedControlsAreKey
+            )
+            return (observed, ownedControlsAreKey ? "registered session controls" :
+                    keyWindow.map { String(describing: type(of: $0)) } ?? "none")
+        }
+
+        private func evaluateFocus(confirmed: Bool) {
+            let (observed, keyWindow) = currentFocus()
+            if PlankSessionFocus.needsConfirmation(from: focus, to: observed) && !confirmed {
+                guard departureCheck == nil else { return }
+                let check = DispatchWorkItem { [weak self] in
+                    MainActor.assumeIsolated {
+                        self?.departureCheck = nil
+                        self?.evaluateFocus(confirmed: true)
+                    }
+                }
+                departureCheck = check
+                DispatchQueue.main.asyncAfter(
+                    deadline: .now() + PlankSessionFocus.departureConfirmation, execute: check
+                )
+                return
+            }
+            departureCheck?.cancel()
+            departureCheck = nil
+            let previous = focus
+            guard observed != previous else { return }
+            focus = observed
+            if focusLogBudget > 0 {
+                focusLogBudget -= 1
+                NSLog("PLANK focus: %@ -> %@ (key window %@)",
+                      String(describing: previous), String(describing: observed), keyWindow)
+            }
+            if observed == .desktop { refreshMouseMotionTracking() }
+            updateCaptureRequest()
+            onWindowFocus(PlankSessionFocus.effects(from: previous, to: observed))
         }
 
         func refreshMouseMotionTracking() {
-            // Returning from Mac Virtual Display can leave the mouse current
-            // without delivering a new current-mouse notification. Reinstall
-            // the motion callback when this desktop becomes active again.
-            trackMouse(GCMouse.current)
+            // Do not reinstall an unchanged profile set mid-drag. visionOS
+            // exposes several profiles; the one producing input is not always
+            // GCMouse.current or the first inventory entry.
+            trackMice()
         }
 
         func stopMouseMotionTracking() {
-            if let trackedMouse {
-                trackedMouse.mouseInput?.mouseMovedHandler = nil
-            }
-            trackedMouse = nil
+            releaseButtons()
+            if let pointerLockObserver { NotificationCenter.default.removeObserver(pointerLockObserver) }
+            pointerLockObserver = nil
+            departureCheck?.cancel()
+            departureCheck = nil
+            mouseGeneration &+= 1
+            for mouse in trackedMice { clearRawHandlers(mouse) }
+            trackedMice.removeAll()
             for observer in mouseObservers {
                 NotificationCenter.default.removeObserver(observer)
             }
             mouseObservers.removeAll()
         }
 
-        private func trackMouse(_ mouse: GCMouse?) {
-            trackedMouse?.mouseInput?.mouseMovedHandler = nil
-            trackedMouse = mouse
-            mouse?.mouseInput?.mouseMovedHandler = { [weak self] _, _, _ in
-                DispatchQueue.main.async { [weak self] in
-                    self?.sawPhysicalMouseMotion = true
-                    self?.lastPhysicalMouseMotion = CACurrentMediaTime()
+        private func clearRawHandlers(_ mouse: GCMouse) {
+            let input = mouse.mouseInput
+            input?.mouseMovedHandler = nil
+            input?.leftButton.pressedChangedHandler = nil
+            input?.rightButton?.pressedChangedHandler = nil
+            input?.middleButton?.pressedChangedHandler = nil
+            input?.scroll.valueChangedHandler = nil
+        }
+
+        private func trackMice() {
+            var discovered = GCMouse.mice()
+            if let current = GCMouse.current, !discovered.contains(where: { $0 === current }) {
+                discovered.append(current)
+            }
+            guard Set(discovered.map(ObjectIdentifier.init)) != Set(trackedMice.map(ObjectIdentifier.init)) else {
+                updateCaptureRequest()
+                return
+            }
+            releaseButtons()
+            capturedPosition.reset()
+            for mouse in trackedMice { clearRawHandlers(mouse) }
+            trackedMice = discovered
+            mouseGeneration &+= 1
+            let generation = mouseGeneration
+            NSLog("PLANK raw mouse inventory: devices=%d profiles=%d",
+                  trackedMice.count, trackedMice.filter { $0.mouseInput != nil }.count)
+            for (index, mouse) in trackedMice.enumerated() {
+                guard let input = mouse.mouseInput else { continue }
+                let source = index + 1
+                input.mouseMovedHandler = { [weak self] _, x, y in
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self, self.mouseGeneration == generation else { return }
+                        self.physicalMovement(x: Double(x), y: Double(y), source: source)
+                    }
+                }
+                let buttons: [(GCControllerButtonInput?, UInt8)] = [
+                    (input.leftButton, 1), (input.rightButton, 3), (input.middleButton, 2)
+                ]
+                for (buttonInput, button) in buttons {
+                    buttonInput?.pressedChangedHandler = { [weak self] _, _, pressed in
+                        DispatchQueue.main.async { [weak self] in
+                            guard let self, self.mouseGeneration == generation else { return }
+                            guard self.canForwardRawInput else { self.releaseButtons(); return }
+                            guard self.heldButtons.accepts(source: source) else { return }
+                            if pressed && !self.heldButtons.isHolding &&
+                                (self.capturedPosition.point == nil || CACurrentMediaTime() - self.lastRawMovement > 0.15) {
+                                self.anchorFromHost()
+                                if let point = self.capturedPosition.point { self.onPointer(point) }
+                            }
+                            self.forwardButton(button, pressed, source: source)
+                        }
+                    }
+                }
+                input.scroll.valueChangedHandler = { [weak self] _, x, y in
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self, self.mouseGeneration == generation,
+                              self.canForwardRawInput, self.heldButtons.accepts(source: source),
+                              x.isFinite, y.isFinite else { return }
+                        let vertical = Int16(max(-12, min(12, Double(y).rounded()))) * 120
+                        let horizontal = Int16(max(-12, min(12, Double(x).rounded()))) * 120
+                        if vertical != 0 || horizontal != 0 { self.onScroll(vertical, horizontal) }
+                    }
                 }
             }
+            updateCaptureRequest()
+        }
+
+        private var canForwardRawInput: Bool {
+            capturePolicy.usesRawInput && inputView?.window?.isKeyWindow == true &&
+                inputView?.window?.windowScene?.activationState == .foregroundActive &&
+                !controlsPresented && currentFocus().0 == .desktop
+        }
+
+        private var canvasBounds: CGRect {
+            guard let view = inputView, frameDimensions.width > 0, frameDimensions.height > 0 else { return .zero }
+            let scale = min(view.bounds.width / CGFloat(frameDimensions.width),
+                            view.bounds.height / CGFloat(frameDimensions.height))
+            let size = CGSize(width: CGFloat(frameDimensions.width) * scale,
+                              height: CGFloat(frameDimensions.height) * scale)
+            return CGRect(x: (view.bounds.width - size.width) / 2,
+                          y: (view.bounds.height - size.height) / 2, width: size.width, height: size.height)
+        }
+
+        private func anchorFromHost() {
+            let bounds = canvasBounds
+            if let remote = pointerPosition?() {
+                capturedPosition.anchor(CGPoint(
+                    x: bounds.minX + Double(remote.x) / Double(max(1, frameDimensions.width - 1)) * bounds.width,
+                    y: bounds.minY + Double(remote.y) / Double(max(1, frameDimensions.height - 1)) * bounds.height
+                ), in: bounds)
+            }
+        }
+
+        private func physicalMovement(x: Double, y: Double, source: Int) {
+            let now = CACurrentMediaTime()
+            sawPhysicalMouseMotion = true
+            lastPhysicalMouseMotion = now
+            rawCount += 1
+            // This bounded trace separates lost hover from lost raw input;
+            // no pointer coordinates or report payloads are recorded.
+            if rawLogBudget > 0 && now - rawLogAt >= 2 {
+                rawLogBudget -= 1; rawLogAt = now
+                NSLog("PLANK mouse input: raw=%d absolute=%d hoverAgeMs=%.1f requested=%d locked=%d",
+                      rawCount, absoluteCount, lastAbsoluteMovement > 0 ? (now - lastAbsoluteMovement) * 1000 : Double(-1),
+                      capturePolicy.shouldRequest ? 1 : 0, capturePolicy.systemLocked ? 1 : 0)
+                rawCount = 0; absoluteCount = 0
+            }
+            if canForwardRawInput && heldButtons.accepts(source: source) {
+                // After a pen/mouse handoff, start at the Host's newest cursor.
+                // Within a mouse burst keep our own position, avoiding delayed
+                // Host echoes undoing accumulated movement.
+                if !heldButtons.isHolding && (capturedPosition.point == nil || now - lastRawMovement > 0.15) { anchorFromHost() }
+                if let point = capturedPosition.move(x: x, y: y, in: canvasBounds, sensitivity: mouseSensitivity) { onPointer(point) }
+                lastRawMovement = now
+            } else if !canForwardRawInput {
+                releaseButtons()
+            }
+        }
+
+        func absolutePointer(_ location: CGPoint) {
+            guard !controlsPresented, !capturePolicy.usesRawInput else { return }
+            lastAbsoluteMovement = CACurrentMediaTime()
+            absoluteCount += 1
+            capturedPosition.anchor(location, in: canvasBounds)
+            onPointer(location)
+        }
+
+        func absoluteButton(_ button: UInt8, _ pressed: Bool) {
+            // UIKit gesture cancellation cannot release a raw-owned drag.
+            // Only one path forwards each physical button edge.
+            guard !capturePolicy.usesRawInput else { return }
+            forwardButton(button, pressed)
+        }
+
+        private func forwardButton(_ button: UInt8, _ pressed: Bool, source: Int = 0) {
+            if pressed {
+                guard !controlsPresented, currentFocus().0 == .desktop else { return }
+            }
+            guard heldButtons.transition(button, pressed: pressed, source: source) else { return }
+            onButton(button, pressed)
+        }
+
+        func releaseButtons() {
+            for button in heldButtons.releaseAll() { onButton(button, false) }
+        }
+
+        func updateCaptureRequest() {
+            let wasRaw = capturePolicy.usesRawInput
+            capturePolicy.requested = mouseCapture?.requested == true
+            capturePolicy.profilesAvailable = trackedMice.contains { $0.mouseInput != nil }
+            capturePolicy.desktopFocused = sceneIsActive && currentFocus().0 == .desktop
+            capturePolicy.controlsPresented = controlsPresented
+            capturePolicy.background = sceneInBackground
+            if wasRaw != capturePolicy.usesRawInput {
+                rawLogBudget = 16
+                rawLogAt = 0
+                rawCount = 0
+                absoluteCount = 0
+                invalidatePointerAppearance()
+            }
+            if wasRaw && !capturePolicy.usesRawInput {
+                releaseButtons()
+                capturedPosition.reset()
+            }
+            // The probe established that raw profiles work in this window
+            // without pointer lock. Do not request a lock that the scene denies.
+            inputController?.updatePointerLockRequest(false)
+            readPointerLock()
+        }
+
+        func observePointerLock() {
+            if let pointerLockObserver { NotificationCenter.default.removeObserver(pointerLockObserver) }
+            pointerLockObserver = nil
+            if let state = inputView?.window?.windowScene?.pointerLockState {
+                pointerLockObserver = NotificationCenter.default.addObserver(
+                    forName: UIPointerLockState.didChangeNotification, object: state, queue: .main
+                ) { [weak self] _ in
+                    MainActor.assumeIsolated { self?.readPointerLock() }
+                }
+            }
+            updateCaptureRequest()
+        }
+
+        private func readPointerLock() {
+            guard let scene = inputView?.window?.windowScene else { return }
+            let state = scene.pointerLockState
+            let locked = state?.isLocked == true
+            if capturePolicy.systemLocked != locked {
+                capturePolicy.systemLocked = locked
+                NSLog("PLANK mouse capture: requested=%d stateAvailable=%d locked=%d",
+                      capturePolicy.shouldRequest ? 1 : 0, state != nil ? 1 : 0, locked ? 1 : 0)
+            }
+            mouseCapture?.report(stateAvailable: state != nil, locked: locked)
+        }
+
+        // Pointer-region requests follow the actual system pointer; they do
+        // not depend on GCMouse's raw motion callback remaining installed.
+        func pointerInteraction(_ interaction: UIPointerInteraction,
+                                regionFor request: UIPointerRegionRequest,
+                                defaultRegion: UIPointerRegion) -> UIPointerRegion? {
+            guard !controlsPresented else { return nil }
+            if request.location != pointerRequestLocation {
+                pointerRequestLocation = request.location
+                if pointerRequestLogBudget > 0 {
+                    pointerRequestLogBudget -= 1
+                    NSLog("PLANK mouse pointer: absolute region update")
+                }
+                absolutePointer(request.location)
+            }
+            return defaultRegion
+        }
+
+        func pointerInteraction(_ interaction: UIPointerInteraction,
+                                styleFor region: UIPointerRegion) -> UIPointerStyle? {
+            controlsPresented ? nil : UIPointerStyle.hidden()
         }
 
         private static func wheelStepAmount(_ value: CGFloat) -> Int16 {
@@ -800,6 +1364,7 @@ private struct RemoteInputSurface: UIViewRepresentable {
             )
             guard delta.x != 0 || delta.y != 0 else { return }
             wheel.recenter()
+            guard !capturePolicy.usesRawInput else { return }
             let vertical = Self.wheelStepAmount(-delta.y)
             let horizontal = Self.wheelStepAmount(-delta.x)
             if vertical != 0 || horizontal != 0 {
@@ -819,7 +1384,7 @@ private struct RemoteInputSurface: UIViewRepresentable {
                     return
                 }
                 let location = recognizer.location(in: view)
-                onPointer(location)
+                absolutePointer(location)
             default:
                 break
             }
@@ -930,6 +1495,7 @@ private final class WheelCaptureScrollView: UIScrollView {
 private struct WindowGeometryConfigurator: UIViewRepresentable {
     let pixelWidth: Int
     let pixelHeight: Int
+    let allowsUserResize: Bool
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
@@ -946,7 +1512,8 @@ private struct WindowGeometryConfigurator: UIViewRepresentable {
     private func applyGeometry(to view: UIView, coordinator: Coordinator) {
         guard pixelWidth > 0, pixelHeight > 0 else { return }
         let aspectRatio = CGFloat(pixelWidth) / CGFloat(pixelHeight)
-        guard coordinator.appliedAspectRatio != aspectRatio else { return }
+        guard coordinator.appliedAspectRatio != aspectRatio ||
+                coordinator.appliedAllowsUserResize != allowsUserResize else { return }
 
         DispatchQueue.main.async {
             guard let scene = view.window?.windowScene else {
@@ -955,24 +1522,42 @@ private struct WindowGeometryConfigurator: UIViewRepresentable {
                 }
                 return
             }
-            let idealWidth: CGFloat = 1280
-            let minimumWidth: CGFloat = 640
-            let maximumWidth: CGFloat = 2560
-            let preferences = UIWindowScene.GeometryPreferences.Vision(
-                size: CGSize(width: idealWidth, height: idealWidth / aspectRatio),
-                minimumSize: CGSize(width: minimumWidth, height: minimumWidth / aspectRatio),
-                maximumSize: CGSize(width: maximumWidth, height: maximumWidth / aspectRatio),
-                resizingRestrictions: .uniform
-            )
+            let aspectChanged = coordinator.appliedAspectRatio != aspectRatio
+            let preferences = UIWindowScene.GeometryPreferences.Vision()
+            if aspectChanged {
+                let idealWidth: CGFloat = 1280
+                let minimumWidth: CGFloat = 640
+                let maximumWidth: CGFloat = 2560
+                preferences.size = CGSize(width: idealWidth, height: idealWidth / aspectRatio)
+                preferences.minimumSize = CGSize(width: minimumWidth, height: minimumWidth / aspectRatio)
+                preferences.maximumSize = CGSize(width: maximumWidth, height: maximumWidth / aspectRatio)
+            }
+            // A resize preference is optional: unqualified .none would mean
+            // nil (unspecified), not the enum that disables user resizing.
+            let restrictions: UIWindowScene.ResizingRestrictions = allowsUserResize ? .uniform : .none
+            preferences.resizingRestrictions = restrictions
+            precondition(preferences.resizingRestrictions == restrictions)
+            // Toggling changes only the policy; retain the user's current size.
             scene.requestGeometryUpdate(preferences) { error in
                 print("PLANK window geometry update failed: \(error.localizedDescription)")
             }
             coordinator.appliedAspectRatio = aspectRatio
+            coordinator.appliedAllowsUserResize = allowsUserResize
+            NSLog("PLANK window resizing: requested=%@ preferenceVerified=1", allowsUserResize ? "allowed" : "disabled")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak scene] in
+                guard let scene else { return }
+                NSLog("PLANK window resizing: effective=%ld interactive=%d min=%@ max=%@",
+                      scene.effectiveGeometry.resizingRestrictions.rawValue,
+                      scene.effectiveGeometry.isInteractivelyResizing ? 1 : 0,
+                      NSCoder.string(for: scene.effectiveGeometry.minimumSize),
+                      NSCoder.string(for: scene.effectiveGeometry.maximumSize))
+            }
         }
     }
 
     final class Coordinator {
         var appliedAspectRatio: CGFloat?
+        var appliedAllowsUserResize: Bool?
     }
 }
 

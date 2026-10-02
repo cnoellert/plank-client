@@ -60,7 +60,8 @@ struct HostDetailView: View {
                 Button {
                     openWindow(id: "plank-desktop")
                     client.startSession(displaySize: host.spatialDisplaySize,
-                                        frameRate: host.streamFrameRate)
+                                        frameRate: host.streamFrameRate,
+                                        videoBitrateKbps: host.videoBitrateKbps)
                 } label: {
                     Label("Start Session", systemImage: "play.rectangle.fill")
                         .frame(minWidth: 160)
@@ -126,7 +127,8 @@ struct HostDetailView: View {
                                 Button {
                                     openWindow(id: "plank-desktop")
                                     client.retrySession(displaySize: host.spatialDisplaySize,
-                                                        frameRate: host.streamFrameRate)
+                                                        frameRate: host.streamFrameRate,
+                                                        videoBitrateKbps: host.videoBitrateKbps)
                                 } label: {
                                     Label("Retry Session", systemImage: "arrow.clockwise")
                                         .frame(minWidth: 120)

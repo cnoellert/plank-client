@@ -26,6 +26,7 @@ final class PlankMetalVideoView: UIView {
     private let cache: CVMetalTextureCache?
     private let pipeline: MTLRenderPipelineState?
     private var latestBuffer: CVPixelBuffer?
+    private var frameID = DispatchTime.now().uptimeNanoseconds
 
     private var metalLayer: CAMetalLayer { layer as! CAMetalLayer }
 
@@ -91,6 +92,7 @@ final class PlankMetalVideoView: UIView {
 
     func display(_ buffer: CVPixelBuffer) {
         latestBuffer = buffer
+        frameID &+= 1
         drawLatest()
     }
 
@@ -125,8 +127,16 @@ final class PlankMetalVideoView: UIView {
         guard greenStatus == kCVReturnSuccess, blueRedStatus == kCVReturnSuccess,
               let green, let blueRed,
               let greenTexture = CVMetalTextureGetTexture(green),
-              let blueRedTexture = CVMetalTextureGetTexture(blueRed),
-              let drawable = metalLayer.nextDrawable(),
+              let blueRedTexture = CVMetalTextureGetTexture(blueRed) else { return }
+        // nextDrawable() blocks this (main) thread when no drawable is free.
+        let drawableStart = DispatchTime.now().uptimeNanoseconds
+        let nextDrawable = metalLayer.nextDrawable()
+        PlankTimingCapture.shared.drawableAcquired(
+            drawableWaitNanos: DispatchTime.now().uptimeNanoseconds - drawableStart,
+            gotDrawable: nextDrawable != nil,
+            background: UIApplication.shared.applicationState == .background
+        )
+        guard let drawable = nextDrawable,
               let command = queue.makeCommandBuffer() else { return }
 
         var vertices: [SIMD4<Float>] = [
@@ -148,8 +158,19 @@ final class PlankMetalVideoView: UIView {
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         encoder.endEncoding()
         let lease = FrameLease(buffer: buffer, green: green, blueRed: blueRed)
-        command.addCompletedHandler { _ in withExtendedLifetime(lease) {} }
+        command.addCompletedHandler { buffer in
+            withExtendedLifetime(lease) {}
+            PlankTimingCapture.shared.gpuCompleted(
+                seconds: buffer.gpuEndTime - buffer.gpuStartTime,
+                succeeded: buffer.status == .completed
+            )
+        }
+        let submittedFrameID = frameID
+        drawable.addPresentedHandler { shown in
+            PlankTimingCapture.shared.presented(frameID: submittedFrameID, time: shown.presentedTime)
+        }
         command.present(drawable)
+        PlankTimingCapture.shared.submitted()
         command.commit()
     }
 }

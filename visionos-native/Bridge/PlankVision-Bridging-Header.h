@@ -3,6 +3,8 @@
 
 #include "PlankTransportBridge.h"
 #include "PlankVideoDecoder.h"
+#include "PlankAudioDecoder.h"
+#include "PlankAudioRing.h"
 #include "PlankRawHidFrame.h"
 
 #if defined(PLANK_TABLET_RELAY)
