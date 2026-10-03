@@ -39,6 +39,13 @@ final class PlankRelayLiveLink: @unchecked Sendable {
     private var pendingHostBytes = 0
     private var invalidTabletFrames = 0
     private var attachedGeneration: UInt16?
+    // Aggregate transport diagnostics, never report contents or pen coordinates.
+    // These fields belong to the codec queue, like the connection itself.
+    private var receivedTabletTypes: [UInt16: UInt64] = [:]
+    private var returnedHostTypes: [UInt16: UInt64] = [:]
+    private var lastTabletReport: UInt64 = 0
+    private var lastHostControl: UInt64 = 0
+    private var lastFlowLog = DispatchTime.now().uptimeNanoseconds
 
     init(endpoint: NWEndpoint, hostFeatures: UInt32, bluetooth: Bool = false,
          preflight: PlankWacomPreflight,
@@ -112,6 +119,9 @@ final class PlankRelayLiveLink: @unchecked Sendable {
                 )
             }
             guard valid == 1 else { closeOnQueue(reason: .invalidHostFrame); return }
+            let type = UInt16(frame[6]) | (UInt16(frame[7]) << 8)
+            returnedHostTypes[type, default: 0] &+= 1
+            lastHostControl = DispatchTime.now().uptimeNanoseconds
             if frame.count >= 24, frame[6] == 10 {
                 let generation = UInt16(frame[10]) | (UInt16(frame[11]) << 8)
                 let result = frame[20..<24].contains { $0 != 0 }
@@ -156,7 +166,21 @@ final class PlankRelayLiveLink: @unchecked Sendable {
 
     private func tick() {
         guard !closed else { return }
-        let elapsed = DispatchTime.now().uptimeNanoseconds - lastReceive
+        let nowNanos = DispatchTime.now().uptimeNanoseconds
+        let elapsed = nowNanos - lastReceive
+        if sessionReady && nowNanos - lastFlowLog >= 5_000_000_000 {
+            func counts(_ values: [UInt16: UInt64]) -> String {
+                values.keys.sorted().map { "\($0):\(values[$0]!)" }.joined(separator: ",")
+            }
+            func age(_ time: UInt64) -> String {
+                time == 0 ? "none" : String(format: "%.0fms", Double(nowNanos - time) / 1_000_000)
+            }
+            NSLog("PLANK Relay flow: transport=%@ generation=%@ active=%d ready=%d receivedTypes=[%@] lastReport=%@ hostTypes=[%@] lastHostControl=%@",
+                  bluetooth ? "Bluetooth" : "TCP", attachedGeneration.map(String.init) ?? "none",
+                  active ? 1 : 0, preflight.snapshot.ready ? 1 : 0,
+                  counts(receivedTabletTypes), age(lastTabletReport), counts(returnedHostTypes), age(lastHostControl))
+            lastFlowLog = nowNanos
+        }
         // A service name on another subnet can remain unresolved without ever
         // reaching the Relay. Move to the pinned address promptly in that case.
         let timeoutSeconds = sessionReady ? 3 : (connectionReady ? 10 : (bluetooth ? PlankRelayConnectionTiming.bluetoothLinkDeadlineSeconds : 4))
@@ -257,6 +281,8 @@ final class PlankRelayLiveLink: @unchecked Sendable {
                 if valid == 1 {
                     let type = UInt16(frame[6]) | (UInt16(frame[7]) << 8)
                     let generation = UInt16(frame[10]) | (UInt16(frame[11]) << 8)
+                    receivedTabletTypes[type, default: 0] &+= 1
+                    if type == 3 { lastTabletReport = DispatchTime.now().uptimeNanoseconds }
                     if type == 1 {
                         guard generation != 0, acceptGeneration(generation) else {
                             closeOnQueue(reason: .generationRejected)

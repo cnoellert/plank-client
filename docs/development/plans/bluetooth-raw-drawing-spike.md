@@ -21,6 +21,14 @@ Bluetooth tablet-availability grace is 60 seconds, beyond the 50-second initial
 link watchdog; network drawing retains its 12-second grace. Authenticated session
 heartbeat remains unchanged. Existing bitrate, audio, Relay picker and mouse fixes remain.
 
+The diagnostic candidate writes aggregate flow counts once every five seconds:
+validated raw message types received from the Relay, Host control types returned,
+age of the last input report, tablet messages accepted by the native Host input
+sender, and input queue depth/age. It records no report payloads or coordinates.
+Native acceptance is not proof that the workstation consumed a report. These
+counts distinguish a stopped Relay stream from Client gating or submission;
+they do not change routing, capture, retries, or raw HID semantics.
+
 ## Live acceptance
 
 1. Install the matching development managed/raw Relay builds, retaining rollback.
