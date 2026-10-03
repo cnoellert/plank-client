@@ -50,6 +50,7 @@ cmake -S "$source_dir" -B "$work/build-$platform" -G Ninja \
     "${platform_args[@]}" \
     -DCMAKE_OSX_ARCHITECTURES=arm64 \
     -DCMAKE_BUILD_TYPE=Release \
+    "-DCMAKE_C_FLAGS=-ffile-prefix-map=$HOME=/build/user -ffile-prefix-map=$work=/build/dependencies/opus" \
     -DCMAKE_INSTALL_PREFIX="$prefix" \
     -DOPUS_BUILD_SHARED_LIBRARY=OFF \
     -DOPUS_BUILD_PROGRAMS=OFF \
