@@ -9,6 +9,7 @@ struct SettingsView: View {
     @AppStorage(PlankAudioPreferences.playOnHostKey) private var playAudioOnHost = true
     @AppStorage("plank.vision.timingCapture") private var timingCapture = false
 #if PLANK_TABLET_RELAY
+    @AppStorage("plank.vision.bluetoothDrawingTest") private var bluetoothDrawingTest = false
     @ObservedObject private var relayHandoff = PlankRelayHandoffInbox.shared
     @Environment(\.openURL) private var openURL
     @State private var setupOpenFailed = false
@@ -78,6 +79,10 @@ struct SettingsView: View {
                     }
                     Text("Set up a Relay…").tag(RelayChoice.setUp.tag)
                 }
+                Toggle("Test Bluetooth drawing", isOn: $bluetoothDrawingTest)
+                    .disabled(desktopSessionActive)
+                Text("Development test: uses the selected Relay’s existing drawing approval over Bluetooth, with no network fallback. Requires one nearby Relay and the matching development Relay build. Applies on the next connection.")
+                    .font(.footnote).foregroundStyle(.secondary)
                 LabeledContent("Status", value: relayStatus.title)
                 Text(relayStatus.detail)
                     .font(.footnote)
@@ -98,11 +103,11 @@ struct SettingsView: View {
                 }
                 DisclosureGroup("Connection details") {
                     VStack(alignment: .leading, spacing: 8) {
-                        LabeledContent("PLANK drawing connection", value: drawingRouteLabel)
+                        LabeledContent("PLANK drawing connection", value: bluetoothDrawingTest ? "Bluetooth (development test)" : drawingRouteLabel)
                         if desktopSessionActive {
                             Text(client.tabletPreflightSummary)
                         }
-                        Text("PLANK draws over the network link to the selected Relay. Discovery, tablet setup, network settings and connection tests are in Relay Setup.")
+                        Text(bluetoothDrawingTest ? "This test draws over Bluetooth to the approved Relay. The workstation connection still uses the headset’s network." : "PLANK draws over the network link to the selected Relay. Discovery, tablet setup, network settings and connection tests are in Relay Setup.")
                     }
                     .font(.footnote)
                     .foregroundStyle(.secondary)

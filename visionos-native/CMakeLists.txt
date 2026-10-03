@@ -140,6 +140,10 @@ if(PLANK_RELAY_SOURCE_DIR)
         Sources/Services/PlankDrawingIdentityStore.swift
         Sources/Services/PlankRelayPairing.swift
         Sources/Services/PlankRelayApprovalRoutes.swift
+        Sources/Services/PlankRelayWriteQueue.swift
+        Sources/Services/PlankRelayByteTransport.swift
+        Sources/Services/PlankRelayBluetoothTransport.swift
+        Sources/Services/PlankDrawingL2CAPStream.swift
         Sources/Services/PlankRelayLiveLink.swift
         Sources/Services/PlankWacomPreflight.swift
         Sources/Services/PlankTabletInputPolicy.swift
@@ -159,7 +163,7 @@ if(PLANK_OPUS_DIR)
     target_link_libraries(PlankVision PRIVATE "${PLANK_OPUS_DIR}/lib/libopus.a")
     target_compile_definitions(PlankVision PRIVATE PLANK_OPUS_AUDIO=1)
 endif()
-target_link_libraries(PlankVision PRIVATE "-framework AVFAudio")
+target_link_libraries(PlankVision PRIVATE "-framework AVFAudio" "-framework CoreBluetooth")
 
 set(PLANK_FFMPEG_DIR "" CACHE PATH "Path to the visionOS FFmpeg installation")
 if(PLANK_FFMPEG_DIR)
