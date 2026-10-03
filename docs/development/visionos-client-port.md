@@ -154,6 +154,19 @@ PLANK drawing stays on the network link; registering a Relay found over
 Bluetooth does not enable Bluetooth drawing. Plan:
 `docs/development/plans/relay-picker-boundary-plan.md`.
 
+Approval attempts try the remaining advertised routes after eligible connection,
+DNS or network-path failures, preserving the final native error when all routes
+fail. Rejected approval, verification/storage failures and cancellation stop the
+attempt. Each route is tried at most once under the existing per-attempt deadlines.
+
+The physical ExpressKey sheet for first-time registration remains a compatibility
+path. The intended replacement is authenticated Setup-mediated approval of the
+Client's distinct public key by the drawing service, with proof of drawing
+identity before storing the pin. This enrollment change is not implemented yet;
+public handoff URLs alone do not authorize unknown identities. The requirements
+and separate-service installation boundary are recorded in the managed Relay's
+[handoff guide](https://github.com/instinctual/plank-avp-relay/pull/3).
+
 The app compiles with Xcode 27 and the visionOS 27 SDK while targeting visionOS
 26. It has launched on a physical Apple Vision Pro. A live comparison on
 September 23, 2026 found moving video smooth with mouse and keyboard input

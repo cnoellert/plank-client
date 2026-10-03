@@ -139,6 +139,7 @@ if(PLANK_RELAY_SOURCE_DIR)
         Sources/Models/PlankRelayRegistry.swift
         Sources/Services/PlankDrawingIdentityStore.swift
         Sources/Services/PlankRelayPairing.swift
+        Sources/Services/PlankRelayApprovalRoutes.swift
         Sources/Services/PlankRelayLiveLink.swift
         Sources/Services/PlankWacomPreflight.swift
         Sources/Services/PlankTabletInputPolicy.swift

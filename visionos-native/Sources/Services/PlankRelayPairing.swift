@@ -3,26 +3,6 @@ import Foundation
 import Network
 import Security
 
-private enum PlankRelayError: LocalizedError {
-    case keychain(OSStatus)
-    case random
-    case crypto
-    case connectionClosed
-    case connectionTimedOut
-    case pairingRejected
-
-    var errorDescription: String? {
-        switch self {
-        case let .keychain(status): "Relay trust storage failed (\(status))."
-        case .random: "Could not generate a secure headset approval code."
-        case .crypto: "The Relay approval exchange failed verification."
-        case .connectionClosed: "The tablet Relay closed the connection."
-        case .connectionTimedOut: "The Relay could not be reached at the network address Relay Setup provided."
-        case .pairingRejected: "The Relay rejected headset approval. Check the ExpressKey order and try again."
-        }
-    }
-}
-
 enum PlankRelayKeys {
     // Shared with PlankDrawingIdentityStore so the identity-indexed records
     // live in the same service as the legacy address- and service-keyed ones.
@@ -222,21 +202,19 @@ final class PlankRelayDrawingApproval: ObservableObject {
         status = "Connecting to \(descriptor.displayName)…"
         let task = Task { [weak self] () -> String? in
             guard let self else { return nil }
-            var lastError: Error = PlankRelayError.connectionTimedOut
-            for route in descriptor.routes {
-                guard let port = NWEndpoint.Port(rawValue: route.port) else { continue }
-                do {
+            let lastError: Error
+            do {
+                return try await PlankRelayApprovalRoutes.approve(routes: descriptor.routes) { route in
+                    guard let port = NWEndpoint.Port(rawValue: route.port) else {
+                        throw PlankRelayError.connectionTimedOut
+                    }
                     let key = try await self.pair(
                         endpoint: .hostPort(host: NWEndpoint.Host(route.address), port: port),
                         digits: digits)
                     return key.hexadecimalText
-                } catch PlankRelayError.connectionTimedOut, PlankRelayError.connectionClosed {
-                    lastError = PlankRelayError.connectionTimedOut
-                    continue
-                } catch {
-                    lastError = error
-                    break
                 }
+            } catch {
+                lastError = error
             }
             if Task.isCancelled {
                 self.status = "Approval canceled. Existing approvals and the selected Relay are unchanged."
