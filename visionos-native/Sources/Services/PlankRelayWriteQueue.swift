@@ -21,6 +21,10 @@ final class PlankRelayWriteQueue: @unchecked Sendable {
         let start = !pumping; pumping = true
         return start ? .startPump : .queued
     }
+    var isCancelled: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return cancelled
+    }
     func next() -> Item? {
         lock.lock(); defer { lock.unlock() }
         guard !items.isEmpty else { pumping = false; return nil }

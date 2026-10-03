@@ -15,8 +15,11 @@ The qualified RelaySetupKit stream scheduling and partial-write logic are reused
 A bounded FIFO preserves Host reply order across the main-actor handoff. Raw
 codec processing stays on its serial queue. Raw HID validation, Host features,
 preflight, generation checks, capture activation and teardown remain shared.
-Discovery has a finite 45-second deadline; authenticated session heartbeat
-remains unchanged. Existing bitrate, audio, Relay picker and mouse fixes remain.
+Discovery has a finite 45-second deadline, including retrieval of an existing
+system-connected Relay when its advertisements are suppressed. The overall
+Bluetooth tablet-availability grace is 60 seconds, beyond the 50-second initial
+link watchdog; network drawing retains its 12-second grace. Authenticated session
+heartbeat remains unchanged. Existing bitrate, audio, Relay picker and mouse fixes remain.
 
 ## Live acceptance
 

@@ -140,6 +140,7 @@ if(PLANK_RELAY_SOURCE_DIR)
         Sources/Services/PlankDrawingIdentityStore.swift
         Sources/Services/PlankRelayPairing.swift
         Sources/Services/PlankRelayApprovalRoutes.swift
+        Sources/Services/PlankRelayConnectionTiming.swift
         Sources/Services/PlankRelayWriteQueue.swift
         Sources/Services/PlankRelayByteTransport.swift
         Sources/Services/PlankRelayBluetoothTransport.swift

@@ -277,8 +277,11 @@ final class PlankCoreClient: ObservableObject {
         guard tabletSceneActive, tabletInputPolicy.shouldContinueWhenUnavailable else { return }
         let timeoutID = UUID()
         tabletWaitTimeoutID = timeoutID
+        let bluetooth = UserDefaults.standard.bool(forKey: "plank.vision.bluetoothDrawingTest")
+        let grace = PlankRelayConnectionTiming.availabilityGraceSeconds(bluetooth: bluetooth)
+        NSLog("PLANK tablet availability grace: transport=%@ seconds=%d", bluetooth ? "Bluetooth" : "network", grace)
         Task { [weak self] in
-            try? await Task.sleep(for: .seconds(12))
+            try? await Task.sleep(for: .seconds(grace))
             guard let self, !Task.isCancelled,
                   self.streamGeneration == generation,
                   self.tabletWaitTimeoutID == timeoutID,

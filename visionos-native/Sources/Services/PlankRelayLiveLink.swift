@@ -159,7 +159,7 @@ final class PlankRelayLiveLink: @unchecked Sendable {
         let elapsed = DispatchTime.now().uptimeNanoseconds - lastReceive
         // A service name on another subnet can remain unresolved without ever
         // reaching the Relay. Move to the pinned address promptly in that case.
-        let timeoutSeconds = sessionReady ? 3 : (connectionReady ? 10 : (bluetooth ? 50 : 4))
+        let timeoutSeconds = sessionReady ? 3 : (connectionReady ? 10 : (bluetooth ? PlankRelayConnectionTiming.bluetoothLinkDeadlineSeconds : 4))
         guard elapsed < UInt64(timeoutSeconds) * 1_000_000_000 else {
             closeOnQueue(reason: .heartbeatTimeout)
             return

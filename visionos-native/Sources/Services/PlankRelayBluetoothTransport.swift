@@ -23,6 +23,7 @@ final class PlankRelayBluetoothTransport: PlankRelayByteTransport, @unchecked Se
     func start(queue: DispatchQueue, ready: @escaping @Sendable () -> Void,
                failed: @escaping @Sendable (any Error) -> Void) {
         Task { @MainActor in
+            guard !outbox.isCancelled else { return }
             let candidate = PlankDrawingBluetoothSession(
                 ready: { queue.async(execute: ready) },
                 failed: { error in queue.async { failed(error) } })
@@ -84,7 +85,7 @@ private final class PlankDrawingBluetoothSession: NSObject,
     func start() {
         central = CBCentralManager(delegate: self, queue: .main)
         deadline = Task { [weak self] in
-            do { try await Task.sleep(for: .seconds(45)) } catch { return }
+            do { try await Task.sleep(for: .seconds(PlankRelayConnectionTiming.bluetoothDiscoverySeconds)) } catch { return }
             self?.close(PlankDrawingBluetoothError.timedOut)
         }
     }
@@ -92,7 +93,17 @@ private final class PlankDrawingBluetoothSession: NSObject,
         guard !closed else { return }
         if central.state == .poweredOn && !scanning && peripheral == nil {
             scanning = true
+            // Alan's qualified Setup path handles a system connection that
+            // outlives its L2CAP stream and suppresses fresh advertisements.
+            // These peripherals are route hints; the saved Noise pin remains
+            // the only authority. Still collect nearby advertising candidates
+            // so this spike fails closed when the choice is ambiguous.
+            for connected in central.retrieveConnectedPeripherals(withServices: [Self.service]) {
+                candidates[connected.identifier] = connected
+            }
+            NSLog("PLANK Bluetooth discovery: systemConnected=%d", candidates.count)
             central.scanForPeripherals(withServices: [Self.service])
+            if !candidates.isEmpty { scheduleCandidateSelection() }
         } else if [.poweredOff, .unauthorized, .unsupported].contains(central.state) {
             close(PlankDrawingBluetoothError.network("Bluetooth is unavailable on this headset."))
         }
@@ -101,17 +112,21 @@ private final class PlankDrawingBluetoothSession: NSObject,
                         advertisementData: [String: Any], rssi RSSI: NSNumber) {
         guard !closed, scanning else { return }
         candidates[peripheral.identifier] = peripheral
+        scheduleCandidateSelection()
+    }
+    private func scheduleCandidateSelection() {
         if scanDeadline == nil {
             scanDeadline = Task { [weak self] in
                 do { try await Task.sleep(for: .seconds(2)) } catch { return }
                 guard let self, !closed else { return }
-                central.stopScan(); scanning = false
+                self.central.stopScan(); scanning = false
                 guard candidates.count == 1, let found = candidates.values.first else {
                     close(PlankDrawingBluetoothError.network("More than one Bluetooth Relay is nearby. This drawing test requires one nearby Relay.")); return
                 }
                 self.peripheral = found
                 found.delegate = self
-                central.connect(found)
+                NSLog("PLANK Bluetooth discovery: connecting candidate state=%d", found.state.rawValue)
+                self.central.connect(found)
             }
         }
     }
