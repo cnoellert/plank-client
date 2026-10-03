@@ -20,4 +20,8 @@ int plank_vision_raw_hid_frame_valid(
 int plank_vision_raw_hid_make_suspend(
     uint16_t generation, uint8_t *out, size_t capacity);
 
+// Destroy retained Host tablet endpoints before attaching in a new session.
+int plank_vision_raw_hid_make_detach(
+    uint16_t generation, uint8_t *out, size_t capacity);
+
 #endif
