@@ -8,9 +8,12 @@ final class HostDiscovery: ObservableObject {
     @Published private(set) var isSearching = false
 
     private var browser: NWBrowser?
+    private var generation = UUID()
 
     func start() {
         guard browser == nil else { return }
+        let generation = UUID()
+        self.generation = generation
 
         let parameters = NWParameters.tcp
         parameters.includePeerToPeer = true
@@ -21,7 +24,7 @@ final class HostDiscovery: ObservableObject {
 
         browser.stateUpdateHandler = { [weak self] state in
             Task { @MainActor in
-                guard let self else { return }
+                guard let self, self.generation == generation, self.browser != nil else { return }
                 switch state {
                 case .ready:
                     self.isSearching = true
@@ -44,7 +47,8 @@ final class HostDiscovery: ObservableObject {
             .sorted { $0.serviceName.localizedStandardCompare($1.serviceName) == .orderedAscending }
 
             Task { @MainActor in
-                self?.hosts = found
+                guard let self, self.generation == generation, self.browser != nil else { return }
+                self.hosts = found
             }
         }
 
@@ -53,10 +57,10 @@ final class HostDiscovery: ObservableObject {
     }
 
     func stop() {
+        generation = UUID()
         browser?.cancel()
         browser = nil
         isSearching = false
         hosts = []
     }
 }
-

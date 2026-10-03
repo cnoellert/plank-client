@@ -4,11 +4,15 @@ struct AddHostView: View {
     private enum Field: Hashable { case name, address, port, frameRate }
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismissWindow) private var dismissWindow
     @ObservedObject var store: HostStore
     @ObservedObject var client: PlankCoreClient
     let editingHost: HostBookmark?
     @FocusState private var focusedField: Field?
     @State private var showingRemoveConfirmation = false
+    @State private var pendingEdit: HostBookmark?
+    @State private var showingSessionCloseConfirmation = false
+    @State private var saving = false
 
     @State private var name = ""
     @State private var address = ""
@@ -113,29 +117,30 @@ struct AddHostView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button("Cancel") { dismiss() }.disabled(saving)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(editingHost == nil ? "Add" : "Save") {
-                        guard let parsedPort, let parsedFrameRate else { return }
-                        let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
-                        let cleanAddress = address.trimmingCharacters(in: .whitespacesAndNewlines)
-                        if var edited = editingHost {
-                            edited.name = cleanName
-                            edited.address = cleanAddress
-                            edited.port = parsedPort
-                            edited.spatialDisplaySize = displaySize
-                            edited.streamFrameRate = parsedFrameRate
-                            store.update(edited)
-                        } else {
-                            store.add(name: cleanName, address: cleanAddress,
-                                      port: parsedPort, displaySize: displaySize,
-                                      frameRate: parsedFrameRate)
-                        }
-                        dismiss()
-                    }
-                    .disabled(!canSave)
+                    Button(editingHost == nil ? "Add" : "Save") { requestSave() }
+                    .disabled(!canSave || saving)
                 }
+            }
+            .disabled(saving)
+            .interactiveDismissDisabled(saving)
+            .overlay {
+                if saving {
+                    ProgressView("Closing workstation session…")
+                        .padding(24)
+                        .glassBackgroundEffect()
+                }
+            }
+            .alert("Close the logged-in session?", isPresented: $showingSessionCloseConfirmation) {
+                Button("Cancel", role: .cancel) { pendingEdit = nil }
+                Button("Close Session and Save", role: .destructive) {
+                    guard let pendingEdit else { return }
+                    saveEditedHost(pendingEdit)
+                }
+            } message: {
+                Text("These changes require a new workstation session. PLANK will close this connection before saving. Sign in again to reconnect.")
             }
             .confirmationDialog(
                 "Remove Workstation?",
@@ -153,4 +158,45 @@ struct AddHostView: View {
         }
         .frame(minWidth: 540, minHeight: 420)
     }
+    private func requestSave() {
+        guard !saving, let parsedPort, let parsedFrameRate else { return }
+        let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanAddress = address.trimmingCharacters(in: .whitespacesAndNewlines)
+        if var edited = editingHost {
+            edited.name = cleanName
+            edited.address = cleanAddress
+            edited.port = parsedPort
+            edited.spatialDisplaySize = displaySize
+            edited.streamFrameRate = parsedFrameRate
+            if client.requiresSessionCloseForBookmark(edited) {
+                pendingEdit = edited
+                showingSessionCloseConfirmation = true
+            } else {
+                store.update(edited)
+                dismiss()
+            }
+        } else {
+            store.add(name: cleanName, address: cleanAddress,
+                      port: parsedPort, displaySize: displaySize,
+                      frameRate: parsedFrameRate)
+            dismiss()
+        }
+    }
+
+    private func saveEditedHost(_ edited: HostBookmark) {
+        guard !saving else { return }
+        saving = true
+        Task { @MainActor in
+            let closesCurrentSession = client.requiresSessionCloseForBookmark(edited)
+            await client.closeSessionForBookmarkChange(edited)
+            if closesCurrentSession && client.activeHostID == nil {
+                dismissWindow(id: "plank-desktop")
+            }
+            store.update(edited)
+            pendingEdit = nil
+            saving = false
+            dismiss()
+        }
+    }
+
 }

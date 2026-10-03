@@ -71,12 +71,101 @@ The native target currently provides:
   stream requests 60 fps, while sustained displayed fps remains to be measured;
 - a separate, plain remote-desktop window with bookmark-owned single-display
   resolution and stream frame-rate choices and aspect-preserving resize;
+- retained startup bitrate values in existing bookmarks (default 50 Mbps),
+  with bitrate editing in the session controls rather than the bookmark editor;
+- stereo Host audio playback (AVP-SET-02a): the negotiated 48 kHz stereo Opus
+  reply is validated with the desktop Client's rules, decoded with pinned xiph
+  libopus 1.6.1 on a dedicated receive thread (transport holes use Opus
+  packet-loss concealment, one negotiated frame per lost frame as on desktop),
+  and played as plain head-fixed stereo through AVAudioEngine from a bounded
+  queue. The queue primes to 30 ms, grows 10 ms per underrun up to 100 ms,
+  trims bursts above target + 60 ms, and holds its depth against clock drift
+  with at most 1000 ppm correction so the delay behind presented video stays
+  constant. Disconnect, interruptions, route and engine configuration changes,
+  media-services resets and backgrounding discard queued audio before playback
+  resumes. Volume and mute are local controls in the session controls
+  menu (one compact button at the top of the desktop window), which also
+  changes the running session's bitrate when the Host advertises live
+  bitrate and acknowledgements (features 0x08 and 0x10) and shows the Host-acknowledged target; "Also play on workstation speakers" in Settings (default on, the
+  previous behaviour) is sent as `localAudioPlayMode` on the next connection.
+  The statistics overlay shows queue, output latency, holes and underruns.
+  The overlay and the end-of-session log also report decoded level (RMS per
+  channel, peak in dBFS, left/right correlation) and every later gain stage
+  (route, output channels, system volume, PLANK mixer gain), so a quiet
+  stream can be traced to the source, the decode or the output path;
+- an opt-in video timing capture (Settings › Debug, independent of the
+  overlay): one log line per second, at most 15 minutes per session, with
+  Host frame sizes and the count under 2 KiB (a size hint, not proof of unchanged content), arrival
+  gaps, decode time, frames replaced before the main thread took them,
+  actual drawable presentation times and gaps, distinct acquisition/submission/
+  GPU-completion counts, drawable waits and misses, GPU time and
+  background state. It attributes slow or hitching video to a stage before
+  any buffering, rendering or timer change;
+  Live sync and listening acceptance is pending;
 - absolute pointer movement, primary click and drag, keyboard forwarding, and
   native mouse-button forwarding for primary, secondary and middle buttons;
-- a local TCP Wacom Relay link with physical ExpressKey pairing, pinned Relay
-  identity, Host raw-HID forwarding, focus suspension and automatic recovery
-  after the Relay disconnects;
+- experimental direct mouse input: all available `GCMouse` profiles are watched,
+  rather than assuming the current or first profile produces events. While the
+  desktop owns input, physical deltas accumulate into absolute Host coordinates;
+  pointer lock is not requested or required. UIKit hover, buttons and wheel
+  forwarding are suppressed while the raw path owns input. Escape is forwarded
+  to the Host and never disables mouse input; desktop appearance enables raw
+  input automatically. Controls, departure, backgrounding and inventory changes release held
+  buttons; returning to the desktop does not restore a held press. A held drag
+  remains owned by its originating profile, and stale callbacks from an old
+  inventory are discarded. A persistent “Allow window resizing” toggle in
+  the session controls defaults off and sets the UIKit scene's resize policy
+  directly. Turning it on allows aspect-preserving resize without resetting
+  the current window size. The toggle is independent of mouse focus, controls
+  visibility and Wacom attachment. The standalone headset probe
+  confirmed that explicitly disabling resizing resolves corner interference.
+  Earlier no-resize attempts accidentally set the optional preference to nil;
+  the corrected request assigns a typed enum and verifies it before submission.
+  Explicitly closing owned controls returns key-window focus to the desktop.
+  The operator confirmed Client build 33 resolves mouse corner access with
+  resizing disabled. Reconnect/tablet-tip qualification remains separate;
+- a controls button above the monitor with the menu expanding downward. Its
+  window is explicitly registered with the desktop focus coordinator, keeping
+  the Wacom attached while the session's own controls are used;
+- a local TCP Wacom Relay link with pinned Relay identity, Host raw-HID
+  forwarding, focus suspension and automatic recovery after the Relay
+  disconnects;
 - signed device and simulator builds from the same source.
+
+## Tablet Relay selection boundary (October 1, 2026)
+
+Relay Setup owns discovery, tablet setup, management authorization, network
+configuration and connection testing. PLANK owns its drawing trust, the choice
+of a registered Relay and the drawing link itself. Settings offers one
+**Tablet Relay** picker: Off, registered Relays by name, an earlier paired
+Relay where one exists, and **Set up a Relay…**, which opens Relay Setup
+(`plank-relay-setup://`) or says it could not be opened. PLANK has no
+discovery, address/port, pairing or reauthorize controls.
+
+**Use in PLANK** upserts and selects the exact Relay by drawing identity;
+repeats update its routes. An unknown identity gets PLANK's physical
+ExpressKey approval as a one-time registration sheet; only the exact identity
+is saved and the link is re-evaluated before registration. Cancel, failure or
+mismatch changes nothing. Off starts no Relay preflight, connection or legacy
+fallback and keeps approvals. Selection changes during a desktop session apply
+at disconnect. Status reads Configured, Connected (authenticated handshake
+observed), Unavailable (last attempt failed) or Approval required. Native
+PLANK drawing stays on the network link; registering a Relay found over
+Bluetooth does not enable Bluetooth drawing. Plan:
+`docs/development/plans/relay-picker-boundary-plan.md`.
+
+Approval attempts try the remaining advertised routes after eligible connection,
+DNS or network-path failures, preserving the final native error when all routes
+fail. Rejected approval, verification/storage failures and cancellation stop the
+attempt. Each route is tried at most once under the existing per-attempt deadlines.
+
+The physical ExpressKey sheet for first-time registration remains a compatibility
+path. The intended replacement is authenticated Setup-mediated approval of the
+Client's distinct public key by the drawing service, with proof of drawing
+identity before storing the pin. This enrollment change is not implemented yet;
+public handoff URLs alone do not authorize unknown identities. The requirements
+and separate-service installation boundary are recorded in the managed Relay's
+[handoff guide](https://github.com/instinctual/plank-avp-relay/pull/3).
 
 The app compiles with Xcode 27 and the visionOS 27 SDK while targeting visionOS
 26. It has launched on a physical Apple Vision Pro. A live comparison on
@@ -127,6 +216,15 @@ The checker prints one JSON result and exits nonzero unless the latest record
 has all six gates, all three software versions, and `ready: true`. Do not use a
 previous session's passing record as evidence for a new test. The 30-minute
 endurance session remains pending.
+
+## Deferred settings and feature parity
+
+The [native client feature backlog](plans/visionos-feature-parity-backlog.md)
+records the October 1, 2026 request for desktop settings parity: bitrate and
+video-quality controls, audio output/input controls, client camera forwarding
+with possible AVP Persona/avatar integration, and an inventory of the remaining
+desktop options. These are deferred product items, separate from current Relay
+connection qualification.
 
 ## Qualification backlog
 
@@ -458,7 +556,8 @@ cmake -G Xcode \
   -DCMAKE_OSX_DEPLOYMENT_TARGET=26.0 \
   -DPLANK_TRANSPORT_DIR=/path/to/plank/protocol/plank-transport \
   -DPLANK_RELAY_SOURCE_DIR=/path/to/plank-tablet-relay \
-  -DPLANK_RELAY_SODIUM_PREFIX=/path/to/visionos/libsodium
+  -DPLANK_RELAY_SODIUM_PREFIX=/path/to/visionos/libsodium \
+  -DPLANK_OPUS_DIR=/path/to/visionos/libopus
 
 xcodebuild \
   -project build/visionos-native-xcode/PlankVision.xcodeproj \
@@ -467,6 +566,24 @@ xcodebuild \
   -configuration Debug \
   -allowProvisioningUpdates \
   build
+```
+
+Build `PLANK_OPUS_DIR` with `scripts/build-visionos-opus.sh device <prefix>`
+(`simulator` for the simulator). It verifies the xiph.org SHA-256 of
+opus-1.6.1 before building. Without it the app builds but cannot decode Host
+audio, and every session fails negotiation with a clear decoder error. The
+focused audio checks run on the Mac against a `macos` build of the same
+archive:
+
+```bash
+scripts/build-visionos-opus.sh macos /path/to/macos/libopus
+cc -std=c11 -O0 -Wall -Wextra -Werror -DPLANK_OPUS_AUDIO=1 \
+  -I/path/to/macos/libopus/include/opus -Ivisionos-native/Bridge \
+  visionos-native/Tests/test_audio_pipeline.c \
+  visionos-native/Bridge/PlankAudioDecoder.c visionos-native/Bridge/PlankAudioRing.c \
+  /path/to/macos/libopus/lib/libopus.a -lm -o test_audio_pipeline && ./test_audio_pipeline
+swiftc -Onone -parse-as-library visionos-native/Sources/Models/PlankAudioFormat.swift \
+  visionos-native/Tests/PlankAudioFormatTests.swift -o audio-format-tests && ./audio-format-tests
 ```
 
 Simulator:
@@ -536,3 +653,72 @@ The coordinated implementation assignments and gates are in
 [Relay connection handoff execution plan](plans/relay-connection-handoff.md).
 The first slice updates routes for an already approved drawing identity; new
 Client enrollment remains explicit and separate.
+
+
+### Independent reliable-control reception candidate
+
+Cursor and tablet-control reception now runs on its own bounded-wait thread,
+starting after stream negotiation and before decoder creation. Session
+cancellation stops new reads, and teardown joins the reader before destroying
+its transport. Unsupported presentation events are distinguished from a real
+receive timeout. Cursor presentation retains only the newest position and
+completed shape; reliable tablet control and shape chunks retain their order.
+
+This candidate requires transport commit `ee810fe`, which waits for receive
+capacity without increasing the 64-record / 8-MiB bounds or evicting reliable
+records. A consumer that makes no space for two seconds still fails explicitly.
+There is no wire-format, negotiation, Host-installation or Relay change.
+
+Focused checks cover stalled-video reception, ordered bursts through encrypted
+endpoints in both directions, the existing stalled-consumer failure, ignored
+events, cancellation and repeated receiver teardown. Headset session stability
+and tablet reattachment on reconnect remain pending live acceptance. Audio is
+excluded from this comparison.
+
+
+### Playback housekeeping candidate
+
+Workstation discovery pauses while a desktop session is starting or active,
+resumes when the visible browser returns to an idle state, and ignores callbacks
+from a stopped discovery generation. Video progress collection and UI publication
+run only while the decoding-statistics overlay is enabled. Connection phase is
+published on lifecycle transitions, rather than periodically during playback.
+
+The periodic display-timing measurement and its two-second UI summary are removed.
+The explicit 96 Hz test hint remains available for 24/48 fps sessions, labelled as
+a request rather than a measured refresh rate. Normal playback creates no display
+probe. Decoder recovery, Metal presentation, native transport statistics and Relay
+heartbeats are unchanged. These changes remove unnecessary recurring work; their
+effect on the reported small playback pauses requires headset comparison.
+
+### Bookmark mode changes and mouse speed (build 35 candidate)
+
+Saving a resolution or frame-rate change for the currently authenticated
+workstation requires **Close Session and Save**. Cancel leaves both the
+bookmark and the login intact. Confirming clears retained Client authentication
+and waits for the stream worker and Relay connection to finish closing before
+saving; the next connection requires fresh sign-in and Wacom setup. Address
+and port changes use the same rule. Ordinary reconnects with unchanged display
+settings retain the existing login. This does not log out the Linux desktop.
+The native disconnect still uses its existing bounded shutdown; Client closure
+is not proof of an acknowledged Host release. Live mode-change acceptance is
+pending.
+
+Session controls include **Mouse speed**, from 25% to 150%, defaulting to 100%.
+It applies immediately to raw mouse movement and persists across sessions.
+Button, wheel, pen and UIKit hover paths retain their behavior. Movement is
+accumulated in canvas points, so a smaller canvas takes less physical movement
+to cross at the same speed. Resize disabling remains available independently.
+Focused movement and bookmark-policy checks pass; headset acceptance is pending.
+
+Build 36 corrects raw mouse availability: Escape is forwarded to the Host rather
+than disabling the movement path. Desktop appearance automatically enables raw
+input after a prior departure. Focus loss, session controls and backgrounding
+still gate movement and release held buttons. Session controls no longer contain
+a conditional “Use mouse in desktop” button. Mouse speed remains a persisted
+setting; live Escape and reconnect acceptance is pending.
+
+After the session controls close, the Client refreshes the canvas pointer style
+after restoring desktop key-window focus, and again when raw input eligibility
+changes. Native controls retain their system pointer while open. Whether this
+eliminates the reported lingering circle needs the headset retest.

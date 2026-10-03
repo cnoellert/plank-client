@@ -18,29 +18,90 @@ enum ConnectionPhase: Equatable, Sendable {
 private final class PlankFrameMailbox: @unchecked Sendable {
     private let lock = NSLock()
     private var newest: PlankRenderedFrame?
+    private var newestOfferedAt: UInt64 = 0
     private var deliveryScheduled = false
 
     func offer(_ frame: PlankRenderedFrame) -> Bool {
         lock.lock()
+        let replacedPending = newest != nil
         newest = frame
+        newestOfferedAt = DispatchTime.now().uptimeNanoseconds
         let shouldSchedule = !deliveryScheduled
         deliveryScheduled = true
         lock.unlock()
+        PlankTimingCapture.shared.offered(replacedPending: replacedPending)
         return shouldSchedule
     }
 
     func takeNewest() -> PlankRenderedFrame? {
         lock.lock()
         let frame = newest
+        let offeredAt = newestOfferedAt
         newest = nil
         deliveryScheduled = false
         lock.unlock()
+        if frame != nil {
+            PlankTimingCapture.shared.delivered(
+                latencyNanos: DispatchTime.now().uptimeNanoseconds - offeredAt
+            )
+        }
         return frame
     }
 }
 
+// The receive worker reads this flag without consulting preferences or the UI.
+private final class PlankVideoDiagnosticsGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var enabled = false
+
+    var isEnabled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return enabled
+    }
+
+    func setEnabled(_ next: Bool) {
+        lock.lock()
+        enabled = next
+        lock.unlock()
+    }
+}
+
+// Presentation keeps only the newest completed shape and position. Reliable
+// chunks/tablet feedback have already been processed on the control thread.
+private final class PlankCursorMailbox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var position: PlankRemoteCursor?
+    private var shape: PlankRemoteCursorShape?
+    private var deliveryScheduled = false
+
+    func offer(_ update: PlankCursorUpdate) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        switch update {
+        case let .position(next): position = next
+        case let .shape(next): shape = next
+        }
+        let schedule = !deliveryScheduled
+        deliveryScheduled = true
+        return schedule
+    }
+
+    func takeNewest() -> [PlankCursorUpdate] {
+        lock.lock()
+        defer { lock.unlock() }
+        var result: [PlankCursorUpdate] = []
+        if let shape { result.append(.shape(shape)) }
+        if let position { result.append(.position(position)) }
+        self.position = nil
+        self.shape = nil
+        deliveryScheduled = false
+        return result
+    }
+}
+
 // The Relay will install a receiver here. Host control frames stay on the
-// session worker and are never stored in UI state or copied to logs.
+// control receiver and are never stored in UI state or copied to logs.
 private final class PlankTabletControlReceiver: @unchecked Sendable {
     private let lock = NSLock()
     private var receiver: (@Sendable (Data) -> Void)?
@@ -65,15 +126,22 @@ final class PlankCoreClient: ObservableObject {
     @Published private(set) var isClosingSession = false
     @Published private(set) var frameDimensions: PlankFrameDimensions?
     @Published private(set) var videoDiagnosticText = "Video starting…"
+    @Published private(set) var audioDiagnosticText = "Audio starting…"
+    /// The running session's live encoder target; nil outside a session.
+    @Published private(set) var liveBitrate: PlankLiveBitrateStatus?
     @Published private(set) var activeHostID: HostBookmark.ID?
     var canRetrySession: Bool {
         httpClient != nil && lastIdentity != nil && lastAuthentication != nil
     }
 #if PLANK_TABLET_RELAY
-    @Published private(set) var tabletRelayStatus = "Pair a Wacom Relay in Settings."
+    @Published private(set) var tabletRelayStatus = "Choose a Tablet Relay in Settings."
     @Published private(set) var tabletPreflightSummary = "No active Wacom preflight."
     @Published private(set) var waitingForTablet = false
     @Published private(set) var showingTabletWaitScreen = false
+    /// What the last or current session observed about the drawing link.
+    /// Settings derives Connected/Unavailable from this, never from intent.
+    @Published private(set) var tabletRelayLink: PlankRelayLinkObservation = .none
+    private var tabletRelayLinkTracker = PlankRelayLinkTracker()
 #endif
 
     private var latestFrame: PlankRenderedFrame?
@@ -94,6 +162,8 @@ final class PlankCoreClient: ObservableObject {
     private var stoppingStreamTask: Task<Void, Never>?
     private var streamGeneration = UUID()
     private let tabletControlReceiver = PlankTabletControlReceiver()
+    private let videoDiagnostics = PlankVideoDiagnosticsGate()
+    private var liveBitrateController: PlankLiveBitrate?
     private var hostSupportsTabletRelay = false
 #if PLANK_TABLET_RELAY
     private var tabletBridge: PlankRelaySessionBridge?
@@ -106,6 +176,23 @@ final class PlankCoreClient: ObservableObject {
 
     func setTabletControlReceiver(_ receiver: (@Sendable (Data) -> Void)?) {
         tabletControlReceiver.set(receiver)
+    }
+
+    var hasActiveDesktopSession: Bool {
+        switch phase {
+        case .startingSession, .frameReceived, .streaming: true
+        default: false
+        }
+    }
+
+    /// Changes only the running session's encoder target; the bookmark's
+    /// startup target is untouched, as on the desktop Client.
+    func chooseLiveBitrate(_ kbps: Int, final: Bool) {
+        liveBitrateController?.choose(kbps, final: final)
+    }
+
+    func setVideoDiagnosticsEnabled(_ enabled: Bool) {
+        videoDiagnostics.setEnabled(enabled)
     }
 
     func sendTabletFrame(_ frame: Data) {
@@ -154,6 +241,22 @@ final class PlankCoreClient: ObservableObject {
         continueWithoutTablet(status: "Continuing this session without Wacom.")
     }
 
+    /// A previous failure describes the previous Relay. Forget it when the
+    /// selection changes outside a session; a live session keeps its evidence.
+    func clearTabletRelayObservation() {
+        switch phase {
+        case .startingSession, .frameReceived, .streaming: return
+        default:
+            tabletRelayLinkTracker = PlankRelayLinkTracker()
+            tabletRelayLink = tabletRelayLinkTracker.observation
+        }
+    }
+
+    private func applyRelayLink(_ event: PlankRelayLinkEvent) {
+        tabletRelayLinkTracker.apply(event)
+        tabletRelayLink = tabletRelayLinkTracker.observation
+    }
+
     private func continueWithoutTablet(status: String, whenUnavailableOnly: Bool = false) {
         if whenUnavailableOnly {
             guard tabletInputPolicy.continueIfUnavailable() else { return }
@@ -162,7 +265,7 @@ final class PlankCoreClient: ObservableObject {
             tabletInputPolicy.continueWithoutTablet()
         }
         tabletWaitTimeoutID = UUID()
-        tabletBridge?.close()
+        tabletBridge?.close(reason: .continueWithoutTablet)
         stoppingTabletBridge = tabletBridge
         tabletBridge = nil
         tabletRelayStatus = status
@@ -186,6 +289,7 @@ final class PlankCoreClient: ObservableObject {
                 status: "Wacom Relay unavailable; continuing this session without the tablet.",
                 whenUnavailableOnly: true
             )
+            if self.tabletRelayLink != .connected { self.applyRelayLink(.failed) }
         }
     }
 #endif
@@ -233,7 +337,7 @@ final class PlankCoreClient: ObservableObject {
         }
     }
 
-    func startSession(displaySize: SpatialDisplaySize, frameRate: Int) {
+    func startSession(displaySize: SpatialDisplaySize, frameRate: Int, videoBitrateKbps: Int) {
         guard !isClosingSession else { return }
         guard let httpClient,
               let identity = lastIdentity,
@@ -245,13 +349,14 @@ final class PlankCoreClient: ObservableObject {
 
         connectedHost.spatialDisplaySize = displaySize
         connectedHost.streamFrameRate = StreamFrameRate.normalized(frameRate)
+        connectedHost.videoBitrateKbps = StreamBitrate.normalized(videoBitrateKbps)
         self.connectedHost = connectedHost
 
         let previousStreamTask = streamTask ?? stoppingStreamTask
         previousStreamTask?.cancel()
 #if PLANK_TABLET_RELAY
         let previousTabletBridge = tabletBridge ?? stoppingTabletBridge
-        previousTabletBridge?.close()
+        previousTabletBridge?.close(reason: .sessionReplaced)
         stoppingTabletBridge = previousTabletBridge
         tabletBridge = nil
 #endif
@@ -274,8 +379,10 @@ final class PlankCoreClient: ObservableObject {
         // GNOME may bind its first pointer interaction before the redirected
         // tablet appears. Present the video immediately, but let a saved Relay
         // attach before forwarding mouse input into that desktop session.
-        tabletInputPolicy.begin(hasPairedTablet: PlankRelayKeys.hasSavedPairing())
+        let relayConfigured = PlankRelayKeys.sessionRelayConfigured()
+        tabletInputPolicy.begin(hasPairedTablet: relayConfigured)
         waitingForTablet = tabletInputPolicy.waitsForTablet
+        applyRelayLink(.sessionStarted(configured: relayConfigured))
 #endif
         phase = .startingSession(identity, authentication)
         streamTask = Task { [weak self] in
@@ -303,11 +410,12 @@ final class PlankCoreClient: ObservableObject {
         stoppingStreamTask = nil
     }
 
-    func retrySession(displaySize: SpatialDisplaySize, frameRate: Int) {
+    func retrySession(displaySize: SpatialDisplaySize, frameRate: Int, videoBitrateKbps: Int) {
         guard !isClosingSession else { return }
         guard let identity = lastIdentity, let authentication = lastAuthentication else { return }
         phase = .authenticated(identity, authentication)
-        startSession(displaySize: displaySize, frameRate: frameRate)
+        startSession(displaySize: displaySize, frameRate: frameRate,
+                     videoBitrateKbps: videoBitrateKbps)
     }
 
     private func runSession(
@@ -333,7 +441,13 @@ final class PlankCoreClient: ObservableObject {
             }
         )
         let sessionTabletBridge = PlankRelaySessionBridge(
-            inputQueue: inputQueue, preflight: preflight
+            inputQueue: inputQueue, preflight: preflight,
+            reportLink: { [weak self] event in
+                Task { @MainActor [weak self] in
+                    guard let self, self.streamGeneration == generation else { return }
+                    self.applyRelayLink(event)
+                }
+            }
         ) {
             [weak self] status in
             Task { @MainActor [weak self] in
@@ -344,13 +458,14 @@ final class PlankCoreClient: ObservableObject {
         tabletBridge = sessionTabletBridge
         sessionTabletBridge.setActive(tabletSceneActive)
         defer {
-            sessionTabletBridge.close()
+            sessionTabletBridge.close(reason: .sessionEnded)
             stoppingTabletBridge = sessionTabletBridge
             if tabletBridge === sessionTabletBridge { tabletBridge = nil }
         }
 #endif
         do {
             let frameMailbox = PlankFrameMailbox()
+            let cursorMailbox = PlankCursorMailbox()
             let (readyAuthentication, hostTopology, applications) =
                 try await loadSessionMetadata(
                     httpClient: httpClient,
@@ -368,7 +483,9 @@ final class PlankCoreClient: ObservableObject {
                 authentication: readyAuthentication,
                 connectedHost: connectedHost,
                 applicationID: desktop.id,
-                requestedTopology: requestedTopology
+                requestedTopology: requestedTopology,
+                // Read once per connection: a change applies to the next one.
+                playAudioOnHost: PlankAudioPreferences.playOnHost()
             )
             if self.streamGeneration == generation {
                 self.httpClient = activeHTTPClient
@@ -377,12 +494,52 @@ final class PlankCoreClient: ObservableObject {
             // Once launch has reserved the Host, enter the transport even if
             // cancellation arrived with the HTTP response. Its cancellation
             // handler then closes that fresh reservation cleanly.
+#if PLANK_TABLET_RELAY
+            let relayDiagnostics: @Sendable () -> String = {
+                sessionTabletBridge.diagnosticSummary()
+            }
+#else
+            let relayDiagnostics: @Sendable () -> String = { "not built" }
+#endif
+            let sessionBitrate = PlankLiveBitrate(
+                startupKbps: connectedHost.videoBitrateKbps
+            ) { [weak self] status in
+                Task { @MainActor [weak self] in
+                    guard let self, self.streamGeneration == generation else { return }
+                    self.liveBitrate = status
+                }
+            }
+            if self.streamGeneration == generation {
+                liveBitrateController = sessionBitrate
+                liveBitrate = sessionBitrate.status
+            }
+            defer {
+                if liveBitrateController === sessionBitrate {
+                    liveBitrateController = nil
+                    liveBitrate = nil
+                }
+            }
             try await PlankSessionEngine().stream(
                 host: connectedHost.address.trimmingCharacters(in: CharacterSet(charactersIn: "[]")),
                 topology: topology,
                 frameRate: connectedHost.streamFrameRate,
+                encoderTargetKbps: connectedHost.videoBitrateKbps,
                 launch: launch,
-                inputQueue: inputQueue
+                inputQueue: inputQueue,
+                sessionLabel: String(generation.uuidString.prefix(8)),
+                relayState: relayDiagnostics,
+                onAudioProgress: { [weak self, videoDiagnostics] progress in
+                    // Like video statistics, audio statistics reach the main
+                    // actor only while the overlay is shown.
+                    guard videoDiagnostics.isEnabled else { return }
+                    Task { @MainActor [weak self] in
+                        guard let self, self.streamGeneration == generation,
+                              self.videoDiagnostics.isEnabled else { return }
+                        self.audioDiagnosticText = progress.summary
+                    }
+                },
+                shouldReportVideoProgress: { [videoDiagnostics] in videoDiagnostics.isEnabled },
+                liveBitrate: sessionBitrate
             ) { [weak self] frame in
                 if frameMailbox.offer(frame) {
                     Task { @MainActor [weak self] in
@@ -396,12 +553,9 @@ final class PlankCoreClient: ObservableObject {
                             self.frameDimensions = dimensions
                         }
                         self.presentFrame?(newest)
-                        if case let .streaming(_, _, shownFrame) = self.phase {
-                            if newest.frameNumber >= shownFrame + 60 {
-                                self.phase = .streaming(
-                                    identity, activeAuthentication, newest.frameNumber
-                                )
-                            }
+                        if case .streaming = self.phase {
+                            // Frame presentation already updates the surface directly.
+                            // Connection phase changes only on a lifecycle transition.
                         } else {
                             self.phase = .streaming(identity, activeAuthentication, newest.frameNumber)
                         }
@@ -409,7 +563,8 @@ final class PlankCoreClient: ObservableObject {
                 }
             } onVideoProgress: { [weak self] progress in
                 Task { @MainActor [weak self] in
-                    guard let self, self.streamGeneration == generation else { return }
+                    guard let self, self.streamGeneration == generation,
+                          self.videoDiagnostics.isEnabled else { return }
                     let shown = self.latestFrame?.frameNumber ?? 0
                     self.videoDiagnosticText =
                         "Received \(progress.received) · decoded \(progress.decoded) · shown \(shown)\n" +
@@ -419,15 +574,20 @@ final class PlankCoreClient: ObservableObject {
                         " · \(progress.decoder)"
                 }
             } onCursor: { [weak self] update in
-                Task { @MainActor [weak self] in
-                    guard let self, self.streamGeneration == generation else { return }
-                    switch update {
-                    case let .position(cursor):
-                        self.remoteCursor = cursor
-                        self.presentCursor?(cursor)
-                    case let .shape(shape):
-                        self.remoteCursorShape = shape
-                        self.presentCursorShape?(shape)
+                if cursorMailbox.offer(update) {
+                    Task { @MainActor [weak self] in
+                        let updates = cursorMailbox.takeNewest()
+                        guard let self, self.streamGeneration == generation else { return }
+                        for update in updates {
+                            switch update {
+                            case let .position(cursor):
+                                self.remoteCursor = cursor
+                                self.presentCursor?(cursor)
+                            case let .shape(shape):
+                                self.remoteCursorShape = shape
+                                self.presentCursorShape?(shape)
+                            }
+                        }
                     }
                 }
             } onHostFeatures: { [weak self] flags in
@@ -469,7 +629,9 @@ final class PlankCoreClient: ObservableObject {
         } catch {
             guard !Task.isCancelled else { return }
 #if PLANK_TABLET_RELAY
+            sessionTabletBridge.close(reason: .upstreamSessionFailure)
             tabletRelayStatus = "Tablet link idle; start a desktop session to connect."
+            applyRelayLink(.sessionEnded)
             tabletPreflightSummary = "No active Wacom preflight."
             waitingForTablet = false
             showingTabletWaitScreen = false
@@ -520,7 +682,8 @@ final class PlankCoreClient: ObservableObject {
         authentication initialAuthentication: PlankAuthentication,
         connectedHost: HostBookmark,
         applicationID: Int,
-        requestedTopology: PlankTopology
+        requestedTopology: PlankTopology,
+        playAudioOnHost: Bool
     ) async throws -> (PlankHTTPClient, PlankAuthentication, PlankTopology, PlankLaunchCredentials) {
         try Task.checkCancellation()
         var needsAuthentication = false
@@ -529,7 +692,8 @@ final class PlankCoreClient: ObservableObject {
             let launch = try await initialClient.launchDesktop(
                 topology: requestedTopology,
                 applicationID: applicationID,
-                frameRate: connectedHost.streamFrameRate
+                frameRate: connectedHost.streamFrameRate,
+                playAudioOnHost: playAudioOnHost
             )
             return (initialClient, initialAuthentication, requestedTopology, launch)
         } catch let PlankHTTPError.rejected(code, _) where code == 425 {
@@ -580,7 +744,8 @@ final class PlankCoreClient: ObservableObject {
                 let launch = try await client.launchDesktop(
                     topology: verifiedRequest,
                     applicationID: applicationID,
-                    frameRate: connectedHost.streamFrameRate
+                    frameRate: connectedHost.streamFrameRate,
+                    playAudioOnHost: playAudioOnHost
                 )
                 return (client, authentication, verifiedRequest, launch)
             } catch let PlankHTTPError.rejected(code, _) where code == 401 {
@@ -628,11 +793,12 @@ final class PlankCoreClient: ObservableObject {
         streamTask = nil
 #if PLANK_TABLET_RELAY
         let closingTabletBridge = tabletBridge ?? stoppingTabletBridge
-        closingTabletBridge?.close()
+        closingTabletBridge?.close(reason: .userDisconnect)
         stoppingTabletBridge = closingTabletBridge
         tabletBridge = nil
         tabletSceneActive = false
         tabletRelayStatus = "Tablet link idle; start a desktop session to connect."
+        applyRelayLink(.sessionEnded)
         tabletPreflightSummary = "No active Wacom preflight."
         tabletInputPolicy.begin(hasPairedTablet: false)
         waitingForTablet = false
@@ -649,6 +815,9 @@ final class PlankCoreClient: ObservableObject {
         remoteCursorShape = nil
         frameDimensions = nil
         videoDiagnosticText = "Video starting…"
+        audioDiagnosticText = "Audio starting…"
+        liveBitrateController = nil
+        liveBitrate = nil
         presentFrame?(nil)
         presentCursor?(nil)
         presentCursorShape?(nil)
@@ -660,16 +829,17 @@ final class PlankCoreClient: ObservableObject {
         awaitStreamClosure(taskToStop, generation: closingGeneration)
     }
 
-    private func awaitStreamClosure(_ task: Task<Void, Never>?, generation: UUID) {
+    @discardableResult
+    private func awaitStreamClosure(_ task: Task<Void, Never>?, generation: UUID) -> Task<Void, Never>? {
 #if PLANK_TABLET_RELAY
         let closingBridge = stoppingTabletBridge
         isClosingSession = task != nil || closingBridge != nil
-        guard task != nil || closingBridge != nil else { return }
+        guard task != nil || closingBridge != nil else { return nil }
 #else
         isClosingSession = task != nil
-        guard task != nil else { return }
+        guard task != nil else { return nil }
 #endif
-        Task { [weak self] in
+        return Task { [weak self] in
             // Closing the window never makes the Host session reusable. Wait
             // until the worker and Relay link have both released their sessions.
             await task?.value
@@ -685,6 +855,13 @@ final class PlankCoreClient: ObservableObject {
 #endif
             self.isClosingSession = false
         }
+    }
+
+    // Input handoff can anchor the mouse at the pen's latest Host position
+    // without publishing cursor updates through SwiftUI.
+    func currentPointerPosition() -> (x: Int, y: Int)? {
+        guard let remoteCursor else { return nil }
+        return (Int(remoteCursor.x), Int(remoteCursor.y))
     }
 
     func movePointer(x: Int, y: Int, width: Int, height: Int) {
@@ -778,18 +955,37 @@ final class PlankCoreClient: ObservableObject {
         phase = .needsCredentials(identity)
     }
 
-    func reset() {
+    func requiresSessionCloseForBookmark(_ edited: HostBookmark) -> Bool {
+        PlankBookmarkSessionPolicy.requiresClosure(
+            edited: edited, connected: connectedHost,
+            authenticated: httpClient != nil && lastAuthentication != nil
+        )
+    }
+
+    func closeSessionForBookmarkChange(_ edited: HostBookmark) async {
+        guard requiresSessionCloseForBookmark(edited) else { return }
+        NSLog("PLANK session: closing authenticated connection for bookmark change")
+        // reset clears HTTP/session credentials immediately and invalidates old
+        // callbacks. Save cannot complete until both stream and Relay have ended.
+        let closure = reset()
+        await closure?.value
+        NSLog("PLANK session: bookmark teardown complete; fresh sign-in required")
+    }
+
+    @discardableResult
+    func reset() -> Task<Void, Never>? {
         let taskToStop = streamTask ?? stoppingStreamTask
         taskToStop?.cancel()
         if let taskToStop { stoppingStreamTask = taskToStop }
         streamTask = nil
 #if PLANK_TABLET_RELAY
         let closingTabletBridge = tabletBridge ?? stoppingTabletBridge
-        closingTabletBridge?.close()
+        closingTabletBridge?.close(reason: .userDisconnect)
         stoppingTabletBridge = closingTabletBridge
         tabletBridge = nil
         tabletSceneActive = false
         tabletRelayStatus = "Tablet link idle; start a desktop session to connect."
+        applyRelayLink(.sessionEnded)
         tabletPreflightSummary = "No active Wacom preflight."
         tabletInputPolicy.begin(hasPairedTablet: false)
         waitingForTablet = false
@@ -807,15 +1003,20 @@ final class PlankCoreClient: ObservableObject {
         activeHostID = nil
         transitionCredentials = nil
         lastAuthentication = nil
-        awaitStreamClosure(taskToStop, generation: closingGeneration)
+        let closure = awaitStreamClosure(taskToStop, generation: closingGeneration)
         latestFrame = nil
         remoteCursor = nil
         remoteCursorShape = nil
         frameDimensions = nil
+        videoDiagnosticText = "Video starting…"
+        audioDiagnosticText = "Audio starting…"
+        liveBitrateController = nil
+        liveBitrate = nil
         presentFrame?(nil)
         presentCursor?(nil)
         presentCursorShape?(nil)
         phase = .idle
+        return closure
     }
 
     func registerVideoSurface(

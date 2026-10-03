@@ -33,6 +33,10 @@ final class PlankInputQueue: @unchecked Sendable {
     private let wakeupContinuation: AsyncStream<Void>.Continuation
     private var events: [PlankInputEvent] = []
     private var stopped = false
+    // Bounded diagnostics only: timings and counts, never event contents.
+    private var oldestEnqueueTime: UInt64 = 0
+    private var highWaterDepth = 0
+    private var maxDrainAge: UInt64 = 0
 
     init() {
         (wakeups, wakeupContinuation) = AsyncStream<Void>.makeStream(
@@ -49,12 +53,14 @@ final class PlankInputQueue: @unchecked Sendable {
             return
         }
         let shouldWake = events.isEmpty
+        if shouldWake { oldestEnqueueTime = DispatchTime.now().uptimeNanoseconds }
         if case .pointer = event,
            case .pointer? = events.last {
             events[events.count - 1] = event
         } else {
             events.append(event)
         }
+        highWaterDepth = max(highWaterDepth, events.count)
         lock.unlock()
         if shouldWake { wakeupContinuation.yield(()) }
     }
@@ -62,9 +68,25 @@ final class PlankInputQueue: @unchecked Sendable {
     func drain() -> [PlankInputEvent] {
         lock.lock()
         let drained = events
+        if !drained.isEmpty {
+            maxDrainAge = max(maxDrainAge,
+                              DispatchTime.now().uptimeNanoseconds - oldestEnqueueTime)
+        }
         events.removeAll(keepingCapacity: true)
         lock.unlock()
         return drained
+    }
+
+    var diagnostics: PlankInputQueueDiagnostics {
+        lock.lock()
+        defer { lock.unlock() }
+        return PlankInputQueueDiagnostics(
+            depth: events.count,
+            oldestAgeNanos: events.isEmpty ? 0 :
+                DispatchTime.now().uptimeNanoseconds - oldestEnqueueTime,
+            highWaterDepth: highWaterDepth,
+            maxDrainAgeNanos: maxDrainAge
+        )
     }
 
     func stop() {
@@ -74,6 +96,13 @@ final class PlankInputQueue: @unchecked Sendable {
         lock.unlock()
         wakeupContinuation.finish()
     }
+}
+
+struct PlankInputQueueDiagnostics: Sendable {
+    let depth: Int
+    let oldestAgeNanos: UInt64
+    let highWaterDepth: Int
+    let maxDrainAgeNanos: UInt64
 }
 
 // The Rust endpoint synchronizes its input and video queues independently.
@@ -89,11 +118,29 @@ private final class PlankTransportHandle: @unchecked Sendable {
 private final class PlankInputSenderState: @unchecked Sendable {
     private let lock = NSLock()
     private var failed = false
+    private var accepted: UInt64 = 0
+    private var maxSendNanos: UInt64 = 0
+    private var failedSendNanos: UInt64 = 0
 
     func markFailed() {
         lock.lock()
         failed = true
         lock.unlock()
+    }
+
+    func recordSend(nanos: UInt64, succeeded: Bool) {
+        lock.lock()
+        maxSendNanos = max(maxSendNanos, nanos)
+        if succeeded { accepted &+= 1 } else { failedSendNanos = nanos }
+        lock.unlock()
+    }
+
+    /// Events the native endpoint accepted, slowest submission, and the
+    /// duration of the failed submission (0 when none failed).
+    var sendSummary: (accepted: UInt64, maxNanos: UInt64, failedNanos: UInt64) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (accepted, maxSendNanos, failedSendNanos)
     }
 
     var hasFailed: Bool {
@@ -177,13 +224,75 @@ private struct CursorShapeAssembly {
     }
 }
 
+
+private final class PlankControlBuffer: @unchecked Sendable {
+    private var chunk = [UInt8](repeating: 0, count: Int(PLANK_VISION_CURSOR_MAX_CHUNK_SIZE))
+    private var assembly = CursorShapeAssembly()
+
+    func receive(from transport: OpaquePointer,
+                 liveBitrate: PlankLiveBitrate?,
+                 onCursor: @Sendable (PlankCursorUpdate) -> Void,
+                 onRawHid: @Sendable (Data) -> Void) -> PlankControlReceiver.Result {
+        // Live bitrate requests leave from this thread, which runs at least
+        // every 20 ms and is joined before the endpoint is destroyed.
+        if let liveBitrate, !liveBitrate.pump(send: {
+            plank_vision_transport_set_video_bitrate(transport, $0) == PLANK_VISION_TRANSPORT_OK
+        }) {
+            return .failed("The live bitrate request could not be sent" +
+                           PlankSessionEngine.failureSuffix(transport))
+        }
+        var event = PlankVisionCursorEvent()
+        var size = 0
+        let result = plank_vision_transport_receive_data_event(
+            transport, &event, &chunk, chunk.count, &size, 20
+        )
+        if result == PLANK_VISION_TRANSPORT_TIMEOUT { return .idle }
+        if result == PLANK_VISION_TRANSPORT_DATA_IGNORED { return .packet(.ignored) }
+        guard result == PLANK_VISION_TRANSPORT_OK else {
+            return .failed("The remote control channel stopped unexpectedly" +
+                           PlankSessionEngine.failureSuffix(transport))
+        }
+        switch event.type {
+        case UInt16(PLANK_VISION_CURSOR_POSITION):
+            onCursor(.position(PlankRemoteCursor(
+                x: Int(event.x), y: Int(event.y),
+                frameWidth: Int(event.frame_width), frameHeight: Int(event.frame_height),
+                sequence: event.sequence
+            )))
+            return .packet(.position)
+        case UInt16(PLANK_VISION_CURSOR_SHAPE):
+            if let shape = assembly.append(event: event, chunk: chunk.prefix(size)) {
+                onCursor(.shape(shape))
+            }
+            return .packet(.shape)
+        case UInt16(PLANK_VISION_RAW_HID_EVENT):
+            onRawHid(Data(chunk.prefix(size)))
+            return .packet(.tablet)
+        case UInt16(PLANK_VISION_BITRATE_APPLIED):
+            liveBitrate?.acknowledge(requestedKbps: Int(event.bitrate_requested_kbps),
+                                     appliedKbps: Int(event.bitrate_applied_kbps))
+            NSLog("PLANK live bitrate acknowledged: requested=%u applied=%u peak=%u kbps",
+                  event.bitrate_requested_kbps, event.bitrate_applied_kbps,
+                  event.bitrate_peak_kbps)
+            return .packet(.ignored)
+        default: return .packet(.ignored)
+        }
+    }
+}
+
 struct PlankSessionEngine: Sendable {
     func stream(
         host: String,
         topology: PlankTopology,
         frameRate: Int,
+        encoderTargetKbps: Int,
         launch: PlankLaunchCredentials,
         inputQueue: PlankInputQueue,
+        sessionLabel: String = "-",
+        relayState: @escaping @Sendable () -> String = { "not applicable" },
+        onAudioProgress: @escaping @Sendable (PlankAudioProgress) -> Void = { _ in },
+        shouldReportVideoProgress: @escaping @Sendable () -> Bool = { true },
+        liveBitrate: PlankLiveBitrate? = nil,
         onFrame: @escaping @Sendable (PlankRenderedFrame) -> Void,
         onVideoProgress: @escaping @Sendable (PlankVideoProgress) -> Void,
         onCursor: @escaping @Sendable (PlankCursorUpdate) -> Void,
@@ -191,6 +300,10 @@ struct PlankSessionEngine: Sendable {
         onRawHid: @escaping @Sendable (Data) -> Void,
         onTabletFrameSent: @escaping @Sendable (Data) -> Void
     ) async throws {
+        let sessionStart = DispatchTime.now().uptimeNanoseconds
+        let timing = PlankTimingCapture.shared
+        timing.beginSession(sessionLabel)
+        let controlLifetime = PlankControlReceiverLifetime()
         let worker = Task.detached(priority: .userInitiated) {
             var error = [CChar](repeating: 0, count: 512)
             let transport = host.withCString { hostPointer in
@@ -213,29 +326,13 @@ struct PlankSessionEngine: Sendable {
             }
             defer { plank_vision_transport_disconnect(transport) }
 
-            let request: [String: Any] = [
-                "video": [
-                    "width": topology.desktopWidth,
-                    "height": topology.desktopHeight,
-                    "fps": frameRate,
-                    "fps_x100": frameRate * 100,
-                    "slices_per_frame": 1,
-                    "reference_frames": 1,
-                    "encoder_csc_mode": 7,
-                    "codec": 1,
-                    "ten_bit": true,
-                    "chroma": 1,
-                    "intra_refresh": 0,
-                    "encoder_target_kbps": 50000,
-                    "negotiated_format": 0x0800,
-                ],
-                "audio": [
-                    "channels": 2,
-                    "channel_mask": 3,
-                    "packet_duration_ms": 5,
-                    "high_quality": true,
-                ],
-            ]
+            let request = PlankStreamRequest.negotiation(
+                topology: topology,
+                frameRate: frameRate,
+                encoderTargetKbps: encoderTargetKbps
+            )
+            NSLog("PLANK session %@ requesting encoder target %d kbps at %d fps",
+                  sessionLabel, StreamBitrate.normalized(encoderTargetKbps), frameRate)
             let requestData = try JSONSerialization.data(withJSONObject: request)
             var response = [UInt8](repeating: 0, count: 64 * 1024)
             var responseSize = 0
@@ -259,10 +356,38 @@ struct PlankSessionEngine: Sendable {
                   responseObject["video_format"] as? Int == 0x0800 else {
                 throw PlankSessionError.invalidNegotiation
             }
+            guard let audioFormat = PlankAudioFormat.negotiated(from: responseObject) else {
+                throw PlankSessionError.transport(
+                    "The Host returned unsupported native audio values."
+                )
+            }
+            // Declared after the transport's defer, so it runs first: the
+            // receive thread has exited before the endpoint is destroyed.
+            let audio = try PlankAudioReceiver(
+                transport: transport, format: audioFormat,
+                sessionLabel: sessionLabel, onProgress: onAudioProgress
+            )
+            defer { audio.stop() }
+            audio.start()
             let hostFeatures = UInt32(truncatingIfNeeded: responseObject["host_feature_flags"] as? Int ?? 0)
             onHostFeatures(hostFeatures)
+            liveBitrate?.setSupported(
+                PlankLiveBitrateState.hostSupportsChanges(hostFeatures)
+            )
             let rawHidAvailable = hostFeatures & PlankHostFeature.tabletRelayRequired ==
                 PlankHostFeature.tabletRelayRequired
+
+            let endpoint = PlankTransportHandle(transport)
+            // The data lane cannot depend on frame arrival, decoding, or recovery.
+            // Its buffers and shape assembler belong solely to this receive thread.
+            let controlBuffer = PlankControlBuffer()
+            let controls = PlankControlReceiver {
+                controlBuffer.receive(from: endpoint.pointer, liveBitrate: liveBitrate,
+                                      onCursor: onCursor, onRawHid: onRawHid)
+            }
+            controlLifetime.install(controls)
+            controls.start()
+            defer { controls.stop() } // Join before endpoint destruction on every exit.
 
             guard let decoder = plank_video_decoder_create(&error, error.count) else {
                 throw PlankSessionError.transport(String(cString: error))
@@ -286,20 +411,22 @@ struct PlankSessionEngine: Sendable {
             var decodeCalls: UInt64 = 0
             var lastVideoReport = DispatchTime.now().uptimeNanoseconds
             var lastDecodedFrameTime = lastVideoReport
-            var lastIDRRequest = UInt64(0)
-            var awaitingKeyFrame = false
-            var hardwareFailures = 0
-            var cursorChunk = [UInt8](repeating: 0, count: Int(PLANK_VISION_CURSOR_MAX_CHUNK_SIZE))
-            var cursorAssembly = CursorShapeAssembly()
+            var lastFrameTime = UInt64(0)
+            var recovery = PlankVideoDecoderRecovery()
             let senderState = PlankInputSenderState()
-            let endpoint = PlankTransportHandle(transport)
             let sender = Task.detached(priority: .userInitiated) {
                 for await _ in inputQueue.signals {
                     for event in inputQueue.drain() {
-                        guard Self.send(
+                        let sendStart = DispatchTime.now().uptimeNanoseconds
+                        let sent = Self.send(
                             event, to: endpoint.pointer,
                             rawHidAvailable: rawHidAvailable
-                        ) == PLANK_VISION_TRANSPORT_OK else {
+                        ) == PLANK_VISION_TRANSPORT_OK
+                        senderState.recordSend(
+                            nanos: DispatchTime.now().uptimeNanoseconds - sendStart,
+                            succeeded: sent
+                        )
+                        guard sent else {
                             senderState.markFailed()
                             inputQueue.stop()
                             return
@@ -312,8 +439,13 @@ struct PlankSessionEngine: Sendable {
             }
             do {
                 while !Task.isCancelled {
+                    if let failure = controls.snapshot.failure {
+                        throw PlankSessionError.transport(failure)
+                    }
                     if senderState.hasFailed {
-                        throw PlankSessionError.transport("The remote input channel stopped unexpectedly.")
+                        throw PlankSessionError.transport(
+                            "The remote input channel stopped unexpectedly" + Self.failureSuffix(transport)
+                        )
                     }
                     var payloadSize = 0
                     let result = plank_vision_transport_receive_video(
@@ -321,54 +453,26 @@ struct PlankSessionEngine: Sendable {
                         payload.count - decoderPadding, &payloadSize, 30
                     )
                     let reportTime = DispatchTime.now().uptimeNanoseconds
+                    timing.roll()
                     if reportTime - lastVideoReport >= 1_000_000_000 {
-                        var stats = PlankVisionVideoStats()
-                        _ = plank_vision_transport_video_stats(transport, &stats)
-                        onVideoProgress(PlankVideoProgress(
-                            received: receivedFrames,
-                            decoded: decodedFrames,
-                            keyFrames: keyFrames,
-                            receiveDrops: stats.receive_drops,
-                            fecUnrecovered: stats.fec_symbols_unrecovered,
-                            frameGaps: frameGaps,
-                            averageDecodeMilliseconds: decodeCalls == 0 ? 0 :
-                                Double(decodeNanos) / Double(decodeCalls) / 1_000_000,
-                            decoder: hardwareDecoder == nil ? "FFmpeg software" : "VideoToolbox xf44"
-                        ))
+                        if shouldReportVideoProgress() {
+                            var stats = PlankVisionVideoStats()
+                            _ = plank_vision_transport_video_stats(transport, &stats)
+                            onVideoProgress(PlankVideoProgress(
+                                received: receivedFrames,
+                                decoded: decodedFrames,
+                                keyFrames: keyFrames,
+                                receiveDrops: stats.receive_drops,
+                                fecUnrecovered: stats.fec_symbols_unrecovered,
+                                frameGaps: frameGaps,
+                                averageDecodeMilliseconds: decodeCalls == 0 ? 0 :
+                                    Double(decodeNanos) / Double(decodeCalls) / 1_000_000,
+                                decoder: hardwareDecoder == nil ? "FFmpeg software" : "VideoToolbox xf44"
+                            ))
+                        }
                         decodeNanos = 0
                         decodeCalls = 0
                         lastVideoReport = reportTime
-                    }
-                    // Keep Host tablet requests moving even while video is idle.
-                    // Cap each drain so sustained control traffic cannot starve video.
-                    for _ in 0..<64 {
-                        var cursor = PlankVisionCursorEvent()
-                        var cursorChunkSize = 0
-                        let cursorResult = plank_vision_transport_receive_data_event(
-                            transport, &cursor, &cursorChunk, cursorChunk.count,
-                            &cursorChunkSize, 0
-                        )
-                        if cursorResult == PLANK_VISION_TRANSPORT_TIMEOUT { break }
-                        guard cursorResult == PLANK_VISION_TRANSPORT_OK else {
-                            throw PlankSessionError.transport("The remote cursor channel stopped unexpectedly.")
-                        }
-                        if cursor.type == PLANK_VISION_CURSOR_POSITION {
-                            onCursor(.position(PlankRemoteCursor(
-                                x: Int(cursor.x),
-                                y: Int(cursor.y),
-                                frameWidth: Int(cursor.frame_width),
-                                frameHeight: Int(cursor.frame_height),
-                                sequence: cursor.sequence
-                            )))
-                        } else if cursor.type == PLANK_VISION_CURSOR_SHAPE,
-                                  let shape = cursorAssembly.append(
-                                    event: cursor,
-                                    chunk: cursorChunk.prefix(cursorChunkSize)
-                                  ) {
-                            onCursor(.shape(shape))
-                        } else if cursor.type == PLANK_VISION_RAW_HID_EVENT {
-                            onRawHid(Data(cursorChunk.prefix(cursorChunkSize)))
-                        }
                     }
 
                     if result == PLANK_VISION_TRANSPORT_BUFFER_TOO_SMALL,
@@ -378,10 +482,20 @@ struct PlankSessionEngine: Sendable {
                         continue
                     }
                     if result == PLANK_VISION_TRANSPORT_TIMEOUT { continue }
+                    if result == PLANK_VISION_TRANSPORT_BUFFER_TOO_SMALL {
+                        throw PlankSessionError.transport(
+                            "The native video receiver stopped unexpectedly: " +
+                            "buffer limit (frame of \(payloadSize) bytes)."
+                        )
+                    }
                     guard result == PLANK_VISION_TRANSPORT_OK, payloadSize > 0 else {
-                        throw PlankSessionError.transport("The native video receiver stopped unexpectedly.")
+                        throw PlankSessionError.transport(
+                            "The native video receiver stopped unexpectedly" + Self.failureSuffix(transport)
+                        )
                     }
                     receivedFrames &+= 1
+                    lastFrameTime = reportTime
+                    timing.arrival(size: payloadSize)
                     if frame.flags & 1 != 0 { keyFrames &+= 1 }
                     if let lastReceivedFrameNumber,
                        frame.frame_number > lastReceivedFrameNumber + 1 {
@@ -389,19 +503,16 @@ struct PlankSessionEngine: Sendable {
                     }
                     lastReceivedFrameNumber = frame.frame_number
 
-                    if awaitingKeyFrame {
-                        if frame.flags & 1 != 0 {
-                            awaitingKeyFrame = false
-                        } else {
-                            if reportTime - lastIDRRequest >= 1_000_000_000 {
-                                guard plank_vision_transport_request_idr(transport) ==
-                                        PLANK_VISION_TRANSPORT_OK else {
-                                    throw PlankSessionError.transport("Unable to request a fresh video frame.")
-                                }
-                                lastIDRRequest = reportTime
+                    // The independent control receiver keeps running throughout
+                    // keyframe recovery, frame waits, and synchronous decoding.
+                    if !recovery.admit(isKeyFrame: frame.flags & 1 != 0) {
+                        if recovery.keyFrameRequestDue(now: reportTime) {
+                            guard plank_vision_transport_request_idr(transport) ==
+                                    PLANK_VISION_TRANSPORT_OK else {
+                                throw PlankSessionError.transport("Unable to request a fresh video frame.")
                             }
-                            continue
                         }
+                        continue
                     }
 
                     // libavcodec may read beyond the compressed packet size for
@@ -417,12 +528,15 @@ struct PlankSessionEngine: Sendable {
                         let outcome = payload.withUnsafeBufferPointer { bytes in
                             hardware.decode(UnsafeBufferPointer(rebasing: bytes.prefix(payloadSize)))
                         }
-                        decodeNanos &+= DispatchTime.now().uptimeNanoseconds - decodeStart
+                        let hardwareDecodeNanos = DispatchTime.now().uptimeNanoseconds - decodeStart
+                        decodeNanos &+= hardwareDecodeNanos
                         decodeCalls &+= 1
                         switch outcome {
                         case let .frame(image):
                             decodedFrames &+= 1
+                            timing.decoded(nanos: hardwareDecodeNanos)
                             lastDecodedFrameTime = reportTime
+                            Self.logResumption(recovery.frameDecoded(now: reportTime))
                             onFrame(PlankRenderedFrame(
                                 pixels: Data(), pixelBuffer: image,
                                 width: CVPixelBufferGetWidth(image),
@@ -432,26 +546,42 @@ struct PlankSessionEngine: Sendable {
                             continue
                         case .waiting:
                             if reportTime - lastDecodedFrameTime >= 1_000_000_000 &&
-                               reportTime - lastIDRRequest >= 1_000_000_000 {
+                               recovery.keyFrameRequestDue(now: reportTime) {
                                 guard plank_vision_transport_request_idr(transport) ==
                                         PLANK_VISION_TRANSPORT_OK else {
                                     throw PlankSessionError.transport("Unable to request a fresh video frame.")
                                 }
-                                lastIDRRequest = reportTime
+                            }
+                            continue
+                        case let .badData(decodeStatus, frameStatus):
+                            // Damaged input, not a decoder fault: rebuild VideoToolbox
+                            // and resync on a keyframe without using the FFmpeg budget.
+                            _ = recovery.badData(now: reportTime)
+                            NSLog("PLANK VideoToolbox recovery: reason=%@ status=%d/%d rejection=%ld; rebuilt the hardware decoder, discarding frames until a keyframe",
+                                  PlankVideoDecoderRecovery.Reason.badData.rawValue,
+                                  decodeStatus, frameStatus, recovery.badDataRejections)
+                            hardwareDecoder = PlankHardwareVideoDecoder()
+                            if recovery.keyFrameRequestDue(now: reportTime) {
+                                guard plank_vision_transport_request_idr(transport) ==
+                                        PLANK_VISION_TRANSPORT_OK else {
+                                    throw PlankSessionError.transport("Unable to request a fresh video frame.")
+                                }
                             }
                             continue
                         case .unavailable:
-                            hardwareFailures += 1
-                            NSLog("PLANK VideoToolbox decoder failed: %@",
-                                  hardware.lastError ?? "unknown error")
-                            hardwareDecoder = hardwareFailures <= 2 ?
+                            let action = recovery.hardwareFailed(now: reportTime)
+                            NSLog("PLANK VideoToolbox decoder failed: %@; failure %ld, %@",
+                                  hardware.lastError ?? "unknown error", recovery.hardwareFailures,
+                                  action == .selectSoftware ?
+                                      "FFmpeg selected for the rest of the session" :
+                                      "rebuilt the hardware decoder")
+                            hardwareDecoder = action == .rebuildHardware ?
                                 PlankHardwareVideoDecoder() : nil
-                            awaitingKeyFrame = true
                             guard plank_vision_transport_request_idr(transport) ==
                                     PLANK_VISION_TRANSPORT_OK else {
                                 throw PlankSessionError.transport("Unable to request a fresh video frame.")
                             }
-                            lastIDRRequest = reportTime
+                            recovery.recordKeyFrameRequest(now: reportTime)
                             continue
                         }
                     }
@@ -476,24 +606,28 @@ struct PlankSessionEngine: Sendable {
                             )
                         }
                     }
-                    decodeNanos &+= DispatchTime.now().uptimeNanoseconds - decodeStart
+                    let softwareDecodeNanos = DispatchTime.now().uptimeNanoseconds - decodeStart
+                    decodeNanos &+= softwareDecodeNanos
                     decodeCalls &+= 1
                     if decodeResult == PLANK_VIDEO_DECODER_NO_FRAME {
                         if reportTime - lastDecodedFrameTime >= 1_000_000_000 &&
-                           reportTime - lastIDRRequest >= 1_000_000_000 {
+                           recovery.keyFrameRequestDue(now: reportTime) {
                             guard plank_vision_transport_request_idr(transport) ==
                                     PLANK_VISION_TRANSPORT_OK else {
                                 throw PlankSessionError.transport("Unable to request a fresh video frame.")
                             }
-                            lastIDRRequest = reportTime
                         }
                         continue
                     }
                     guard decodeResult == PLANK_VIDEO_DECODER_FRAME else {
-                        throw PlankSessionError.transport(String(cString: error))
+                        throw PlankSessionError.transport(
+                            "The video decoder failed: " + String(cString: error)
+                        )
                     }
                     decodedFrames &+= 1
+                    timing.decoded(nanos: softwareDecodeNanos)
                     lastDecodedFrameTime = reportTime
+                    Self.logResumption(recovery.frameDecoded(now: reportTime))
                     let byteCount = Int(decodedStride) * Int(decodedHeight)
                     onFrame(PlankRenderedFrame(
                         pixels: Data(pixels.prefix(byteCount)),
@@ -505,19 +639,142 @@ struct PlankSessionEngine: Sendable {
                     ))
                 }
             } catch {
+                if !Task.isCancelled {
+                    let now = DispatchTime.now().uptimeNanoseconds
+                    var stats = PlankVisionVideoStats()
+                    _ = plank_vision_transport_video_stats(transport, &stats)
+                    NSLog("%@", Self.failureSnapshot(
+                        session: sessionLabel,
+                        elapsedNanos: now - sessionStart,
+                        lastFrameNumber: lastReceivedFrameNumber,
+                        lastFrameAgeNanos: lastFrameTime == 0 ? nil : now - lastFrameTime,
+                        received: receivedFrames,
+                        decoded: decodedFrames,
+                        decoder: Self.decoderSummary(recovery),
+                        controls: controls.snapshot.summary,
+                        queue: inputQueue.diagnostics,
+                        sender: senderState.sendSummary,
+                        stats: stats,
+                        transport: transport,
+                        relay: relayState(),
+                        error: error
+                    ))
+                }
+                controls.stop()
                 inputQueue.stop()
                 await sender.value
                 throw error
             }
+            NSLog("PLANK video summary: session=%@ elapsed=%.1fs decoder=[%@] received=%llu decoded=%llu",
+                  sessionLabel,
+                  Double(DispatchTime.now().uptimeNanoseconds - sessionStart) / 1_000_000_000,
+                  Self.decoderSummary(recovery), receivedFrames, decodedFrames)
+            NSLog("PLANK control summary: session=%@ %@", sessionLabel, controls.snapshot.summary)
+            controls.stop()
             inputQueue.stop()
             await sender.value
         }
         try await withTaskCancellationHandler {
             try await worker.value
         } onCancel: {
+            controlLifetime.requestStop()
             inputQueue.stop()
             worker.cancel()
         }
+    }
+
+    private static func failureKindName(_ kind: UInt32) -> String {
+        switch Int(kind) {
+        case Int(PLANK_VISION_FAILURE_TERMINATED): return "transport terminated"
+        case Int(PLANK_VISION_FAILURE_CANCELLED): return "cancelled"
+        case Int(PLANK_VISION_FAILURE_INVALID_PAYLOAD): return "invalid or empty payload"
+        case Int(PLANK_VISION_FAILURE_BUFFER_LIMIT): return "buffer limit"
+        case Int(PLANK_VISION_FAILURE_QUEUE_FULL): return "native input queue full"
+        case Int(PLANK_VISION_FAILURE_INTERNAL): return "internal error"
+        default: return "none recorded"
+        }
+    }
+
+    private static func laneName(_ lane: UInt32) -> String {
+        switch Int(lane) {
+        case Int(PLANK_VISION_LANE_VIDEO): return "video"
+        case Int(PLANK_VISION_LANE_INPUT): return "input"
+        case Int(PLANK_VISION_LANE_DATA): return "data"
+        case Int(PLANK_VISION_LANE_AUDIO): return "audio"
+        default: return "-"
+        }
+    }
+
+    /// The first terminal transport failure and the endpoint's close reason.
+    private static func firstFailure(_ transport: OpaquePointer) -> String {
+        var failure = PlankVisionTransportFailure()
+        var reason = [CChar](repeating: 0, count: 256)
+        _ = plank_vision_transport_first_failure(transport, &failure, &reason, reason.count)
+        let text = String(cString: reason)
+        var summary = failureKindName(failure.kind)
+        if failure.kind != UInt32(PLANK_VISION_FAILURE_NONE) {
+            summary += " lane=\(laneName(failure.lane)) native=\(failure.native_result)" +
+                " state=\(failure.endpoint_state)"
+        }
+        if !text.isEmpty { summary += " reason=\"\(text)\"" }
+        return summary
+    }
+
+    fileprivate static func failureSuffix(_ transport: OpaquePointer) -> String {
+        ": " + firstFailure(transport) + "."
+    }
+
+    private static func decoderSummary(_ recovery: PlankVideoDecoderRecovery) -> String {
+        "active=\(recovery.usesHardware ? "VideoToolbox" : "FFmpeg")" +
+            " badData=\(recovery.badDataRejections) resumed=\(recovery.resumptions)" +
+            " hardwareFailures=\(recovery.hardwareFailures)" +
+            " awaitingKeyFrame=\(recovery.awaitingKeyFrame)"
+    }
+
+    private static func logResumption(_ resumption: PlankVideoDecoderRecovery.Resumption?) {
+        guard let resumption else { return }
+        NSLog("PLANK video resumed: decoder=%@ reason=%@ waited=%.0fms discarded=%ld keyframeRequests=%ld",
+              resumption.hardware ? "VideoToolbox" : "FFmpeg", resumption.reason.rawValue,
+              Double(resumption.waitedNanos) / 1_000_000,
+              resumption.discardedFrames, resumption.keyFrameRequests)
+    }
+
+    private static func failureSnapshot(
+        session: String,
+        elapsedNanos: UInt64,
+        lastFrameNumber: UInt64?,
+        lastFrameAgeNanos: UInt64?,
+        received: UInt64,
+        decoded: UInt64,
+        decoder: String,
+        controls: String,
+        queue: PlankInputQueueDiagnostics,
+        sender: (accepted: UInt64, maxNanos: UInt64, failedNanos: UInt64),
+        stats: PlankVisionVideoStats,
+        transport: OpaquePointer,
+        relay: String,
+        error: Error
+    ) -> String {
+        func ms(_ nanos: UInt64) -> String { String(format: "%.1fms", Double(nanos) / 1_000_000) }
+        let frame = lastFrameNumber.map { "#\($0)" } ?? "none"
+        let frameAge = lastFrameAgeNanos.map(ms) ?? "-"
+        // Accepted counts Client submissions; a two-axis scroll is two native packets.
+        let backlog = Int64(bitPattern: sender.accepted &- stats.input_packets_sent)
+        return "PLANK session failure: session=\(session)" +
+            String(format: " elapsed=%.1fs", Double(elapsedNanos) / 1_000_000_000) +
+            " first=[\(firstFailure(transport))]" +
+            " video=[last=\(frame) age=\(frameAge) received=\(received) decoded=\(decoded)]" +
+            " decoder=[\(decoder)]" +
+            " controls=[\(controls)]" +
+            " inputQueue=[depth=\(queue.depth) oldest=\(ms(queue.oldestAgeNanos))" +
+            " highWater=\(queue.highWaterDepth) maxDrainAge=\(ms(queue.maxDrainAgeNanos))]" +
+            " send=[accepted=\(sender.accepted) nativeSent=\(stats.input_packets_sent)" +
+            " nativeBacklog=\(backlog) maxSubmit=\(ms(sender.maxNanos))" +
+            " failedSubmit=\(sender.failedNanos == 0 ? "none" : ms(sender.failedNanos))]" +
+            " quic=[rtt=\(stats.quic_rtt_us)us lost=\(stats.quic_packets_lost)" +
+            " kyprotoDrops=\(stats.kyproto_packets_dropped)]" +
+            " relay=[\(relay)]" +
+            " error=\"\(error.localizedDescription)\""
     }
 
     private static func send(

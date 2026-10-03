@@ -3,6 +3,15 @@
 Status: proposed implementation plan; no handoff code is included in this checkpoint.
 Prepared September 30, 2026 for coordinated execution across the three repositories.
 
+Contract frozen, revision `plank-drawing-handoff-v1+r1`. The canonical contract is
+`docs/relay-drawing-handoff-contract.md` in `cnoellert/plank-tablet-relay`; shared
+fixtures are mirrored here at
+`visionos-native/Tests/Fixtures/plank-drawing-handoff-v1`. Where the contract and
+this plan differ, the contract governs: version 1 `routes` are IPv4 only because
+the raw drawing listener is `AF_INET` only, and unknown descriptor members are
+rejected rather than ignored. The contract also carries the pin-migration
+conflict rule and the per-repository test flags.
+
 ## Goal
 
 After commissioning a Relay in the standalone Setup app, tap **Use in PLANK**

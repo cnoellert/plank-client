@@ -11,6 +11,10 @@ endif()
 add_executable(PlankVision MACOSX_BUNDLE
     Bridge/PlankAddress.c
     Bridge/PlankAddress.h
+    Bridge/PlankAudioDecoder.c
+    Bridge/PlankAudioDecoder.h
+    Bridge/PlankAudioRing.c
+    Bridge/PlankAudioRing.h
     Bridge/PlankTransportBridge.c
     Bridge/PlankTransportBridge.h
     Bridge/PlankRawHidFrame.c
@@ -19,16 +23,28 @@ add_executable(PlankVision MACOSX_BUNDLE
     Bridge/PlankVideoDecoder.h
     Sources/PlankVisionApp.swift
     Sources/Models/HostBookmark.swift
+    Sources/Models/PlankAudioFormat.swift
+    Sources/Models/PlankAudioLevel.swift
+    Sources/Models/PlankStreamRequest.swift
     Sources/Services/HostDiscovery.swift
     Sources/Services/HostStore.swift
+    Sources/Services/PlankAudioOutput.swift
+    Sources/Services/PlankAudioReceiver.swift
     Sources/Services/PlankHTTPClient.swift
     Sources/Services/PlankCoreClient.swift
     Sources/Services/PlankSessionStartupDeadline.swift
     Sources/Services/PlankHardwareVideoDecoder.swift
+    Sources/Services/PlankVideoDecoderRecovery.swift
+    Sources/Services/PlankControlReceiver.swift
+    Sources/Services/PlankSessionFocus.swift
+    Sources/Services/PlankMouseCapture.swift
+    Sources/Services/PlankLiveBitrate.swift
+    Sources/Services/PlankTimingCapture.swift
     Sources/Services/PlankSessionEngine.swift
     Sources/Views/AddHostView.swift
     Sources/Views/HostBrowserView.swift
     Sources/Views/HostDetailView.swift
+    Sources/Views/PlankSessionControls.swift
     Sources/Views/PlankMetalVideoView.swift
     Sources/Views/RemoteDesktopView.swift
     Sources/Views/SettingsView.swift
@@ -119,11 +135,31 @@ if(PLANK_RELAY_SOURCE_DIR)
     target_compile_options(PlankVision PRIVATE
         "$<$<COMPILE_LANGUAGE:Swift>:-DPLANK_TABLET_RELAY>")
     target_sources(PlankVision PRIVATE
+        Sources/Models/PlankDrawingHandoff.swift
+        Sources/Models/PlankRelayRegistry.swift
+        Sources/Services/PlankDrawingIdentityStore.swift
         Sources/Services/PlankRelayPairing.swift
+        Sources/Services/PlankRelayApprovalRoutes.swift
         Sources/Services/PlankRelayLiveLink.swift
         Sources/Services/PlankWacomPreflight.swift
-        Sources/Services/PlankTabletInputPolicy.swift)
+        Sources/Services/PlankTabletInputPolicy.swift
+        Sources/Views/PlankRelayRegistrationSheet.swift)
 endif()
+
+# Host audio is decoded with xiph libopus, matching the desktop Client's
+# multistream decoder and packet-loss concealment. Build the pinned,
+# checksum-verified release with scripts/build-visionos-opus.sh.
+set(PLANK_OPUS_DIR "" CACHE PATH "Path to the visionOS libopus installation")
+if(PLANK_OPUS_DIR)
+    if(NOT EXISTS "${PLANK_OPUS_DIR}/lib/libopus.a" OR
+       NOT EXISTS "${PLANK_OPUS_DIR}/include/opus/opus_multistream.h")
+        message(FATAL_ERROR "PLANK_OPUS_DIR does not contain libopus")
+    endif()
+    target_include_directories(PlankVision PRIVATE "${PLANK_OPUS_DIR}/include/opus")
+    target_link_libraries(PlankVision PRIVATE "${PLANK_OPUS_DIR}/lib/libopus.a")
+    target_compile_definitions(PlankVision PRIVATE PLANK_OPUS_AUDIO=1)
+endif()
+target_link_libraries(PlankVision PRIVATE "-framework AVFAudio")
 
 set(PLANK_FFMPEG_DIR "" CACHE PATH "Path to the visionOS FFmpeg installation")
 if(PLANK_FFMPEG_DIR)
