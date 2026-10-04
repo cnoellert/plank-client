@@ -124,6 +124,7 @@ if(PLANK_RELAY_SOURCE_DIR)
         "${PLANK_RELAY_SOURCE_DIR}/src/link.c"
         "${PLANK_RELAY_SOURCE_DIR}/src/client_link.c"
         "${PLANK_RELAY_SOURCE_DIR}/src/client_pair.c"
+        "${PLANK_RELAY_SOURCE_DIR}/src/client_enrollment.c"
     )
     target_include_directories(PlankRelayCrypto PUBLIC
         "${PLANK_RELAY_SOURCE_DIR}/src"
@@ -136,6 +137,9 @@ if(PLANK_RELAY_SOURCE_DIR)
         "$<$<COMPILE_LANGUAGE:Swift>:-DPLANK_TABLET_RELAY>")
     target_sources(PlankVision PRIVATE
         Sources/Models/PlankDrawingHandoff.swift
+        Sources/Models/DrawingRegistrationRequest.swift
+        Sources/Models/DrawingRegistrationReceipt.swift
+        Sources/Services/PlankRelayEnrollment.swift
         Sources/Models/PlankRelayRegistry.swift
         Sources/Services/PlankDrawingIdentityStore.swift
         Sources/Services/PlankRelayPairing.swift

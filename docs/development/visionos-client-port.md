@@ -722,3 +722,19 @@ After the session controls close, the Client refreshes the canvas pointer style
 after restoring desktop key-window focus, and again when raw input eligibility
 changes. Native controls retain their system pointer while open. Whether this
 eliminates the reported lingering circle needs the headset retest.
+
+## Setup-mediated drawing enrollment candidate
+
+Unknown drawing identities now use Continue in Relay Setup followed by an
+explicit Allow PLANK, rather than the tablet-specific ExpressKey sequence.
+The signed apps exchange only a protected public approval receipt. PLANK proves
+its key and the drawing identity through the separate PLEN/1 Noise exchange
+before saving a pin and registering the Relay. Existing app-private keys, pins,
+picker choices and session input paths are preserved. Cancel, expiry and an
+unapproved or substituted callback cannot save a new pin.
+
+Build the matching managed Setup and raw daemon candidate described in
+`docs/setup-drawing-enrollment.md` in the raw Relay repository. This slice uses
+an existing TCP route for enrollment; registered-Relay Bluetooth transport
+selection remains separate. Source checks and signed provisioning pass; live
+cross-app registration, cancellation and reconnect acceptance are pending.
