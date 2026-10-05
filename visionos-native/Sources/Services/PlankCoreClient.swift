@@ -141,6 +141,7 @@ final class PlankCoreClient: ObservableObject {
     /// What the last or current session observed about the drawing link.
     /// Settings derives Connected/Unavailable from this, never from intent.
     @Published private(set) var tabletRelayLink: PlankRelayLinkObservation = .none
+    @Published private(set) var tabletRelayTransport: String?
     private var tabletRelayLinkTracker = PlankRelayLinkTracker()
 #endif
 
@@ -249,12 +250,14 @@ final class PlankCoreClient: ObservableObject {
         default:
             tabletRelayLinkTracker = PlankRelayLinkTracker()
             tabletRelayLink = tabletRelayLinkTracker.observation
+            tabletRelayTransport = tabletRelayLinkTracker.authenticatedRoute
         }
     }
 
     private func applyRelayLink(_ event: PlankRelayLinkEvent) {
         tabletRelayLinkTracker.apply(event)
         tabletRelayLink = tabletRelayLinkTracker.observation
+        tabletRelayTransport = tabletRelayLinkTracker.authenticatedRoute
     }
 
     private func continueWithoutTablet(status: String, whenUnavailableOnly: Bool = false) {
@@ -277,7 +280,9 @@ final class PlankCoreClient: ObservableObject {
         guard tabletSceneActive, tabletInputPolicy.shouldContinueWhenUnavailable else { return }
         let timeoutID = UUID()
         tabletWaitTimeoutID = timeoutID
-        let bluetooth = UserDefaults.standard.bool(forKey: "plank.vision.bluetoothDrawingTest")
+        let bluetooth = PlankRelayKeys.relayRegistry().activeRelay?.connectionRoutes.contains {
+            if case .bluetooth = $0 { return true }; return false
+        } ?? false
         let grace = PlankRelayConnectionTiming.availabilityGraceSeconds(bluetooth: bluetooth)
         NSLog("PLANK tablet availability grace: transport=%@ seconds=%d", bluetooth ? "Bluetooth" : "network", grace)
         Task { [weak self] in

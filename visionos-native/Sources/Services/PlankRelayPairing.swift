@@ -508,16 +508,19 @@ extension PlankRelayKeys {
     /// caller still completes the authenticated drawing handshake against this
     /// pin before reporting a connection or forwarding any input.
     static func savedDrawingConnection(attempt: Int) ->
-        (endpoint: NWEndpoint, account: String, routeLabel: String)? {
-        guard let selection = savedDrawingSelection(),
-              let route = selection.route(forAttempt: attempt),
-              let port = NWEndpoint.Port(rawValue: route.port) else { return nil }
-        let account = PlankDrawingIdentityAccounts
-            .identityAccount(selection.drawingIdentity)
+        (endpoint: NWEndpoint?, account: String, routeLabel: String, bluetoothIdentifier: UUID?)? {
+        guard let relay = relayRegistry().activeRelay,
+              let route = relay.connectionRoute(attempt: attempt) else { return nil }
+        let account = PlankDrawingIdentityAccounts.identityAccount(relay.drawingIdentity)
         guard (try? read(account))?.count == 32 else { return nil }
-        return (.hostPort(host: NWEndpoint.Host(route.address), port: port),
-                account, route.displayLabel)
+        switch route {
+        case let .bluetooth(identifier): return (nil, account, route.label, identifier)
+        case let .network(network):
+            guard let port = NWEndpoint.Port(rawValue: network.port) else { return nil }
+            return (.hostPort(host: NWEndpoint.Host(network.address), port: port), account, route.label, nil)
+        }
     }
+
 }
 
 // MARK: - App-link inbox
@@ -625,6 +628,14 @@ final class PlankRelayHandoffInbox: ObservableObject {
     func select(_ choice: PlankRelaySelection, desktopSessionActive: Bool) {
         var current = PlankRelayKeys.relayRegistry()
         _ = current.request(choice, desktopSessionActive: desktopSessionActive)
+        PlankRelayKeys.saveRelayRegistry(current)
+        registry = current
+    }
+
+    func selectTransport(_ choice: PlankRelayTransportPreference, desktopSessionActive: Bool) {
+        var current = PlankRelayKeys.relayRegistry()
+        guard let relay = current.activeRelay else { return }
+        _ = current.requestTransport(choice, identity: relay.drawingIdentity, desktopSessionActive: desktopSessionActive)
         PlankRelayKeys.saveRelayRegistry(current)
         registry = current
     }

@@ -738,3 +738,16 @@ Build the matching managed Setup and raw daemon candidate described in
 an existing TCP route for enrollment; registered-Relay Bluetooth transport
 selection remains separate. Source checks and signed provisioning pass; live
 cross-app registration, cancellation and reconnect acceptance are pending.
+
+## Registered Relay transport candidate
+
+The Tablet Relay picker stores Automatic, Bluetooth or Network per registered
+Relay. Only known transports are offered; changing a live session's choice waits
+for disconnect. The global Bluetooth development switch is removed. Setup's V2
+handoff carries a verified peripheral hint, and the Client still proves the
+saved drawing identity. The connection detail reports the authenticated route.
+Existing V1 network handoffs, approvals, bitrate, audio and diagnostics remain.
+
+Focused source checks pass. The signed Client/Setup candidate requires a live
+Bluetooth handoff, selection and reconnect pass before acceptance. Complete
+package rebuilding and Bluetooth-only/interruption qualification remain separate.

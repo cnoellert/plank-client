@@ -2,7 +2,7 @@
 import Foundation
 @preconcurrency import CoreBluetooth
 
-// First drawing spike: nearby discovery is only a route hint. The raw Noise
+// Setup supplies a peripheral route hint; discovery never selects another Relay. The raw Noise
 // handshake must still authenticate the selected Relay's pinned public key.
 enum PlankDrawingBluetoothError: Error, LocalizedError {
     case invalidState, timedOut, protocolError
@@ -20,11 +20,13 @@ enum PlankDrawingBluetoothError: Error, LocalizedError {
 final class PlankRelayBluetoothTransport: PlankRelayByteTransport, @unchecked Sendable {
     @MainActor private var session: PlankDrawingBluetoothSession?
     private let outbox = PlankRelayWriteQueue()
+    private let identifier: UUID
+    init(identifier: UUID) { self.identifier = identifier }
     func start(queue: DispatchQueue, ready: @escaping @Sendable () -> Void,
                failed: @escaping @Sendable (any Error) -> Void) {
         Task { @MainActor in
             guard !outbox.isCancelled else { return }
-            let candidate = PlankDrawingBluetoothSession(
+            let candidate = PlankDrawingBluetoothSession(identifier: identifier,
                 ready: { queue.async(execute: ready) },
                 failed: { error in queue.async { failed(error) } })
             session = candidate
@@ -64,6 +66,7 @@ private final class PlankDrawingBluetoothSession: NSObject,
     @preconcurrency CBCentralManagerDelegate, @preconcurrency CBPeripheralDelegate {
     private static let service = CBUUID(string: "462F3A10-7A31-4AB3-9E7F-C36AF495ECF0")
     private static let psm = CBUUID(string: "462F3A17-7A31-4AB3-9E7F-C36AF495ECF0")
+    private let identifier: UUID
     private let ready: @Sendable () -> Void
     private let failed: @Sendable (any Error) -> Void
     private var central: CBCentralManager!
@@ -79,8 +82,8 @@ private final class PlankDrawingBluetoothSession: NSObject,
     private var channel: CBL2CAPChannel?
     fileprivate var stream: PlankDrawingL2CAPStream?
 
-    init(ready: @escaping @Sendable () -> Void, failed: @escaping @Sendable (any Error) -> Void) {
-        self.ready = ready; self.failed = failed
+    init(identifier: UUID, ready: @escaping @Sendable () -> Void, failed: @escaping @Sendable (any Error) -> Void) {
+        self.identifier = identifier; self.ready = ready; self.failed = failed
     }
     func start() {
         central = CBCentralManager(delegate: self, queue: .main)
@@ -98,7 +101,8 @@ private final class PlankDrawingBluetoothSession: NSObject,
             // These peripherals are route hints; the saved Noise pin remains
             // the only authority. Still collect nearby advertising candidates
             // so this spike fails closed when the choice is ambiguous.
-            for connected in central.retrieveConnectedPeripherals(withServices: [Self.service]) {
+            for connected in central.retrievePeripherals(withIdentifiers: [identifier]) +
+                central.retrieveConnectedPeripherals(withServices: [Self.service]) where connected.identifier == identifier {
                 candidates[connected.identifier] = connected
             }
             NSLog("PLANK Bluetooth discovery: systemConnected=%d", candidates.count)
@@ -110,7 +114,7 @@ private final class PlankDrawingBluetoothSession: NSObject,
     }
     func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
                         advertisementData: [String: Any], rssi RSSI: NSNumber) {
-        guard !closed, scanning else { return }
+        guard !closed, scanning, peripheral.identifier == identifier else { return }
         candidates[peripheral.identifier] = peripheral
         scheduleCandidateSelection()
     }
@@ -120,8 +124,8 @@ private final class PlankDrawingBluetoothSession: NSObject,
                 do { try await Task.sleep(for: .seconds(2)) } catch { return }
                 guard let self, !closed else { return }
                 self.central.stopScan(); scanning = false
-                guard candidates.count == 1, let found = candidates.values.first else {
-                    close(PlankDrawingBluetoothError.network("More than one Bluetooth Relay is nearby. This drawing test requires one nearby Relay.")); return
+                guard let found = candidates[identifier] else {
+                    close(PlankDrawingBluetoothError.network("The registered Bluetooth Relay is not nearby. Open Relay Setup to refresh its connection.")); return
                 }
                 self.peripheral = found
                 found.delegate = self

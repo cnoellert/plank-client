@@ -20,19 +20,32 @@ enum PlankRelayEnrollmentProof {
         }
         let routeDeadline = ContinuousClock.now + .seconds(40)
         var lastError: any Error = PlankRelayError.connectionTimedOut
-        for route in descriptor.routes {
+        let routes = descriptor.routes.map(PlankRelayDrawingRoute.network) +
+            (descriptor.bluetoothIdentifier.map { [PlankRelayDrawingRoute.bluetooth($0)] } ?? [])
+        for route in routes {
             try Task.checkCancellation()
-            guard ContinuousClock.now < routeDeadline,
-                  let port = NWEndpoint.Port(rawValue: route.port) else { break }
-            let stream = PlankRelayTCP(endpoint: .hostPort(host: NWEndpoint.Host(route.address), port: port))
+            guard ContinuousClock.now < routeDeadline else { break }
+            let transport: any PlankRelayByteTransport
+            switch route {
+            case let .network(network):
+                guard let port = NWEndpoint.Port(rawValue: network.port) else { continue }
+                transport = PlankRelayTCPTransport(endpoint: .hostPort(host: NWEndpoint.Host(network.address), port: port))
+            case let .bluetooth(identifier): transport = PlankRelayBluetoothTransport(identifier: identifier)
+            }
+            let stream = PlankEnrollmentByteStream(transport: transport)
             defer { stream.cancel() }
             // Only connection establishment retries alternate routes. Once a
             // proof is sent it may have claimed the single-use grant; never
             // replay that mutation after an ambiguous result.
-            do { try await stream.connect() }
+            let connectionDeadline: ContinuousClock.Instant
+            switch route {
+            case .network: connectionDeadline = min(routeDeadline, ContinuousClock.now + .seconds(6))
+            case .bluetooth: connectionDeadline = routeDeadline
+            }
+            do { try await stream.connect(deadline: connectionDeadline) }
             catch {
                 try Task.checkCancellation()
-                guard PlankRelayApprovalRoutes.canTryNextRoute(after: error) else { throw error }
+                guard PlankRelayApprovalRoutes.canTryNextRoute(after: error) || error is PlankDrawingBluetoothError else { throw error }
                 lastError = error
                 continue
             }
@@ -42,7 +55,7 @@ enum PlankRelayEnrollmentProof {
         throw lastError
     }
 
-    private static func proveConnected(_ stream: PlankRelayTCP, privateKey: Data,
+    private static func proveConnected(_ stream: PlankEnrollmentByteStream, privateKey: Data,
                                       target: Data, requestID: Data) async throws {
         let codec = privateKey.withUnsafeBytes { privateBytes in
             target.withUnsafeBytes { targetBytes in
@@ -92,5 +105,72 @@ enum PlankRelayEnrollmentProof {
                 }
             }
         } onCancel: { stream.cancel() }
+    }
+}
+
+
+// The PLEN proof is identical on both byte transports and never acquires
+// capture. A transport retry is allowed only before its first proof byte.
+private final class PlankEnrollmentByteStream: @unchecked Sendable {
+    let transport: any PlankRelayByteTransport
+    private let queue = DispatchQueue(label: "la.instinctual.plank.enrollment")
+    private let lock = NSLock()
+    private var waiter: PlankEnrollmentConnectWaiter?
+    init(transport: any PlankRelayByteTransport) { self.transport = transport }
+    func connect(deadline: ContinuousClock.Instant) async throws {
+        let timeout = Task {
+            try? await Task.sleep(until: deadline, clock: .continuous)
+            if !Task.isCancelled { cancel() }
+        }
+        defer { timeout.cancel() }
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let pending = PlankEnrollmentConnectWaiter(continuation)
+                lock.withLock { waiter = pending }
+                if Task.isCancelled { cancel(); return }
+                transport.start(queue: queue,
+                    ready: { pending.finish(.success(())) },
+                    failed: { pending.finish(.failure($0)) })
+            }
+        } onCancel: { self.cancel() }
+    }
+    func send(_ data: Data) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            transport.send(data) { error in
+                if let error { continuation.resume(throwing: error) } else { continuation.resume() }
+            }
+        }
+    }
+    func receive() async throws -> Data {
+        try await withCheckedThrowingContinuation { continuation in
+            transport.receive { data, closed, error in
+                if let error { continuation.resume(throwing: error) }
+                else if let data, !data.isEmpty { continuation.resume(returning: data) }
+                else { continuation.resume(throwing: PlankRelayError.connectionClosed) }
+            }
+        }
+    }
+    func cancel() {
+        lock.withLock { waiter }?.finish(.failure(PlankRelayError.connectionTimedOut))
+        transport.cancel()
+    }
+}
+
+private final class PlankEnrollmentConnectWaiter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Void, Error>?
+
+    init(_ continuation: CheckedContinuation<Void, Error>) {
+        self.continuation = continuation
+    }
+
+    @discardableResult
+    func finish(_ result: Result<Void, Error>) -> Bool {
+        lock.lock()
+        let pending = continuation
+        continuation = nil
+        lock.unlock()
+        pending?.resume(with: result)
+        return pending != nil
     }
 }

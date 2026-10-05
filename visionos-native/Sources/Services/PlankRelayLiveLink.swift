@@ -47,7 +47,7 @@ final class PlankRelayLiveLink: @unchecked Sendable {
     private var lastHostControl: UInt64 = 0
     private var lastFlowLog = DispatchTime.now().uptimeNanoseconds
 
-    init(endpoint: NWEndpoint, hostFeatures: UInt32, bluetooth: Bool = false,
+    init(endpoint: NWEndpoint?, hostFeatures: UInt32, bluetoothIdentifier: UUID? = nil,
          preflight: PlankWacomPreflight,
          clientPrivateKey: Data, relayPublicKey: Data,
          deliverTabletFrame: @escaping @Sendable (Data) -> Void,
@@ -55,7 +55,8 @@ final class PlankRelayLiveLink: @unchecked Sendable {
          onReady: @escaping @Sendable () -> Void,
          onUnexpectedClose: @escaping @Sendable (PlankRelayCloseReason) -> Void,
          acceptGeneration: @escaping @Sendable (UInt16) -> Bool) throws {
-        guard clientPrivateKey.count == 32, relayPublicKey.count == 32 else {
+        let bluetooth = bluetoothIdentifier != nil
+        guard clientPrivateKey.count == 32, relayPublicKey.count == 32, bluetooth || endpoint != nil else {
             throw PlankRelayLiveError.invalidConfiguration
         }
         let created = clientPrivateKey.withUnsafeBytes { clientBytes in
@@ -69,7 +70,14 @@ final class PlankRelayLiveLink: @unchecked Sendable {
         }
         guard let created else { throw PlankRelayLiveError.invalidConfiguration }
         codec = created
-        connection = bluetooth ? PlankRelayBluetoothTransport() : PlankRelayTCPTransport(endpoint: endpoint)
+        if let bluetoothIdentifier {
+            connection = PlankRelayBluetoothTransport(identifier: bluetoothIdentifier)
+        } else if let endpoint {
+            connection = PlankRelayTCPTransport(endpoint: endpoint)
+        } else {
+            pltr_client_link_destroy(created)
+            throw PlankRelayLiveError.invalidConfiguration
+        }
         self.bluetooth = bluetooth
         self.hostFeatures = hostFeatures
         self.preflight = preflight
@@ -490,7 +498,7 @@ final class PlankRelaySessionBridge: @unchecked Sendable {
         // candidate is a hint that must still pass the authenticated drawing
         // handshake. Only an install still on its earlier address/service
         // pairing uses that legacy lookup.
-        let resolved: (endpoint: NWEndpoint, account: String, routeLabel: String?)
+        let resolved: (endpoint: NWEndpoint?, account: String, routeLabel: String?, bluetoothIdentifier: UUID?)
         switch selection {
         case .off:
             return
@@ -500,7 +508,7 @@ final class PlankRelaySessionBridge: @unchecked Sendable {
                 reportLink(.failed)
                 return
             }
-            resolved = (drawing.endpoint, drawing.account, drawing.routeLabel)
+            resolved = (drawing.endpoint, drawing.account, drawing.routeLabel, drawing.bluetoothIdentifier)
         case .earlierPairing:
             guard let saved = PlankRelayKeys.savedConnection(
                 preferManualFallback: preferManualFallback
@@ -509,7 +517,7 @@ final class PlankRelaySessionBridge: @unchecked Sendable {
                 reportLink(.failed)
                 return
             }
-            resolved = (saved.endpoint, saved.account, nil)
+            resolved = (saved.endpoint, saved.account, nil, nil)
         }
         guard let privateKey = try? PlankRelayKeys.clientPrivateKey(),
               let relayKey = try? PlankRelayKeys.read(resolved.account),
@@ -518,16 +526,19 @@ final class PlankRelaySessionBridge: @unchecked Sendable {
             reportLink(.failed)
             return
         }
-        let bluetooth = UserDefaults.standard.bool(forKey: "plank.vision.bluetoothDrawingTest")
+        let bluetooth = resolved.bluetoothIdentifier != nil
         let identifier = UUID()
         let candidate = try? PlankRelayLiveLink(
-            endpoint: resolved.endpoint, hostFeatures: hostFeatures, bluetooth: bluetooth,
+            endpoint: resolved.endpoint, hostFeatures: hostFeatures, bluetoothIdentifier: resolved.bluetoothIdentifier,
             preflight: preflight,
             clientPrivateKey: privateKey, relayPublicKey: relayKey,
             deliverTabletFrame: { [weak self] frame in
                 self?.deliverTabletFrame(frame)
             }, reportState: reportState,
-            onReady: { [weak self] in self?.relayReady(identifier) },
+            onReady: { [weak self] in
+                self?.reportState("Connected to Wacom Relay over \(resolved.routeLabel ?? "Network").")
+                self?.relayReady(identifier, route: resolved.routeLabel ?? "Network")
+            },
             onUnexpectedClose: { [weak self] reason in
                 self?.relayClosed(identifier, hostFeatures: hostFeatures, reason: reason)
             }, acceptGeneration: { [weak self] generation in
@@ -554,7 +565,7 @@ final class PlankRelaySessionBridge: @unchecked Sendable {
             } else if let routeLabel = resolved.routeLabel {
                 // The actual route when it is known; never an inferred one.
                 reportState("Connecting to the approved Wacom Relay over \(routeLabel)…")
-            } else if case .hostPort = resolved.endpoint {
+            } else if case .hostPort? = resolved.endpoint {
                 reportState("Connecting to the paired Wacom Relay by address…")
             } else {
                 reportState("Finding the paired Wacom Relay nearby…")
@@ -641,7 +652,7 @@ final class PlankRelaySessionBridge: @unchecked Sendable {
         }
     }
 
-    private func relayReady(_ identifier: UUID) {
+    private func relayReady(_ identifier: UUID, route: String) {
         lock.lock()
         let current = !ended && linkID == identifier
         if current {
@@ -649,7 +660,7 @@ final class PlankRelaySessionBridge: @unchecked Sendable {
             readyLinkID = identifier
         }
         lock.unlock()
-        if current { reportLink(.ready) }
+        if current { reportLink(.authenticatedRoute(route)); reportLink(.ready) }
     }
 
     private func acceptGeneration(_ generation: UInt16) -> Bool {
