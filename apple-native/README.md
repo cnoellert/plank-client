@@ -9,6 +9,10 @@ bookmark domain; it does not import existing applications' private state.
 The pilot is not a shipping replacement for the desktop Client. A signed build
 and passing checks do not qualify streaming or physical tablet behavior.
 
+The [native Mac hit list](../docs/development/plans/native-macos-hit-list.md)
+records the accepted build-9 checkpoint and the next quality, multiple-screen
+and webcam slices, with Wacom and release gates.
+
 ## Wacom boundary
 
 The initial Mac UI offers **Off** or **USB Wacom on this Mac**. Source selection
