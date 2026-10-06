@@ -366,7 +366,9 @@ final class MacRelayPeer: @unchecked Sendable {
         // Reject duplicate members before Foundation can collapse them. The
         // shared scanner also bounds depth and rejects malformed Unicode.
         guard data.count <= 4096 else { return nil }
-        guard let document = PlankJSONReader.parse(data), unique(document),
+        guard let document = PlankJSONReader.parse(data), unique(document), let members = document.members,
+              members.first(where: { $0.name == "version" })?.value.integerValue == 1,
+              let request = members.first(where: { $0.name == "id" })?.value.integerValue, (1...1_000_000).contains(request),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String:Any],
               let version = object["version"] as? NSNumber, CFGetTypeID(version) != CFBooleanGetTypeID(), version.intValue == 1, version.doubleValue == 1 else { return nil }
         return object

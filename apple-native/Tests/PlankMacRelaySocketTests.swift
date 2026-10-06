@@ -49,6 +49,12 @@ import Foundation
         try await send(duplicate,invalid)
         let rejected=try await receive(duplicate);precondition(rejected.isEmpty)
         duplicate.cancel()
+        let fractional=NWConnection(host:"127.0.0.1",port:port,using:.tcp);try await connect(fractional)
+        let fraction=Data(#"{"version":1,"id":1.0,"op":"status"}"#.utf8)
+        var fractionalRecord=Data("PLTRTCP1".utf8);fractionalRecord.append(0);fractionalRecord.append(UInt8(fraction.count));fractionalRecord.append(0);fractionalRecord.append(fraction)
+        try await send(fractional,fractionalRecord)
+        let fractionalReply=try await receive(fractional);precondition(fractionalReply.isEmpty)
+        fractional.cancel()
         precondition(!peers.peers.isEmpty)
         let authenticatedStatus = peers.peers[0].status(id:2,authorized:true)!
         let approvedObject = try JSONSerialization.jsonObject(with:authenticatedStatus) as! [String:Any]
