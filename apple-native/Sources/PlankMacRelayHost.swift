@@ -133,7 +133,7 @@ final class MacRelayNative: @unchecked Sendable {
     let drawingKey: Data
     init?(root: URL) {
         for part in ["drawing","setup"] {
-            do { try FileManager.default.createDirectory(at: root.appendingPathComponent(part), withIntermediateDirectories: false, attributes: [.posixPermissions:0o700]) }
+            do { try FileManager.default.createDirectory(at: root.appendingPathComponent(part), withIntermediateDirectories: true, attributes: [.posixPermissions:0o700]) }
             catch { return nil }
         }
         guard let store = root.appendingPathComponent("drawing").path.withCString({ plank_mac_relay_store_create($0) }) else { return nil }

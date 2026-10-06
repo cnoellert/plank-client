@@ -162,3 +162,12 @@ channel numbers. A separate process using the actual Setup client now completes
 both discovery and local approval against the Mac server fixture. Physical Mac
 Relay drawing acceptance remains pending. Peer-to-peer Wi-Fi was not enabled as
 part of this fix; network reachability is a separate live gate.
+
+### Build 13 — reopen existing identity storage
+
+After the first launch, FileManager's nonrecursive create-directory call refused
+the existing identity folders (Cocoa error 516). Build 13 allows those existing
+folders to be reopened; the native stores still enforce owner, private mode,
+no-follow paths and exclusive locks. The socket suite now opens, closes and
+reopens the Swift native adapter and requires both public identities to remain
+unchanged. Build 13 includes build 12's channel fix; live acceptance is pending.

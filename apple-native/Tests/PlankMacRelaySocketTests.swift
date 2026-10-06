@@ -9,6 +9,10 @@ import Foundation
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("plank-relay-socket-\(UUID())")
         try FileManager.default.createDirectory(at: root,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])
         defer { try? FileManager.default.removeItem(at: root) }
+        let reopenedRoot = root.appendingPathComponent("reopen")
+        try FileManager.default.createDirectory(at:reopenedRoot,withIntermediateDirectories:false,attributes:[.posixPermissions:0o700])
+        let firstKeys = stateKeys(reopenedRoot)
+        precondition(stateKeys(reopenedRoot) == firstKeys, "App restart must reopen the same private identities")
         guard let native = MacRelayNative(root: root) else { fatalError("state") }
         let listener = try NWListener(using:.tcp,on:.any)
         let peers = MacRelayTestPeers()
@@ -86,6 +90,10 @@ import Foundation
         for peer in peers.peers {peer.close("Test finished")};listener.cancel()
         try await Task.sleep(for:.milliseconds(100))
         print("Mac Relay real socket: fragmented discovery, bounded public metadata and duplicate-field refusal passed")
+    }
+    static func stateKeys(_ root:URL) -> [Data] {
+        guard let native = MacRelayNative(root:root) else { fatalError("Existing state could not reopen") }
+        return [native.setupKey,native.drawingKey]
     }
     static func connect(_ connection:NWConnection) async throws {
         try await withCheckedThrowingContinuation { (c:CheckedContinuation<Void,Error>) in
