@@ -24,10 +24,12 @@ create a fresh group. Identity, descriptors, reports and control replies remain
 unchanged. Focus suspension and Relay reconnects inside the same desktop
 transport retain their existing behavior.
 
-This uses the existing protocol and requires no Host package change. Focused
-bridge checks cover ordering, a new transport, and failures at every reset
-stage. Headset reconnect and display-mode acceptance remains pending; this
-does not address the separately observed native input receive queue overflow.
+This reset uses the existing protocol. Focused bridge checks cover ordering,
+a new transport, and failures at every reset stage. The current field checks
+and their limits are recorded in [the build 46 release checkpoint](TestFlight/0.1.0-46-preflight.md).
+The reset does not address the separately observed native input receive queue
+overflow. The tested Host also has the separately qualified packaged Wacom
+pressure policy; do not infer that policy is present on older Hosts.
 
 Generate the Xcode project:
 
