@@ -48,6 +48,8 @@ These are per-window presentation options, not changes to system preferences.
 Session controls restore the normal Mac pointer and keep their keyboard/mouse
 events local. Opening them releases held desktop keyboard/mouse input without
 releasing the Wacom. Closing them returns desktop input routing.
+Pointer hiding follows the topmost view under the mouse, so a revealed
+full-screen toolbar uses the native arrow even when it overlaps the video.
 
 ## Build
 

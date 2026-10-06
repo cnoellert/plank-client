@@ -22,9 +22,13 @@ struct PlankMacDesktop: View {
             ToolbarItem { Button {
                 if let desktopWindow { PlankMacDesktopWindow.configure(desktopWindow); desktopWindow.toggleFullScreen(nil) }
             } label: { Label("Full Screen", systemImage: "arrow.up.left.and.arrow.down.right") }
+                .onHover { if $0 { NSCursor.arrow.set() } }
                 .help("Enter or leave full screen").keyboardShortcut("f", modifiers: [.control, .command]) }
-            ToolbarItem { Button { controls.toggle() } label: { Label("Session Controls", systemImage: "slider.horizontal.3") }.popover(isPresented: $controls, arrowEdge: .bottom) { sessionControls } }
-            ToolbarItem { Button("Disconnect", role: .destructive) { client.disconnectSession(); dismissWindow(id: "desktop") } }
+            ToolbarItem { Button { controls.toggle() } label: { Label("Session Controls", systemImage: "slider.horizontal.3") }
+                .onHover { if $0 { NSCursor.arrow.set() } }
+                .popover(isPresented: $controls, arrowEdge: .bottom) { sessionControls } }
+            ToolbarItem { Button("Disconnect", role: .destructive) { client.disconnectSession(); dismissWindow(id: "desktop") }
+                .onHover { if $0 { NSCursor.arrow.set() } } }
         }
         .onDisappear { client.setTabletActive(false); if client.hasActiveDesktopSession { client.disconnectSession() } }
         .onChange(of: statistics) { _, enabled in client.setVideoDiagnosticsEnabled(enabled) }

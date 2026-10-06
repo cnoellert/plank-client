@@ -76,6 +76,33 @@ final class PlankMacMetalView: NSView {
         view.releaseInput()
         check(client.keys.count == 4 && !client.keys[3].1, "resumed key releases normally")
         check(client.tabletChanges == 0, "control dismissal does not recapture tablet")
+
+        // Full-screen toolbars overlap content without leaving its bounds.
+        // Exercise the actual input view beneath a real native control.
+        let root = NSView(frame: CGRect(x: 0, y: 0, width: 640, height: 360))
+        view.frame = root.bounds
+        root.addSubview(view)
+        window.contentView = root
+        view.display(PlankRenderedFrame(pixels: Data(count: 640 * 360 * 4), pixelBuffer: nil,
+            width: 640, height: 360, bytesPerRow: 640 * 4, frameNumber: 1))
+        view.layoutSubtreeIfNeeded()
+        let center = view.convert(NSPoint(x: 320, y: 180), to: nil)
+        check(view.ownsDesktopPoint(center), "uncovered video owns pointer")
+        let toolbar = NSButton(frame: root.bounds.insetBy(dx: 100, dy: 100))
+        root.addSubview(toolbar, positioned: .above, relativeTo: view)
+        check(!view.ownsDesktopPoint(center), "overlapping native toolbar excludes hidden cursor and remote routing")
+        let ownershipChanges = client.tabletChanges
+        NSCursor.crosshair.set()
+        let hover = NSEvent.mouseEvent(with: .mouseMoved, location: center, modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 1, clickCount: 0, pressure: 0)!
+        view.cursorUpdate(with: hover)
+        check(NSCursor.current === NSCursor.arrow, "toolbar cursor update restores visible arrow")
+        check(client.tabletChanges == ownershipChanges, "toolbar hover leaves tablet capture unchanged")
+        toolbar.removeFromSuperview()
+        check(view.ownsDesktopPoint(center), "desktop routing resumes after toolbar retracts")
+        view.setLocalControlsPresented(true)
+        check(!view.ownsDesktopPoint(center), "popover remains local even over video")
+        view.detachWindowPresentation()
         print("Mac local controls and fullscreen delegate: \(checks) checks passed")
     }
 }

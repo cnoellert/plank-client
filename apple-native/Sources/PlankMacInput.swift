@@ -38,6 +38,7 @@ final class PlankMacInputView: NSView {
     private var replacingSystemCursor = false
     private var localControlsPresented = false
     private var windowPresentation: PlankMacWindowPresentation?
+    private var cursorMonitor: Any?
     private let hiddenCursor = NSCursor(image: NSImage(size: NSSize(width: 1, height: 1)), hotSpot: .zero)
     private var canvas: CGRect { PlankMacCoordinates.canvas(in: bounds, width: width, height: height) }
     override var isFlipped: Bool { true }
@@ -56,13 +57,25 @@ final class PlankMacInputView: NSView {
         }
     }
     required init?(coder: NSCoder) { fatalError("init(coder:)") }
-    isolated deinit { observations.forEach(NotificationCenter.default.removeObserver) }
+    isolated deinit {
+        observations.forEach(NotificationCenter.default.removeObserver)
+        if let cursorMonitor { NSEvent.removeMonitor(cursorMonitor) }
+    }
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         detachWindowPresentation()
         if let window {
             PlankMacDesktopWindow.configure(window)
             windowPresentation = PlankMacWindowPresentation(window: window)
+            // The full-screen toolbar can cover the canvas without causing
+            // mouseExited. Restore the local pointer before native controls
+            // receive their events; never consume or reroute those events.
+            cursorMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged,
+                .rightMouseDragged, .otherMouseDragged, .cursorUpdate, .leftMouseDown,
+                .rightMouseDown, .otherMouseDown, .scrollWheel]) { [weak self] event in
+                self?.updatePointerAppearance(for: event)
+                return event
+            }
             window.acceptsMouseMovedEvents = true; window.makeFirstResponder(self)
         }
         // SwiftUI's window reference is updated after the representable has
@@ -80,7 +93,10 @@ final class PlankMacInputView: NSView {
         if !NSApp.isActive || window?.isKeyWindow != true || localControlsPresented { restoreLocalCursor() }
         if !owned { releaseInput() }; client.setTabletActive(owned)
     }
-    func detachWindowPresentation() { windowPresentation?.remove(); windowPresentation = nil }
+    func detachWindowPresentation() {
+        windowPresentation?.remove(); windowPresentation = nil
+        if let cursorMonitor { NSEvent.removeMonitor(cursorMonitor); self.cursorMonitor = nil }
+    }
     func setLocalControlsPresented(_ presented: Bool) {
         guard localControlsPresented != presented else { return }
         localControlsPresented = presented
@@ -113,6 +129,7 @@ final class PlankMacInputView: NSView {
     func shape(_ shape: PlankRemoteCursorShape?) { cursorOverlay.cursorShape(shape); refreshNativeCursor() }
     private func pointer(_ event: NSEvent) -> Bool {
         guard !localControlsPresented, NSApp.isActive, window?.isKeyWindow == true,
+              (!heldButtons.isEmpty || ownsDesktopPoint(event.locationInWindow)),
               let (x,y) = PlankMacCoordinates.remote(convert(event.locationInWindow, from: nil), canvas: canvas,
                  width: width, height: height, dragging: !heldButtons.isEmpty) else { return false }
         client.movePointer(x: x, y: y, width: width, height: height); return true
@@ -134,7 +151,7 @@ final class PlankMacInputView: NSView {
     override func otherMouseUp(with event: NSEvent) { if let button = PlankMacKeys.mouseButton(event.buttonNumber) { up(button) } }
     override func scrollWheel(with event: NSEvent) {
         guard !localControlsPresented, NSApp.isActive, window?.isKeyWindow == true,
-              canvas.contains(convert(event.locationInWindow, from: nil)) else { return }
+              ownsDesktopPoint(event.locationInWindow) else { return }
         let factor = event.hasPreciseScrollingDeltas ? 1.0 : 120.0
         client.scroll(vertical: Int16(clamping: Int(event.scrollingDeltaY * factor)), horizontal: Int16(clamping: Int(event.scrollingDeltaX * factor)))
     }
@@ -169,8 +186,21 @@ final class PlankMacInputView: NSView {
         heldKeys.union(modifierKeys).forEach { client.sendKey(code: $0, pressed: false, modifiers: 0) }
         heldButtons.removeAll(); heldKeys.removeAll(); modifierKeys.removeAll()
     }
-    override func resetCursorRects() {
-        if !canvas.isEmpty { addCursorRect(canvas, cursor: canvasCursor) }
+    // Do not register a hidden cursor rectangle over the entire canvas:
+    // AppKit's revealed full-screen toolbar overlaps that rectangle.
+    override func resetCursorRects() {}
+    func ownsDesktopPoint(_ windowPoint: NSPoint) -> Bool {
+        guard !localControlsPresented, window != nil, width > 0,
+              canvas.contains(convert(windowPoint, from: nil)) else { return false }
+        var root: NSView = self
+        while let parent = root.superview { root = parent }
+        let point = root.superview?.convert(windowPoint, from: nil) ?? windowPoint
+        guard let hit = root.hitTest(point) else { return false }
+        return hit === self || hit.isDescendant(of: self)
+    }
+    func updatePointerAppearance(for event: NSEvent) {
+        if event.window === window && ownsDesktopPoint(event.locationInWindow) { canvasCursor.set() }
+        else { restoreLocalCursor() }
     }
     private var canvasCursor: NSCursor {
         !localControlsPresented && NSApp.isActive && window?.isKeyWindow == true && cursorOverlay.replacesSystemCursor ? hiddenCursor : .arrow
@@ -178,12 +208,11 @@ final class PlankMacInputView: NSView {
     private func refreshNativeCursor() {
         guard replacingSystemCursor != cursorOverlay.replacesSystemCursor else { return }
         replacingSystemCursor = cursorOverlay.replacesSystemCursor
+        if !replacingSystemCursor { restoreLocalCursor() }
         window?.invalidateCursorRects(for: self)
     }
     override func cursorUpdate(with event: NSEvent) {
-        if canvas.contains(convert(event.locationInWindow, from: nil)), width > 0 {
-            canvasCursor.set()
-        } else { NSCursor.arrow.set() }
+        updatePointerAppearance(for: event)
     }
     override func mouseExited(with event: NSEvent) { NSCursor.arrow.set() }
 }
