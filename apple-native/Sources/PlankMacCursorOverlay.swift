@@ -110,11 +110,19 @@ final class PlankMacCursorOverlay: NSView {
 }
 
 enum PlankMacDesktopWindow {
+    @MainActor static func toggle(_ window: NSWindow, sender: Any? = nil) {
+        configure(window)
+        NSLog("PLANK Mac fullscreen request: window=%ld fullScreen=%d resizable=%d",
+            window.windowNumber, window.styleMask.contains(.fullScreen) ? 1 : 0,
+            window.styleMask.contains(.resizable) ? 1 : 0)
+        window.toggleFullScreen(sender)
+    }
     @MainActor static func configure(_ window: NSWindow) {
-        // AppKit owns the full-screen style during its transition. Changing
-        // that style while already full screen can rebuild native controls.
-        if !window.styleMask.contains(.fullScreen) {
-            window.styleMask.insert(.resizable)
+        // SwiftUI can reset capabilities as it moves the content into full
+        // screen. Preserve the fullScreen flag and restore the capability to
+        // leave it; avoid rebuilding chrome when the flags already match.
+        if !window.styleMask.contains(.resizable) { window.styleMask.insert(.resizable) }
+        if !window.collectionBehavior.contains(.fullScreenPrimary) {
             window.collectionBehavior.remove([.fullScreenAuxiliary, .fullScreenNone])
             window.collectionBehavior.insert(.fullScreenPrimary)
         }

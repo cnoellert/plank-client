@@ -59,7 +59,9 @@ While the tablet owns the cursor, the native arrow is hidden only until the
 next mouse movement. Mouse ownership uses no repeated hide/show cycle.
 No transparent cursor image is installed. Local toolbars and the system menu
 bar retain their native pointer. The green control uses a reversible fullscreen
-action, revalidated after transitions independently of the window's zoom size.
+action shared with the toolbar, revalidated after transitions independently of
+the window's zoom size. Exit does not depend on a separate transition latch;
+resizability lost during SwiftUI content reparenting is repaired.
 
 ## Build
 

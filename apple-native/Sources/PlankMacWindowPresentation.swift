@@ -4,7 +4,6 @@ import AppKit
 // presentation options are changed; normal window lifecycle stays with it.
 @MainActor final class PlankMacWindowPresentation: NSObject, NSWindowDelegate, NSUserInterfaceValidations {
     private weak var window: NSWindow?
-    private var transitioning = false
     // Objective-C may probe optional delegate selectors outside the UI actor.
     // This weak reference is only changed by install/remove on the main actor.
     nonisolated(unsafe) private weak var previous: (any NSWindowDelegate)?
@@ -34,18 +33,18 @@ import AppKit
         return super.forwardingTarget(for: selector)
     }
     @objc func toggleDesktopFullScreen(_ sender: Any?) {
-        guard !transitioning else { return }
-        window?.toggleFullScreen(sender)
+        if let window { PlankMacDesktopWindow.toggle(window, sender: sender) }
+        else { NSLog("PLANK Mac fullscreen: green action has no desktop window") }
     }
     func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
-        if item.action == #selector(toggleDesktopFullScreen(_:)) { return !transitioning }
+        if item.action == #selector(toggleDesktopFullScreen(_:)) { return window != nil }
         return (previous as? any NSUserInterfaceValidations)?.validateUserInterfaceItem(item) ?? true
     }
     func windowWillEnterFullScreen(_ notification: Notification) {
-        transitioning = true; previous?.windowWillEnterFullScreen?(notification)
+        previous?.windowWillEnterFullScreen?(notification)
     }
     func windowWillExitFullScreen(_ notification: Notification) {
-        transitioning = true; previous?.windowWillExitFullScreen?(notification)
+        previous?.windowWillExitFullScreen?(notification)
     }
     private func repairFullScreenButton() {
         // AppKit/SwiftUI can revalidate controls after the did-change callback.
@@ -56,20 +55,20 @@ import AppKit
         }
     }
     func windowDidEnterFullScreen(_ notification: Notification) {
-        transitioning = false
+        NSLog("PLANK Mac fullscreen: entered")
         previous?.windowDidEnterFullScreen?(notification)
         repairFullScreenButton()
     }
     func windowDidExitFullScreen(_ notification: Notification) {
-        transitioning = false
+        NSLog("PLANK Mac fullscreen: exited")
         previous?.windowDidExitFullScreen?(notification)
         repairFullScreenButton()
     }
     func windowDidFailToEnterFullScreen(_ window: NSWindow) {
-        transitioning = false; previous?.windowDidFailToEnterFullScreen?(window); repairFullScreenButton()
+        previous?.windowDidFailToEnterFullScreen?(window); repairFullScreenButton()
     }
     func windowDidFailToExitFullScreen(_ window: NSWindow) {
-        transitioning = false; previous?.windowDidFailToExitFullScreen?(window); repairFullScreenButton()
+        previous?.windowDidFailToExitFullScreen?(window); repairFullScreenButton()
     }
     func window(_ window: NSWindow, willUseFullScreenPresentationOptions proposed: NSApplication.PresentationOptions) -> NSApplication.PresentationOptions {
         var options = previous?.window?(window, willUseFullScreenPresentationOptions: proposed) ?? proposed

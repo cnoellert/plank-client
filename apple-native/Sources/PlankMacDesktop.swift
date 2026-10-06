@@ -10,7 +10,7 @@ struct PlankMacDesktop: View {
     @State private var desktopWindow: NSWindow?
     var body: some View {
         ZStack(alignment: .topLeading) {
-            PlankMacSurface(client: client, windowChanged: { desktopWindow = $0 },
+            PlankMacSurface(client: client, windowChanged: { if let window = $0 { desktopWindow = window } },
                             localControlsPresented: controls || client.showingTabletWaitScreen)
             if statistics { Text(client.videoDiagnosticText + "\n" + client.audioDiagnosticText).font(.system(.caption, design: .monospaced)).padding(10).background(.black.opacity(0.8)).foregroundStyle(.white).padding().allowsHitTesting(false) }
             if client.showingTabletWaitScreen {
@@ -20,7 +20,8 @@ struct PlankMacDesktop: View {
         }.frame(minWidth: 640, maxWidth: .infinity, minHeight: 360, maxHeight: .infinity)
         .toolbar {
             ToolbarItem { Button {
-                if let desktopWindow { PlankMacDesktopWindow.configure(desktopWindow); desktopWindow.toggleFullScreen(nil) }
+                if let desktopWindow { PlankMacDesktopWindow.toggle(desktopWindow) }
+                else { NSLog("PLANK Mac fullscreen: toolbar has no desktop window") }
             } label: { Label("Full Screen", systemImage: "arrow.up.left.and.arrow.down.right") }
                 .onHover { if $0 { NSCursor.arrow.set() } }
                 .background(PlankMacLocalPointerRegion())
