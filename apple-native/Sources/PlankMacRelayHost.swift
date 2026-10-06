@@ -168,10 +168,11 @@ final class MacRelayPeer: @unchecked Sendable {
     private var deadline: UInt64 = 0, lastReceive: UInt64 = 0, sendStarted: UInt64 = 0
     private var timer: DispatchSourceTimer?
     private var managementRequest: Data?
+    private let inventory: @Sendable () -> [MacRelayUSBTablet]
     private static var now: UInt64 { DispatchTime.now().uptimeNanoseconds / 1_000_000 }
-    @MainActor init(connection: NWConnection, native: MacRelayNative, setup: Bool, routes: [String], drawingPort: UInt16, setupPort: UInt16, event: @escaping @Sendable (MacRelayEvent) -> Void) {
+    @MainActor init(connection: NWConnection, native: MacRelayNative, setup: Bool, routes: [String], drawingPort: UInt16, setupPort: UInt16, inventory: @escaping @Sendable () -> [MacRelayUSBTablet] = MacRelayUSBTablet.connected, event: @escaping @Sendable (MacRelayEvent) -> Void) {
         self.connection = connection; self.native = native; setupMode = setup; self.routes = routes
-        self.drawingPort = drawingPort; self.setupPort = setupPort; self.event = event
+        self.drawingPort = drawingPort; self.setupPort = setupPort; self.inventory = inventory; self.event = event
         // The physical worker starts inactive and requests OS permission in the
         // normal UI context. No remote peer can open interfaces before READY.
         if !setup { draw = plank_mac_relay_connection_create(native.store) }
@@ -353,6 +354,10 @@ final class MacRelayPeer: @unchecked Sendable {
             "enrollmentVersion":1,"headsetAuthorized":authorized,
             "relayKey":native.setupKey.map { String(format:"%02x",$0) }.joined(),"tcpPort":setupPort,"networkAddresses":routes]
         if authorized {
+            object["usbTablets"] = MacRelayUSBTablet.records(inventory())
+            object["message"] = "USB tablet presence is reported without capture. Use in PLANK to test drawing; Setup preview is not provided by this Mac Relay."
+            // Keep attached/captureActive false: Setup does not capture this
+            // tablet for decoded preview. USB presence is a separate inventory.
             object["drawingHandoff"] = routes.isEmpty ? ["supported":true,"state":"unavailable","reason":"routes.unavailable"] :
                 ["supported":true,"state":"ready","descriptor":["version":1,"drawingIdentity":identity,
                     "drawingProtocol":["name":"pltr-raw-hid","version":1,"rawHID":1,"linkType":2],

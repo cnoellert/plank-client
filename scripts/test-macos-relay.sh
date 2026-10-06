@@ -34,7 +34,7 @@ xcrun clang++ "${cpp[@]}" -c apple-native/Bridge/PlankMacRelay.cpp -o "$out/rela
 xcrun clang -O0 -Iapple-native/Bridge -c apple-native/Bridge/PlankMacRelayPermissions.c -o "$out/permission.o"
 xcrun swiftc -swift-version 6 -Onone -parse-as-library -import-objc-header apple-native/Bridge/PlankMacRelay.h \
     -Xcc -include -Xcc apple-native/Bridge/PlankMacSetup.h \
-    apple-native/Sources/PlankMacRelayHost.swift visionos-native/Sources/Models/PlankDrawingHandoff.swift \
+    apple-native/Sources/PlankMacRelayHost.swift apple-native/Sources/PlankMacRelayUSBInventory.swift visionos-native/Sources/Models/PlankDrawingHandoff.swift \
     apple-native/Tests/PlankMacRelaySocketTests.swift "$out/worker.o" "$out/relay.o" "$out/permission.o" \
     "$out/setup.a" "$out/raw.a" "$sodium/lib/libsodium.a" -lc++ -framework IOKit -o "$out/relay-socket"
 "$out/relay-socket"

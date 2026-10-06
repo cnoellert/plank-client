@@ -171,3 +171,20 @@ folders to be reopened; the native stores still enforce owner, private mode,
 no-follow paths and exclusive locks. The socket suite now opens, closes and
 reopens the Swift native adapter and requires both public identities to remain
 unchanged. Build 13 includes build 12's channel fix; live acceptance is pending.
+
+### Build 14 — Passive USB presence in Setup
+
+Build 13 could register on the Mac's shared Wi-Fi network, but its placeholder
+`usbTablets: []` made Setup show “No tablet connected” even with an Intuos Pro M
+on USB. Build 14 reports a bounded USB inventory to authenticated Setup only.
+It reads IORegistry properties without opening HID interfaces, taking the
+capture lease, registering callbacks or requesting permission. Physical USB
+parents collapse the tablet's multiple HID interfaces, ordered like the raw
+worker. The first tablet is the selected USB candidate; presence does not prove
+that capture or raw forwarding has succeeded.
+
+Setup decoded preview remains unsupported: `attached` and `captureActive` stay
+false in this management status. Use in PLANK remains the drawing acceptance
+path. Focused checks cover authenticated presence, no unauthenticated inventory,
+multiple interfaces, empty inventory and bounded names/list size. A passive live
+probe detects one Wacom Intuos Pro M; end-to-end raw drawing is still pending.

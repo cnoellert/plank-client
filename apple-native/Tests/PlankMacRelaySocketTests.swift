@@ -17,7 +17,7 @@ import Foundation
         let listener = try NWListener(using:.tcp,on:.any)
         let peers = MacRelayTestPeers()
         listener.newConnectionHandler = { connection in Task { @MainActor in
-            let peer = MacRelayPeer(connection:connection,native:native,setup:true,routes:["192.0.2.10"],drawingPort:28990,setupPort:28991,event:{ event in
+            let peer = MacRelayPeer(connection:connection,native:native,setup:true,routes:["192.0.2.10"],drawingPort:28990,setupPort:28991,inventory:{ [.init(group:7,name:"Wacom test USB",serial:nil)] },event:{ event in
                 // The external interoperability fixture models the local user's
                 // explicit approval. Normal tests and production never auto-approve.
                 if CommandLine.arguments.contains("--serve-discovery"), case .approval = event {
@@ -58,6 +58,7 @@ import Foundation
             }
         }
         let object=try JSONSerialization.jsonObject(with:Data(response.dropFirst(2))) as! [String:Any]
+        precondition((object["usbTablets"] as? [[String:Any]])?.isEmpty == true, "Public discovery must not expose tablet inventory")
         precondition(object["headsetAuthorized"] as? Bool == false)
         precondition(object["canManage"] as? Bool == false && object["drawingHandoff"] == nil)
         precondition(object["relayKey"] as? String == native.setupKey.map {String(format:"%02x",$0)}.joined())
@@ -78,6 +79,15 @@ import Foundation
         precondition(!peers.peers.isEmpty)
         let authenticatedStatus = peers.peers[0].status(id:2,authorized:true)!
         let approvedObject = try JSONSerialization.jsonObject(with:authenticatedStatus) as! [String:Any]
+        let usb = approvedObject["usbTablets"] as! [[String:Any]]
+        precondition(usb.count == 1 && usb[0]["name"] as? String == "Wacom test USB" && usb[0]["active"] as? Bool == true)
+        precondition(approvedObject["attached"] as? Bool == false && approvedObject["captureActive"] as? Bool == false,
+                     "Presence must not claim a Setup preview capture")
+        precondition(MacRelayUSBTablet.records([]).isEmpty)
+        let dedup = MacRelayUSBTablet.records([.init(group:7,name:"one",serial:nil),.init(group:7,name:"one interface",serial:nil),.init(group:3,name:"first",serial:nil)])
+        precondition(dedup.count == 2 && dedup[0]["id"] as? String == "usb:3" && dedup[1]["active"] as? Bool == false)
+        let many = MacRelayUSBTablet.records((1...12).map { .init(group:UInt64($0),name:String(repeating:"é",count:100),serial:String(repeating:"x",count:100)) })
+        precondition(many.count == 8 && many.allSatisfy { ($0["name"] as! String).utf8.count <= 64 && ($0["serial"] as! String).utf8.count <= 64 })
         let handoff = approvedObject["drawingHandoff"] as! [String:Any]
         precondition(handoff["supported"] as? Bool == true && handoff["state"] as? String == "ready")
         let descriptor = handoff["descriptor"] as! [String:Any]
