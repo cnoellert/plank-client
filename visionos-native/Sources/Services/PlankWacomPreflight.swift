@@ -90,6 +90,25 @@ final class PlankWacomPreflight: @unchecked Sendable {
         }
     }
 
+#if PLANK_NATIVE_MAC_WACOM
+    // Local exclusive capture is evidence from the physical owner, not a
+    // synthetic Relay authorization or a claim inferred from user selection.
+    func observeLocalCapture(owned: Bool) {
+        mutate {
+            relayVersion = "local USB capture"
+            gates[.relayLink] = .passed
+            gates[.deviceOwnership] = owned ? .passed : .pending
+            if !owned {
+                generation = 0
+                sentDescriptors.removeAll()
+                expectedDescriptors = 0
+                gates[.attachSent] = .pending
+                gates[.hostAcknowledgement] = .pending
+            }
+        }
+    }
+#endif
+
     func observeRelayStatus(_ status: Data) {
         guard status.count >= 8 else { return }
         mutate {

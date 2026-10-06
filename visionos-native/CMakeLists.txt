@@ -41,6 +41,7 @@ add_executable(PlankVision MACOSX_BUNDLE
     Sources/Services/PlankLiveBitrate.swift
     Sources/Services/PlankTimingCapture.swift
     Sources/Services/PlankSessionEngine.swift
+    Sources/Services/PlankInputQueue.swift
     Sources/Views/AddHostView.swift
     Sources/Views/HostBrowserView.swift
     Sources/Views/HostDetailView.swift
