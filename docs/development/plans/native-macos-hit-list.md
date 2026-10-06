@@ -19,12 +19,19 @@ existing desktop Client or publish a notarized application.
 | Priority | Slice | First deliverable | Main boundary |
 | --- | --- | --- | --- |
 | P1 | Host video quality controls | Capability inventory, then an exact-profile selector | Only offer formats the Host and native Client both support |
+| P1b | Mac-hosted Tablet Relay | USB Wacom on the Mac serving one registered AVP over LAN | One physical owner; existing authenticated raw-HID drawing contract |
 | P2 | Multiple screens | Two Host output rectangles in two native windows | One session, shared geometry and exclusive tablet ownership |
 | P3 | Webcam | End-to-end feasibility report and smallest supported source/sink pair | Local capture alone does not create a camera in remote applications |
 
 Focused feature work may begin after publishing the checkpoint. Release
 qualification proceeds alongside it; remaining tests must not expand into a
 separate harness project.
+
+The [Mac Tablet Relay plan](macos-tablet-relay.md) adds an artist-facing hosting
+mode to the Mac application. Start with USB capture and network drawing; direct
+Bluetooth from Mac to AVP and wireless tablet capture need separate feasibility
+and acceptance. Prioritize this after the bounded quality-controls slice and
+before webcam implementation.
 
 ## P1: Host video quality controls
 
