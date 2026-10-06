@@ -3,7 +3,7 @@ import Foundation
 
 // Real Network sockets and production framing/parser. Only the physical HID
 // worker is fake; no network/permission changes or tablet capture in this test.
-@MainActor final class MacRelayTestPeers { var peers: [MacRelayPeer] = [] }
+@MainActor final class MacRelayTestPeers { var peers: [MacRelayPeer] = []; var drawingReady=false }
 @main struct MacRelaySocketTests {
     @MainActor static func main() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("plank-relay-socket-\(UUID())")
@@ -117,7 +117,51 @@ import Foundation
         precondition(approvedObject["headsetAuthorized"] as? Bool == true)
         for peer in peers.peers {peer.close("Test finished")};listener.cancel()
         try await Task.sleep(for:.milliseconds(100))
+        try await drawingBurst(native)
         print("Mac Relay real socket: fragmented discovery, bounded public metadata and duplicate-field refusal passed")
+    }
+    @MainActor static func drawingBurst(_ native:MacRelayNative) async throws {
+        let listener=try NWListener(using:.tcp,on:.any)
+        let peers=MacRelayTestPeers()
+        listener.newConnectionHandler={ connection in Task { @MainActor in
+            let peer=MacRelayPeer(connection:connection,native:native,setup:false,routes:[],drawingPort:28990,setupPort:28991,event:{ event in
+                if case .ready=event { Task { @MainActor in peers.drawingReady=true } }
+            })
+            peers.peers.append(peer);peer.start()
+        } }
+        try await withCheckedThrowingContinuation { (c:CheckedContinuation<Void,Error>) in
+            listener.stateUpdateHandler={state in switch state {case .ready:c.resume();case .failed(let error):c.resume(throwing:error);default:break}}
+            listener.start(queue:.main)
+        };listener.stateUpdateHandler=nil
+        let connection=NWConnection(host:"127.0.0.1",port:listener.port!,using:.tcp)
+        guard let client=mac_relay_socket_client(native.store) else {fatalError("client")}
+        defer { connection.cancel(); listener.cancel(); for peer in peers.peers {peer.close("Burst test finished")}; mac_relay_socket_destroy(client) }
+        let timeout=Task { try await Task.sleep(for:.seconds(5)); connection.cancel() }
+        defer {timeout.cancel()}
+        try await connect(connection)
+        var output=[UInt8](repeating:0,count:17_000),written=0
+        precondition(mac_relay_socket_start(client,&output,output.count,&written)==0)
+        try await send(connection,Data(output.prefix(written)))
+        while !mac_relay_socket_ready(client) {
+            let data=try await receive(connection);precondition(!data.isEmpty)
+            precondition(data.withUnsafeBytes { mac_relay_socket_receive(client,$0.bindMemory(to:UInt8.self).baseAddress,data.count,&output,output.count,&written) }==0)
+            if written>0 {try await send(connection,Data(output.prefix(written)))}
+        }
+        precondition(mac_relay_socket_session_ready(client,&output,output.count,&written)==0)
+        try await send(connection,Data(output.prefix(written)))
+        while !peers.drawingReady {try await Task.sleep(for:.milliseconds(2))}
+        let started=DispatchTime.now().uptimeNanoseconds
+        precondition(mac_relay_socket_burst(128))
+        precondition(mac_relay_socket_ping(client,&output,output.count,&written)==0)
+        try await send(connection,Data(output.prefix(written)))
+        while mac_relay_socket_reports(client)<128 || !mac_relay_socket_pong(client) {
+            let data=try await receive(connection);precondition(!data.isEmpty)
+            precondition(data.withUnsafeBytes { mac_relay_socket_receive(client,$0.bindMemory(to:UInt8.self).baseAddress,data.count,&output,output.count,&written) }==0,"Every raw report must arrive intact and in order")
+            if written>0 {try await send(connection,Data(output.prefix(written)))}
+        }
+        let elapsed=Double(DispatchTime.now().uptimeNanoseconds-started)/1_000_000
+        FileHandle.standardOutput.write(Data("Mac Relay 128 ordered raw reports plus bidirectional ping: \(elapsed) ms\n".utf8))
+        precondition(elapsed<300,"Queued raw reports must drain without a 5ms wait per write")
     }
     static func stateKeys(_ root:URL) -> [Data] {
         guard let native = MacRelayNative(root:root) else { fatalError("Existing state could not reopen") }

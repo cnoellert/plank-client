@@ -161,3 +161,50 @@ int main() {
 }
 
 #endif
+
+#ifdef PLANK_MAC_RELAY_TEST_NO_MAIN
+#include "PlankMacRelaySocketFixture.h"
+struct MacRelaySocketClient { PltrLink link{}; unsigned reports=0; bool pong=false; };
+extern "C" MacRelaySocketClient* mac_relay_socket_client(PlankMacRelayStore* store) {
+    CHECK(sodium_init()>=0);
+    uint8_t identity[32],pub[32],priv[32],id[16]={1};
+    CHECK(plank_mac_relay_public_key(store,identity)); crypto_box_keypair(pub,priv);
+    CHECK(plank_mac_relay_grant(store,false,id,pub,identity,1000));
+    CHECK(enroll(store,priv,identity,id,1001));
+    auto client=new MacRelaySocketClient;
+    CHECK(pltr_link_init(&client->link,PLTR_NOISE_INITIATOR,priv,identity,nullptr,nullptr,2)==0);
+    sodium_memzero(priv,sizeof(priv)); return client;
+}
+extern "C" void mac_relay_socket_destroy(MacRelaySocketClient* c) { pltr_link_clear(&c->link); delete c; }
+extern "C" int mac_relay_socket_start(MacRelaySocketClient* c,uint8_t* out,size_t cap,size_t* n) { return pltr_link_start(&c->link,out,cap,n); }
+extern "C" int mac_relay_socket_receive(MacRelaySocketClient* c,const uint8_t* data,size_t size,uint8_t* out,size_t cap,size_t* n) {
+    *n=0;
+    while(size) {
+        PltrFrame f{};size_t used=0,written=0;
+        if(pltr_link_receive(&c->link,data,size,&used,out+*n,cap-*n,&written,&f)<0 || !used || used>size) return -1;
+        *n+=written;data+=used;size-=used;
+        if(f.type==PLTR_CLIENT_FRAME) {
+            if(f.payload_size!=32 || f.payload[28]!=2 || f.payload[29]!=(c->reports&255) || f.payload[30]!=((c->reports>>8)&255) || f.payload[31]!=0x42) return -1;
+            ++c->reports;
+        } else if(f.type==PLTR_PONG) { c->pong=true; }
+    }
+    return 0;
+}
+extern "C" bool mac_relay_socket_ready(MacRelaySocketClient* c) { return c->link.stage==PLTR_LINK_READY; }
+extern "C" int mac_relay_socket_session_ready(MacRelaySocketClient* c,uint8_t* out,size_t cap,size_t* n) {
+    const uint8_t ready[]={0x24,0,0,0,1}; return pltr_link_send(&c->link,PLTR_SESSION_READY,ready,sizeof(ready),out,cap,n);
+}
+extern "C" int mac_relay_socket_ping(MacRelaySocketClient* c,uint8_t* out,size_t cap,size_t* n) {
+    uint8_t ping[16]={1};return pltr_link_send(&c->link,PLTR_PING,ping,sizeof(ping),out,cap,n);
+}
+extern "C" bool mac_relay_socket_burst(unsigned count) {
+    if(!sender || !generations || count>256) return false;
+    PLANK_RAW_HID_WIRE_HEADER header{};header.magic=PLANK_RAW_HID_WIRE_MAGIC;header.version=PLANK_RAW_HID_WIRE_VERSION;
+    header.type=PLANK_RAW_HID_INPUT;header.generation=generations();header.payloadLength=4;
+    std::array<uint8_t,24> raw{};std::memcpy(raw.data(),&header,sizeof(header));raw[20]=2;raw[23]=0x42;
+    for(unsigned i=0;i<count;++i) {raw[21]=uint8_t(i);raw[22]=uint8_t(i>>8);if(!sender(raw.data(),raw.size())) return false;}
+    return true;
+}
+extern "C" unsigned mac_relay_socket_reports(MacRelaySocketClient* c) { return c->reports; }
+extern "C" bool mac_relay_socket_pong(MacRelaySocketClient* c) { return c->pong; }
+#endif

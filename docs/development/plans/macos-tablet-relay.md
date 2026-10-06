@@ -210,3 +210,26 @@ waiting state and absent drawing authorization, then completed approval through
 the existing Noise management channel. Raw, Setup codec and socket checks pass.
 Build 15 is signed and staged; physical first-use approval and drawing acceptance
 remain pending.
+
+### Build 16 — remove per-report output pacing
+
+The first live Mac Relay drawing trial was laggy. Connecting the headset to the
+workstation by direct IP improved it, with substantial lag still reported. The
+Mac Relay's output loop also limited queued output to one frame per 5ms timer
+tick, leaving approximately 200 frames/second for raw input plus control traffic.
+This is a source and fixture finding; the active transport/relay selection for
+the live lag report has not yet been independently captured.
+
+The drawing socket now continues queued output after each write completion.
+It arms a receive before draining again and handles buffered incoming messages
+first, preserving bidirectional HID control and heartbeat progress. There is
+still only one outstanding write, the native inbox remains bounded, and every
+raw report is forwarded in order. The timer still checks deadlines and discovers
+newly queued work; management and registration pacing are unchanged.
+
+A real socket test uses production Noise framing and an approved test identity,
+with the physical HID worker faked. All 128 reports arrive byte-for-byte and in
+order, alongside a returned heartbeat. The previous loop took 642.5ms and failed
+the 300ms latency bound; the new loop took 6.3ms and passed. The 1,791 raw checks,
+55 Setup checks and existing socket checks also pass. Signed build 16 is staged,
+not installed. Live performance acceptance remains pending.

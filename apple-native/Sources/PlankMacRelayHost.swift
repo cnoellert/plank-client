@@ -239,7 +239,16 @@ final class MacRelayPeer: @unchecked Sendable {
             guard let self, !self.closed else { return }
             self.sending = false
             guard error == nil else { self.finish("Write failed"); return }
-            then(); self.process(); if !self.closed && !self.sending { self.read() }
+            then(); self.process()
+            if !self.closed && !self.sending {
+                // Keep a receive armed before draining more output, so Host HID
+                // replies and heartbeat requests still make progress mid-burst.
+                self.read()
+                // Continue queued raw frames as each bounded write completes.
+                // The timer finds newly arrived frames; it must not pace every
+                // frame to 5ms (about the tablet's entire 200Hz report budget).
+                if self.mode == 3 { self.pump() }
+            }
         })
     }
     private func process() {
