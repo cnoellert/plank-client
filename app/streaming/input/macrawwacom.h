@@ -1,6 +1,7 @@
 #pragma once
 
 #include <functional>
+#include <cstddef>
 #include <memory>
 
 // Physical HID ownership and I/O run on one private CFRunLoop. Lifecycle calls
@@ -8,7 +9,8 @@
 class MacRawWacomInput
 {
 public:
-    explicit MacRawWacomInput(std::function<void()> tabletActivity);
+    using SendFrame = std::function<bool(const unsigned char*, std::size_t)>;
+    explicit MacRawWacomInput(std::function<void()> tabletActivity, SendFrame sendFrame = {});
     ~MacRawWacomInput();
     void setActive(bool active);
     void beginReconnect();

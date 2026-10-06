@@ -1,0 +1,104 @@
+import Foundation
+
+enum PlankInputEvent: Sendable {
+    case pointer(x: UInt16, y: UInt16, maximumX: UInt16, maximumY: UInt16)
+    case button(number: UInt8, pressed: Bool)
+    case scroll(vertical: Int16, horizontal: Int16)
+    case key(code: UInt16, pressed: Bool, modifiers: UInt8)
+    case text(Data)
+    case rawHid(Data)
+}
+
+final class PlankInputQueue: @unchecked Sendable {
+    private let lock = NSLock()
+    private let wakeups: AsyncStream<Void>
+    private let wakeupContinuation: AsyncStream<Void>.Continuation
+    private var events: [PlankInputEvent] = []
+    private var stopped = false
+    // Bounded diagnostics only: timings and counts, never event contents.
+    private var oldestEnqueueTime: UInt64 = 0
+    private var highWaterDepth = 0
+    private var maxDrainAge: UInt64 = 0
+
+    init() {
+        (wakeups, wakeupContinuation) = AsyncStream<Void>.makeStream(
+            bufferingPolicy: .bufferingNewest(1)
+        )
+    }
+
+    var signals: AsyncStream<Void> { wakeups }
+
+    func append(_ event: PlankInputEvent) {
+        lock.lock()
+        guard !stopped else {
+            lock.unlock()
+            return
+        }
+        let shouldWake = events.isEmpty
+        if shouldWake { oldestEnqueueTime = DispatchTime.now().uptimeNanoseconds }
+        if case .pointer = event,
+           case .pointer? = events.last {
+            events[events.count - 1] = event
+        } else {
+            events.append(event)
+        }
+        highWaterDepth = max(highWaterDepth, events.count)
+        lock.unlock()
+        if shouldWake { wakeupContinuation.yield(()) }
+    }
+
+#if PLANK_NATIVE_MAC_WACOM
+    // Refuse a congested or stopped sender; the capture worker then releases
+    // and retries rather than losing a tip/button transition silently.
+    func offerNativeRawHid(_ frame: Data) -> Bool {
+        lock.lock()
+        guard !stopped, events.count < 256 else { lock.unlock(); return false }
+        let shouldWake = events.isEmpty
+        if shouldWake { oldestEnqueueTime = DispatchTime.now().uptimeNanoseconds }
+        events.append(.rawHid(frame))
+        highWaterDepth = max(highWaterDepth, events.count)
+        lock.unlock()
+        if shouldWake { wakeupContinuation.yield(()) }
+        return true
+    }
+#endif
+
+    func drain() -> [PlankInputEvent] {
+        lock.lock()
+        let drained = events
+        if !drained.isEmpty {
+            maxDrainAge = max(maxDrainAge,
+                              DispatchTime.now().uptimeNanoseconds - oldestEnqueueTime)
+        }
+        events.removeAll(keepingCapacity: true)
+        lock.unlock()
+        return drained
+    }
+
+    var diagnostics: PlankInputQueueDiagnostics {
+        lock.lock()
+        defer { lock.unlock() }
+        return PlankInputQueueDiagnostics(
+            depth: events.count,
+            oldestAgeNanos: events.isEmpty ? 0 :
+                DispatchTime.now().uptimeNanoseconds - oldestEnqueueTime,
+            highWaterDepth: highWaterDepth,
+            maxDrainAgeNanos: maxDrainAge
+        )
+    }
+
+    func stop() {
+        lock.lock()
+        stopped = true
+        events.removeAll(keepingCapacity: true)
+        lock.unlock()
+        wakeupContinuation.finish()
+    }
+}
+
+struct PlankInputQueueDiagnostics: Sendable {
+    let depth: Int
+    let oldestAgeNanos: UInt64
+    let highWaterDepth: Int
+    let maxDrainAgeNanos: UInt64
+}

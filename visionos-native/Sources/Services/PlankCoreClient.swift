@@ -145,6 +145,10 @@ final class PlankCoreClient: ObservableObject {
     private var tabletRelayLinkTracker = PlankRelayLinkTracker()
 #endif
 
+#if PLANK_NATIVE_MAC_WACOM
+    private var nativeWacom: PlankMacWacomSession?
+    private var sessionNativeSource = PlankMacTabletSource.off
+#endif
     private var latestFrame: PlankRenderedFrame?
     private var remoteCursor: PlankRemoteCursor?
     private var remoteCursorShape: PlankRemoteCursorShape?
@@ -320,6 +324,9 @@ final class PlankCoreClient: ObservableObject {
         let wasActive = tabletSceneActive
         tabletSceneActive = active
         tabletBridge?.setActive(active)
+#if PLANK_NATIVE_MAC_WACOM
+        if hostSupportsTabletRelay { nativeWacom?.setActive(active) }
+#endif
         if active && !wasActive && hostSupportsTabletRelay && waitingForTablet {
             scheduleTabletAvailabilityGrace(generation: streamGeneration)
         }
@@ -400,7 +407,13 @@ final class PlankCoreClient: ObservableObject {
         // GNOME may bind its first pointer interaction before the redirected
         // tablet appears. Present the video immediately, but let a saved Relay
         // attach before forwarding mouse input into that desktop session.
+#if PLANK_NATIVE_MAC_WACOM
+        sessionNativeSource = PlankMacTabletSource.saved
+        let relayConfigured = sessionNativeSource == .usb ||
+            (sessionNativeSource == .relay && PlankRelayKeys.sessionRelayConfigured())
+#else
         let relayConfigured = PlankRelayKeys.sessionRelayConfigured()
+#endif
         tabletInputPolicy.begin(hasPairedTablet: relayConfigured)
         waitingForTablet = tabletInputPolicy.waitsForTablet
         applyRelayLink(.sessionStarted(configured: relayConfigured))
@@ -476,13 +489,32 @@ final class PlankCoreClient: ObservableObject {
                 self.tabletRelayStatus = status
             }
         }
+#if PLANK_NATIVE_MAC_WACOM
+        let localSource = sessionNativeSource
+        let localWacom = localSource == .usb ? PlankMacWacomSession(input: inputQueue, preflight: preflight) : nil
+        nativeWacom = localWacom
+        tabletBridge = localSource == .relay ? sessionTabletBridge : nil
+        if localSource == .relay { sessionTabletBridge.setActive(tabletSceneActive) }
+        let sourceDiagnostics: @Sendable () -> String = { localWacom != nil ? "local USB Wacom" : sessionTabletBridge.diagnosticSummary() }
+        let closePhysicalCapture: @Sendable () -> Void = { localWacom?.closeSynchronously() }
+#else
         tabletBridge = sessionTabletBridge
         sessionTabletBridge.setActive(tabletSceneActive)
+        let sourceDiagnostics: @Sendable () -> String = { sessionTabletBridge.diagnosticSummary() }
+        let closePhysicalCapture: @Sendable () -> Void = {}
+#endif
         defer {
             sessionTabletBridge.close(reason: .sessionEnded)
             stoppingTabletBridge = sessionTabletBridge
             if tabletBridge === sessionTabletBridge { tabletBridge = nil }
+#if PLANK_NATIVE_MAC_WACOM
+            if nativeWacom === localWacom { nativeWacom = nil }
+            // Also cover metadata/launch failures before a transport exists.
+            Task { await localWacom?.close() }
+#endif
         }
+#else
+        let closePhysicalCapture: @Sendable () -> Void = {}
 #endif
         do {
             let frameMailbox = PlankFrameMailbox()
@@ -517,7 +549,7 @@ final class PlankCoreClient: ObservableObject {
             // handler then closes that fresh reservation cleanly.
 #if PLANK_TABLET_RELAY
             let relayDiagnostics: @Sendable () -> String = {
-                sessionTabletBridge.diagnosticSummary()
+                sourceDiagnostics()
             }
 #else
             let relayDiagnostics: @Sendable () -> String = { "not built" }
@@ -560,7 +592,8 @@ final class PlankCoreClient: ObservableObject {
                     }
                 },
                 shouldReportVideoProgress: { [videoDiagnostics] in videoDiagnostics.isEnabled },
-                liveBitrate: sessionBitrate
+                liveBitrate: sessionBitrate,
+                beforeTransportClose: closePhysicalCapture
             ) { [weak self] frame in
                 if frameMailbox.offer(frame) {
                     Task { @MainActor [weak self] in
@@ -617,13 +650,20 @@ final class PlankCoreClient: ObservableObject {
                     rawHid: flags & PlankHostFeature.rawHidTablet != 0,
                     focusSuspend: flags & PlankHostFeature.rawHidFocusSuspend != 0
                 )
+#if PLANK_NATIVE_MAC_WACOM
+                if localSource == .relay { sessionTabletBridge.startIfPaired(hostFeatures: flags) }
+#else
                 sessionTabletBridge.startIfPaired(hostFeatures: flags)
+#endif
 #endif
                 Task { @MainActor [weak self] in
                     guard let self, self.streamGeneration == generation else { return }
                     self.hostSupportsTabletRelay =
                         flags & PlankHostFeature.tabletRelayRequired ==
                         PlankHostFeature.tabletRelayRequired
+#if PLANK_NATIVE_MAC_WACOM
+                    localWacom?.hostFeatures(flags, active: self.tabletSceneActive)
+#endif
                     if !self.hostSupportsTabletRelay {
                         let status = "This Host does not support Wacom Relay; continuing without it."
                         if self.waitingForTablet {
@@ -638,13 +678,21 @@ final class PlankCoreClient: ObservableObject {
             } onRawHid: { [tabletControlReceiver] frame in
 #if PLANK_TABLET_RELAY
                 preflight.observeHostFrame(frame)
+#if PLANK_NATIVE_MAC_WACOM
+                if let localWacom { localWacom.control(frame) }
+                else if localSource == .relay { sessionTabletBridge.forwardHostFrame(frame) }
+#else
                 sessionTabletBridge.forwardHostFrame(frame)
+#endif
 #else
                 tabletControlReceiver.deliver(frame)
 #endif
             } onTabletFrameSent: { frame in
 #if PLANK_TABLET_RELAY
                 preflight.observeSentTabletFrame(frame)
+#if PLANK_NATIVE_MAC_WACOM
+                localWacom?.observeSent(frame)
+#endif
 #endif
             }
         } catch {
@@ -797,6 +845,22 @@ final class PlankCoreClient: ObservableObject {
 
     func disconnectSession() {
         guard !isClosingSession else { return }
+#if PLANK_NATIVE_MAC_WACOM
+        if let nativeWacom {
+            self.nativeWacom = nil
+            isClosingSession = true
+            Task {
+                await nativeWacom.close()
+                isClosingSession = false
+                disconnectAfterCaptureRelease()
+            }
+            return
+        }
+#endif
+        disconnectAfterCaptureRelease()
+    }
+
+    private func disconnectAfterCaptureRelease() {
         let resumable: (PlankHostIdentity, PlankAuthentication)?
         switch phase {
         case let .startingSession(identity, authentication),
@@ -995,6 +1059,21 @@ final class PlankCoreClient: ObservableObject {
 
     @discardableResult
     func reset() -> Task<Void, Never>? {
+#if PLANK_NATIVE_MAC_WACOM
+        if let nativeWacom {
+            self.nativeWacom = nil
+            isClosingSession = true
+            return Task {
+                await nativeWacom.close()
+                isClosingSession = false
+                await resetAfterCaptureRelease()?.value
+            }
+        }
+#endif
+        return resetAfterCaptureRelease()
+    }
+
+    private func resetAfterCaptureRelease() -> Task<Void, Never>? {
         let taskToStop = streamTask ?? stoppingStreamTask
         taskToStop?.cancel()
         if let taskToStop { stoppingStreamTask = taskToStop }

@@ -1,6 +1,16 @@
 #pragma once
 #include <plank.h>
+#if defined(PLANK_NATIVE_MAC_WACOM)
+#include <libkern/OSByteOrder.h>
+// macOS on Apple silicon is little endian. Keep the wire helpers explicit.
+template<typename T> inline T qToLittleEndian(T value) {
+    static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__);
+    return value;
+}
+template<typename T> inline T qFromLittleEndian(T value) { return qToLittleEndian(value); }
+#else
 #include <QtEndian>
+#endif
 #include <cstdint>
 #include <cstring>
 
