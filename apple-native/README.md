@@ -41,7 +41,13 @@ resolution are not drawn into the new canvas.
 
 The desktop's Full Screen toolbar button and Control-Command-F enter or leave
 native macOS full screen. That shortcut stays local rather than being sent to
-the workstation. The green window control is enabled too.
+the workstation. The green window control is enabled too. Full screen hides
+the menu bar, Dock and toolbar until the pointer reaches their screen edge.
+These are per-window presentation options, not changes to system preferences.
+
+Session controls restore the normal Mac pointer and keep their keyboard/mouse
+events local. Opening them releases held desktop keyboard/mouse input without
+releasing the Wacom. Closing them returns desktop input routing.
 
 ## Build
 

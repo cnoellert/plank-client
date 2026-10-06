@@ -10,7 +10,8 @@ struct PlankMacDesktop: View {
     @State private var desktopWindow: NSWindow?
     var body: some View {
         ZStack(alignment: .topLeading) {
-            PlankMacSurface(client: client, windowChanged: { desktopWindow = $0 })
+            PlankMacSurface(client: client, windowChanged: { desktopWindow = $0 },
+                            localControlsPresented: controls || client.showingTabletWaitScreen)
             if statistics { Text(client.videoDiagnosticText + "\n" + client.audioDiagnosticText).font(.system(.caption, design: .monospaced)).padding(10).background(.black.opacity(0.8)).foregroundStyle(.white).padding().allowsHitTesting(false) }
             if client.showingTabletWaitScreen {
                 VStack { ProgressView("Waiting for Wacom…"); Button("Continue without tablet") { client.continueWithoutTablet() } }.padding(24).background(.regularMaterial)
@@ -45,6 +46,7 @@ struct PlankMacDesktop: View {
             Text(client.tabletPreflightSummary).font(.caption)
             Text("Tablet: \(PlankMacTabletSource.saved.title)").font(.caption).foregroundStyle(.secondary)
         }.padding(20).frame(width: 340)
+            .onAppear { NSCursor.arrow.set() }
     }
     private func applyAudio() {
         UserDefaults.standard.set(volume, forKey: PlankAudioPreferences.volumeKey)

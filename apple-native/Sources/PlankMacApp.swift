@@ -29,6 +29,7 @@ struct PlankMacSettings: View {
             Toggle("Also play on workstation speakers", isOn: $speakers)
                 .onChange(of: speakers) { _, value in UserDefaults.standard.set(value, forKey: PlankAudioPreferences.playOnHostKey) }
         }.padding(24).frame(width: 460)
+            .onAppear { NSCursor.arrow.set() }
     }
 }
 

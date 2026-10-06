@@ -36,7 +36,7 @@ enum PlankMacKeys {
     }
     static func staysLocal(_ event: NSEvent) -> Bool {
         event.modifierFlags.contains(.command) &&
-            ([12,13].contains(event.keyCode) || (event.keyCode == 3 && event.modifierFlags.contains(.control)))
+            ([12,13,43].contains(event.keyCode) || (event.keyCode == 3 && event.modifierFlags.contains(.control)))
     }
 }
 

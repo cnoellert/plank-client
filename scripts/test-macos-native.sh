@@ -13,6 +13,11 @@ xcrun swiftc -swift-version 6 -Onone -parse-as-library \
     apple-native/Sources/PlankMacCursorOverlay.swift apple-native/Sources/PlankMacInputPolicy.swift \
     visionos-native/Sources/Models/HostBookmark.swift apple-native/Tests/PlankMacPresentationTests.swift -o "$out/mac-presentation"
 "$out/mac-presentation"
+xcrun swiftc -swift-version 6 -Onone -parse-as-library \
+    apple-native/Sources/PlankMacWindowPresentation.swift apple-native/Sources/PlankMacInput.swift \
+    apple-native/Sources/PlankMacCursorOverlay.swift apple-native/Sources/PlankMacInputPolicy.swift \
+    visionos-native/Sources/Models/HostBookmark.swift apple-native/Tests/PlankMacLocalControlsTests.swift -o "$out/mac-local-controls"
+"$out/mac-local-controls"
 xcrun clang++ -std=c++17 -O0 -DPLANK_NATIVE_MAC_WACOM -Iapple-native/Bridge -Iapp/streaming/input \
     -Imoonlight-common-c/moonlight-common-c/src apple-native/Bridge/PlankMacWacom.cpp \
     apple-native/Tests/PlankMacWacomLifetimeTests.cpp -o "$out/mac-wacom-lifetime"
