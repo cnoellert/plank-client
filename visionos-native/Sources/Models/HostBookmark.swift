@@ -98,6 +98,9 @@ struct HostBookmark: Identifiable, Codable, Hashable, Sendable {
     var spatialDisplaySize: SpatialDisplaySize
     var streamFrameRate: Int
     var videoBitrateKbps: Int
+#if PLANK_NATIVE_MAC_WACOM
+    var nativeVideoQuality: PlankVideoQuality = .nvfbc
+#endif
 
     init(
         id: UUID = UUID(),
@@ -122,6 +125,9 @@ struct HostBookmark: Identifiable, Codable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case id, name, address, port, lastConnectedAt, spatialDisplaySize, streamFrameRate
         case videoBitrateKbps
+#if PLANK_NATIVE_MAC_WACOM
+        case nativeVideoQuality
+#endif
     }
 
     init(from decoder: Decoder) throws {
@@ -146,6 +152,14 @@ struct HostBookmark: Identifiable, Codable, Hashable, Sendable {
             (try? values.decodeIfPresent(Int.self, forKey: .videoBitrateKbps)) ??
             StreamBitrate.defaultKbps
         )
+#if PLANK_NATIVE_MAC_WACOM
+        // Missing legacy fields preserve the accepted default. Invalid/unknown
+        // fields preserve an unavailable choice, not a silent precision change.
+        if values.contains(.nativeVideoQuality) {
+            nativeVideoQuality = (try? values.decode(PlankVideoQuality.self, forKey: .nativeVideoQuality)) ??
+                .init(rawValue: "invalid-saved-quality")
+        }
+#endif
     }
 }
 
@@ -154,6 +168,9 @@ struct PlankHostIdentity: Equatable, Sendable {
     let uniqueID: String
     let version: String
     let supportsAuthentication: Bool
+#if PLANK_NATIVE_MAC_WACOM
+    var videoCapabilities: PlankHostVideoCapabilities? = nil
+#endif
 }
 
 struct PlankAuthentication: Equatable, Sendable {
@@ -172,6 +189,9 @@ enum PlankBookmarkSessionPolicy {
     static func requiresClosure(edited: HostBookmark, connected: HostBookmark?,
                                 authenticated: Bool) -> Bool {
         guard authenticated, let connected, edited.id == connected.id else { return false }
+#if PLANK_NATIVE_MAC_WACOM
+        if edited.nativeVideoQuality != connected.nativeVideoQuality { return true }
+#endif
         return edited.spatialDisplaySize != connected.spatialDisplaySize ||
             StreamFrameRate.normalized(edited.streamFrameRate) !=
                 StreamFrameRate.normalized(connected.streamFrameRate) ||

@@ -31,6 +31,7 @@ struct PlankMacBrowser: View {
                     Image(systemName: "desktopcomputer").font(.system(size: 52)).foregroundStyle(.cyan)
                     Text(host.name).font(.title)
                     Text("\(host.spatialDisplaySize.title) · \(host.streamFrameRate) fps").foregroundStyle(.secondary)
+                    Text(host.nativeVideoQuality.title).font(.caption).foregroundStyle(.secondary)
                     if client.activeHostID == host.id {
                         switch client.phase {
                         case .needsCredentials, .authenticating:
@@ -68,7 +69,7 @@ struct PlankMacBrowser: View {
     private func authenticate() { Task { await client.authenticate(username: username, password: password); password = "" } }
     private func start(_ host: HostBookmark) {
         client.setTabletActive(true)
-        client.startSession(displaySize: host.spatialDisplaySize, frameRate: host.streamFrameRate, videoBitrateKbps: host.videoBitrateKbps)
+        client.startMacSession(bookmark: host)
         store.markConnected(host); openWindow(id: "desktop")
     }
 }
@@ -92,6 +93,22 @@ struct PlankMacBookmarkEditor: View {
                 TextField("Port", value: $host.port, format: .number.grouping(.never))
                 Picker("Resolution", selection: $host.spatialDisplaySize) { ForEach(SpatialDisplaySize.allCases) { Text($0.title).tag($0) } }
                 Picker("Refresh rate", selection: $host.streamFrameRate) { ForEach(StreamFrameRate.presets, id: \.self) { Text("\($0) fps").tag($0) } }
+                Picker("Capture quality", selection: $host.nativeVideoQuality) {
+                    if !host.nativeVideoQuality.isSupported {
+                        Text("Unsupported saved quality").tag(host.nativeVideoQuality).disabled(true)
+                    }
+                    ForEach(PlankVideoQuality.choices) { quality in
+                        Text(quality.title).tag(quality).disabled(unavailableReason(quality) != nil)
+                    }
+                }
+                Text(host.nativeVideoQuality.detail).font(.caption).foregroundStyle(.secondary)
+                if let reason = unavailableReason(host.nativeVideoQuality) {
+                    Text(reason).font(.caption).foregroundStyle(.orange)
+                } else if client.activeHostID != host.id || client.nativeVideoCapabilities == nil {
+                    Text("Host support is checked when connecting.").font(.caption).foregroundStyle(.secondary)
+                }
+                Text("Capture quality, resolution and refresh rate apply after closing the session and signing in again. Bitrate is adjustable in Session Controls.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             HStack {
                 Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
@@ -99,15 +116,20 @@ struct PlankMacBookmarkEditor: View {
                 Button("Save") { if client.requiresSessionCloseForBookmark(host) { warning = true } else { save() } }
                     .keyboardShortcut(.defaultAction).disabled(saving || host.name.isEmpty || host.address.isEmpty || host.port == 0)
             }
-        }.padding(24).frame(width: 480)
+        }.padding(24).frame(width: 560)
         .alert("Close the workstation session?", isPresented: $warning) {
             Button("Close and Save", role: .destructive) { save() }
             Button("Cancel", role: .cancel) {}
-        } message: { Text("Changing resolution, timing or the address requires closing this session and signing in again.") }
+        } message: { Text("Changing capture quality, resolution, timing or the address requires closing this session and signing in again.") }
+    }
+    private func unavailableReason(_ quality: PlankVideoQuality) -> String? {
+        guard quality.isSupported else { return quality.detail }
+        guard client.activeHostID == host.id else { return nil }
+        return client.nativeVideoCapabilities?.unavailableReason(for: quality)
     }
     private func save() { saving = true; Task {
         await client.closeSessionForBookmarkChange(host)
-        if isNew { store.add(name: host.name, address: host.address, port: host.port, displaySize: host.spatialDisplaySize, frameRate: host.streamFrameRate) } else { store.update(host) }
+        if isNew { store.add(bookmark: host) } else { store.update(host) }
         dismiss()
     } }
 }

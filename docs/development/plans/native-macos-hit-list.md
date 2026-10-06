@@ -35,6 +35,10 @@ before webcam implementation.
 
 ## P1: Host video quality controls
 
+The [quality audit](native-macos-quality-audit.md) records the source inventory
+and build-10 capture-precision slice, with live acceptance pending. Full
+codec/profile expansion remains separate decoder/presentation work.
+
 The pilot already has live bitrate, volume/mute and statistics in its desktop
 controls. Its shared launch builder currently requests HEVC 10-bit 4:4:4
 identity (`0x0800`). Resolution and frame rate are bookmark settings with a

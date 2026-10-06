@@ -6,6 +6,12 @@ enum PlankHTTPError: LocalizedError, Sendable {
     case invalidCertificate
     case invalidResponse(String)
     case rejected(Int, String)
+    case videoQualityUnavailable(Int?, String)
+
+    var isVideoQualityFailure: Bool {
+        if case .videoQualityUnavailable = self { return true }
+        return false
+    }
 
     var errorDescription: String? {
         switch self {
@@ -17,6 +23,8 @@ enum PlankHTTPError: LocalizedError, Sendable {
             return message
         case let .rejected(code, message):
             return message.isEmpty ? "The Host rejected the request (\(code))." : message
+        case let .videoQualityUnavailable(code, message):
+            return code.map { "Capture quality unavailable (\($0)): \(message)" } ?? message
         }
     }
 }
@@ -205,12 +213,15 @@ final class PlankHTTPClient: @unchecked Sendable {
         }
 
         let values = parserDelegate.values
-        let hostIdentity = PlankHostIdentity(
+        var hostIdentity = PlankHostIdentity(
             name: values["hostname"].flatMap { $0.isEmpty ? nil : $0 } ?? "PLANK Host",
             uniqueID: values["uniqueid"] ?? "",
             version: values["PlankHostVersion"] ?? values["appversion"] ?? "",
             supportsAuthentication: values["PlankAuth"] == "1"
         )
+#if PLANK_NATIVE_MAC_WACOM
+        hostIdentity.videoCapabilities = PlankHostVideoCapabilities(serverInfo: values)
+#endif
         identity = hostIdentity
         return hostIdentity
     }
@@ -318,10 +329,71 @@ final class PlankHTTPClient: @unchecked Sendable {
         topology: PlankTopology,
         applicationID: Int,
         frameRate: Int,
-        playAudioOnHost: Bool
+        playAudioOnHost: Bool,
+        captureSource: String = "nvfbc"
     ) async throws -> PlankLaunchCredentials {
         let encodingMode = "hevc-10-444-nvenc"
         let udpPayloadMTU: UInt32 = 1200
+#if PLANK_NATIVE_MAC_WACOM
+        let quality = PlankVideoQuality(rawValue: captureSource)
+        // Refresh once per launch attempt, outside the media/input loops.
+        // A worker replacement may change advertised encoder availability.
+        let refreshed = try await fetchServerInfo()
+        guard let capabilities = refreshed.videoCapabilities else {
+            throw PlankHTTPError.videoQualityUnavailable(nil, "The Host returned no video-quality capabilities.")
+        }
+        if let reason = capabilities.unavailableReason(for: quality, authenticatedFlags: topology.featureFlags) {
+            throw PlankHTTPError.videoQualityUnavailable(nil, reason)
+        }
+#endif
+        let query = Self.desktopLaunchQuery(topology: topology, applicationID: applicationID,
+            frameRate: frameRate, playAudioOnHost: playAudioOnHost, captureSource: captureSource)
+        let data = try await authorizedRequest(path: "launch", query: query, timeout: 120)
+        let parserDelegate = ServerInfoParser()
+        let parser = XMLParser(data: data)
+        parser.delegate = parserDelegate
+        guard parser.parse(), parserDelegate.statusCode == 200 else {
+#if PLANK_NATIVE_MAC_WACOM
+            // Experimental native capture is explicitly optional. Preserve
+            // its rejection instead of treating 503 as a retiring old stream
+            // and hiding it behind the display-transition retry timeout.
+            if quality == .native10, parserDelegate.statusCode == 503 {
+                throw PlankHTTPError.videoQualityUnavailable(503, parserDelegate.statusMessage)
+            }
+#endif
+            throw PlankHTTPError.rejected(
+                parserDelegate.statusCode ?? 500,
+                parserDelegate.statusMessage
+            )
+        }
+        let values = parserDelegate.values
+#if PLANK_NATIVE_MAC_WACOM
+        guard quality.replyMatches(values) else {
+            throw PlankHTTPError.videoQualityUnavailable(nil, "The Host did not accept the selected capture quality and exact HEVC 10-bit profile.")
+        }
+        NSLog("PLANK Mac video quality accepted: capture=%@ backend=%@ encoding=%@",
+              quality.captureSource, quality.encoderBackend, quality.encodingMode)
+#endif
+        guard let portValue = UInt16(values["PlankTransportPort"] ?? ""), portValue > 0,
+              let certificate = values["PlankTransportCertificateSha256"], certificate.count == 64,
+              let token = values["PlankTransportToken"], token.count == 64,
+              values["PlankEncodingMode"] == encodingMode,
+              UInt32(values["PlankQuicUdpPayloadMtu"] ?? "") == udpPayloadMTU else {
+            throw PlankHTTPError.invalidResponse("The Host returned invalid streaming credentials.")
+        }
+        return PlankLaunchCredentials(
+            transportPort: portValue,
+            certificateSHA256: certificate,
+            transportToken: token,
+            udpPayloadMTU: udpPayloadMTU,
+            encodingMode: encodingMode
+        )
+    }
+
+    /// Shared by production HTTP launch and focused request checks.
+    static func desktopLaunchQuery(topology: PlankTopology, applicationID: Int,
+                                   frameRate: Int, playAudioOnHost: Bool,
+                                   captureSource: String = "nvfbc") -> [URLQueryItem] {
         var query: [URLQueryItem] = [
             .init(name: "appid", value: String(applicationID)),
             .init(name: "mode", value: "\(topology.desktopWidth)x\(topology.desktopHeight)x\(frameRate)"),
@@ -340,10 +412,10 @@ final class PlankHTTPClient: @unchecked Sendable {
             .init(name: "plankProtocolVersion", value: String(topology.schemaVersion)),
             .init(name: "plankFeatureFlags", value: String(topology.featureFlags)),
             .init(name: "plankDisplayMode", value: "scaled-span"),
-            .init(name: "plankCaptureSource", value: "nvfbc"),
+            .init(name: "plankCaptureSource", value: captureSource),
             .init(name: "plankEncoderBackend", value: "nvenc-direct"),
-            .init(name: "plankEncodingMode", value: encodingMode),
-            .init(name: "plankQuicUdpPayloadMtu", value: String(udpPayloadMTU)),
+            .init(name: "plankEncodingMode", value: "hevc-10-444-nvenc"),
+            .init(name: "plankQuicUdpPayloadMtu", value: "1200"),
             .init(name: "plankHostLayout", value: topology.layout.kind),
             .init(name: "plankTopologyGeneration", value: topology.generation),
         ]
@@ -351,31 +423,7 @@ final class PlankHTTPClient: @unchecked Sendable {
             query.append(.init(name: "plankVirtualMode\(index + 1)", value: mode))
         }
 
-        let data = try await authorizedRequest(path: "launch", query: query, timeout: 120)
-        let parserDelegate = ServerInfoParser()
-        let parser = XMLParser(data: data)
-        parser.delegate = parserDelegate
-        guard parser.parse(), parserDelegate.statusCode == 200 else {
-            throw PlankHTTPError.rejected(
-                parserDelegate.statusCode ?? 500,
-                parserDelegate.statusMessage
-            )
-        }
-        let values = parserDelegate.values
-        guard let portValue = UInt16(values["PlankTransportPort"] ?? ""), portValue > 0,
-              let certificate = values["PlankTransportCertificateSha256"], certificate.count == 64,
-              let token = values["PlankTransportToken"], token.count == 64,
-              values["PlankEncodingMode"] == encodingMode,
-              UInt32(values["PlankQuicUdpPayloadMtu"] ?? "") == udpPayloadMTU else {
-            throw PlankHTTPError.invalidResponse("The Host returned invalid streaming credentials.")
-        }
-        return PlankLaunchCredentials(
-            transportPort: portValue,
-            certificateSHA256: certificate,
-            transportToken: token,
-            udpPayloadMTU: udpPayloadMTU,
-            encodingMode: encodingMode
-        )
+        return query
     }
 
     private func request(path: String) async throws -> Data {

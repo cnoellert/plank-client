@@ -36,6 +36,13 @@ final class HostStore: ObservableObject {
         sortAndSave()
     }
 
+#if PLANK_NATIVE_MAC_WACOM
+    func add(bookmark: HostBookmark) {
+        hosts.append(bookmark)
+        sortAndSave()
+    }
+#endif
+
     func update(_ host: HostBookmark) {
         guard let index = hosts.firstIndex(where: { $0.id == host.id }) else { return }
         hosts[index] = host
