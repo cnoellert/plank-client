@@ -124,6 +124,7 @@ if(PLANK_RELAY_SOURCE_DIR)
         "${PLANK_RELAY_SOURCE_DIR}/src/link.c"
         "${PLANK_RELAY_SOURCE_DIR}/src/client_link.c"
         "${PLANK_RELAY_SOURCE_DIR}/src/client_pair.c"
+        "${PLANK_RELAY_SOURCE_DIR}/src/client_enrollment.c"
     )
     target_include_directories(PlankRelayCrypto PUBLIC
         "${PLANK_RELAY_SOURCE_DIR}/src"
@@ -136,10 +137,18 @@ if(PLANK_RELAY_SOURCE_DIR)
         "$<$<COMPILE_LANGUAGE:Swift>:-DPLANK_TABLET_RELAY>")
     target_sources(PlankVision PRIVATE
         Sources/Models/PlankDrawingHandoff.swift
+        Sources/Models/DrawingRegistrationRequest.swift
+        Sources/Models/DrawingRegistrationReceipt.swift
+        Sources/Services/PlankRelayEnrollment.swift
         Sources/Models/PlankRelayRegistry.swift
         Sources/Services/PlankDrawingIdentityStore.swift
         Sources/Services/PlankRelayPairing.swift
         Sources/Services/PlankRelayApprovalRoutes.swift
+        Sources/Services/PlankRelayConnectionTiming.swift
+        Sources/Services/PlankRelayWriteQueue.swift
+        Sources/Services/PlankRelayByteTransport.swift
+        Sources/Services/PlankRelayBluetoothTransport.swift
+        Sources/Services/PlankDrawingL2CAPStream.swift
         Sources/Services/PlankRelayLiveLink.swift
         Sources/Services/PlankWacomPreflight.swift
         Sources/Services/PlankTabletInputPolicy.swift
@@ -159,7 +168,7 @@ if(PLANK_OPUS_DIR)
     target_link_libraries(PlankVision PRIVATE "${PLANK_OPUS_DIR}/lib/libopus.a")
     target_compile_definitions(PlankVision PRIVATE PLANK_OPUS_AUDIO=1)
 endif()
-target_link_libraries(PlankVision PRIVATE "-framework AVFAudio")
+target_link_libraries(PlankVision PRIVATE "-framework AVFAudio" "-framework CoreBluetooth")
 
 set(PLANK_FFMPEG_DIR "" CACHE PATH "Path to the visionOS FFmpeg installation")
 if(PLANK_FFMPEG_DIR)

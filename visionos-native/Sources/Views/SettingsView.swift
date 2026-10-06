@@ -78,6 +78,23 @@ struct SettingsView: View {
                     }
                     Text("Set up a Relay…").tag(RelayChoice.setUp.tag)
                 }
+                if let relay = relayHandoff.registry.activeRelay {
+                    Picker("Drawing connection", selection: Binding(
+                        get: { relay.pendingTransport ?? relay.transport },
+                        set: { relayHandoff.selectTransport($0, desktopSessionActive: desktopSessionActive) }
+                    )) {
+                        ForEach(relay.availableTransports, id: \.rawValue) { choice in
+                            Text(choice.title).tag(choice)
+                        }
+                    }
+                    Text(relay.pendingTransport != nil ? "The connection choice will change after disconnecting." :
+                         "Automatic tries the saved network routes, then Bluetooth. Changes apply on the next connection.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    if relay.bluetoothIdentifier == nil {
+                        Text("To add Bluetooth drawing, open this Relay over Bluetooth in Relay Setup and choose Use in PLANK.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
+                }
                 LabeledContent("Status", value: relayStatus.title)
                 Text(relayStatus.detail)
                     .font(.footnote)
@@ -98,11 +115,12 @@ struct SettingsView: View {
                 }
                 DisclosureGroup("Connection details") {
                     VStack(alignment: .leading, spacing: 8) {
-                        LabeledContent("PLANK drawing connection", value: drawingRouteLabel)
+                        LabeledContent("Saved connection", value: relayHandoff.registry.activeRelay?.transport.title ?? "Network")
+                        if desktopSessionActive { LabeledContent("Active connection", value: client.tabletRelayTransport ?? "Not connected") }
                         if desktopSessionActive {
                             Text(client.tabletPreflightSummary)
                         }
-                        Text("PLANK draws over the network link to the selected Relay. Discovery, tablet setup, network settings and connection tests are in Relay Setup.")
+                        Text("The workstation connection still uses the headset’s network. Discovery, tablet setup and connection tests are in Relay Setup.")
                     }
                     .font(.footnote)
                     .foregroundStyle(.secondary)

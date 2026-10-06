@@ -23,18 +23,28 @@ static void write_le32(uint8_t *out, uint32_t value) {
     out[3] = (uint8_t)(value >> 24);
 }
 
-int plank_vision_raw_hid_make_suspend(
-    uint16_t generation, uint8_t *out, size_t capacity) {
+static int make_lifecycle_frame(
+    uint16_t type, uint16_t generation, uint8_t *out, size_t capacity) {
     if (generation == 0 || out == NULL ||
             capacity < sizeof(PLANK_RAW_HID_WIRE_HEADER)) return 0;
     write_le32(out, PLANK_RAW_HID_WIRE_MAGIC);
     write_le16(out + 4, PLANK_RAW_HID_WIRE_VERSION);
-    write_le16(out + 6, PLANK_RAW_HID_SUSPEND);
+    write_le16(out + 6, type);
     write_le16(out + 8, 0);
     write_le16(out + 10, generation);
     write_le32(out + 12, 0);
     write_le32(out + 16, 0);
     return 1;
+}
+
+int plank_vision_raw_hid_make_suspend(
+    uint16_t generation, uint8_t *out, size_t capacity) {
+    return make_lifecycle_frame(PLANK_RAW_HID_SUSPEND, generation, out, capacity);
+}
+
+int plank_vision_raw_hid_make_detach(
+    uint16_t generation, uint8_t *out, size_t capacity) {
+    return make_lifecycle_frame(PLANK_RAW_HID_DETACH, generation, out, capacity);
 }
 
 int plank_vision_raw_hid_frame_valid(

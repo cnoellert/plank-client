@@ -1,6 +1,7 @@
 #include "PlankTransportBridge.h"
 #include "PlankAddress.h"
 #include "PlankRawHidFrame.h"
+#include "../../moonlight-common-c/moonlight-common-c/src/plank.h"
 
 #include <CommonCrypto/CommonDigest.h>
 #include <stdatomic.h>
@@ -27,6 +28,9 @@ struct PlankVisionTransport {
     // Packed kind | lane << 8 | state << 16 | native result << 32. Zero until
     // the first terminal result; later failures never replace it.
     _Atomic uint64_t first_failure;
+    // Owned by the serial input sender: 0 = fresh endpoint, 1 = reset queued,
+    // 2 = reset failed. A Relay reconnect does not create a new Host endpoint.
+    uint8_t raw_hid_session_state;
 };
 
 static void set_error(char *error, size_t capacity, const char *message) {
@@ -637,6 +641,39 @@ int32_t plank_vision_transport_send_raw_hid(
             !plank_vision_raw_hid_frame_valid(
                 frame, frame_size, PLANK_VISION_RAW_HID_TO_HOST)) {
         return PLANK_VISION_TRANSPORT_ERROR;
+    }
+    if (transport->raw_hid_session_state == 2) return PLANK_VISION_TRANSPORT_ERROR;
+    if (transport->raw_hid_session_state == 0 &&
+            read_le16(frame + 6) == PLANK_RAW_HID_DEVICE) {
+        const uint16_t generation = read_le16(frame + 10);
+        uint8_t detach[sizeof(PLANK_RAW_HID_WIRE_HEADER)];
+        if (frame_size != sizeof(PLANK_RAW_HID_WIRE_HEADER) + sizeof(PLANK_RAW_HID_DEVICE_MESSAGE) ||
+                read_le16(frame + sizeof(PLANK_RAW_HID_WIRE_HEADER)) == 0 ||
+                read_le16(frame + sizeof(PLANK_RAW_HID_WIRE_HEADER)) > PLANK_RAW_HID_MAX_INTERFACES ||
+                !plank_vision_raw_hid_make_detach(generation, detach, sizeof(detach))) {
+            return PLANK_VISION_TRANSPORT_ERROR;
+        }
+        // DEVICE establishes the generation required by the existing Host's
+        // DETACH handler, without creating interfaces. DETACH then destroys any
+        // retained group; the identical DEVICE starts the real attachment.
+        // Descriptors, reports and replies remain untouched and ordered on the
+        // same input lane. Do this once per desktop endpoint, never on focus
+        // suspension or a temporary Relay reconnect within that endpoint.
+        const uint8_t *frames[] = {frame, detach, frame};
+        const size_t sizes[] = {frame_size, sizeof(detach), frame_size};
+        for (size_t index = 0; index < 3; ++index) {
+            const int32_t result = finish_input_send(transport, plank_transport_native_input_send(
+                transport->endpoint, PLANK_TRANSPORT_INPUT_RAW_HID_WACOM,
+                frames[index], sizes[index]));
+            if (result != PLANK_VISION_TRANSPORT_OK) {
+                transport->raw_hid_session_state = 2;
+                return result;
+            }
+        }
+        transport->raw_hid_session_state = 1;
+        fprintf(stderr, "PLANK tablet session reset requested: generation=%u reason=new-desktop-session\n",
+                (unsigned)generation);
+        return PLANK_VISION_TRANSPORT_OK;
     }
     return finish_input_send(transport, plank_transport_native_input_send(
         transport->endpoint, PLANK_TRANSPORT_INPUT_RAW_HID_WACOM,

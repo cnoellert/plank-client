@@ -55,7 +55,7 @@ struct PlankVisionApp: App {
                     // Honour the offer made while a session was running. The
                     // deferred link is re-evaluated, never replayed as input,
                     // and a deferred picker change is applied.
-                    if !active { relayHandoff.desktopSessionEnded() }
+                    relayHandoff.desktopSessionChanged(active)
                 }
                 .sheet(isPresented: Binding(
                     get: { relayHandoff.registration.pending != nil },

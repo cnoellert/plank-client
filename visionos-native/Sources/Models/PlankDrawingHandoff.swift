@@ -75,6 +75,7 @@ struct PlankDrawingHandoffDescriptor: Equatable {
     let drawingIdentity: String
     /// Validated and deduplicated in descriptor order (§7.6).
     let routes: [PlankDrawingRoute]
+    var bluetoothIdentifier: UUID? = nil
 
     // drawingProtocol carries only frozen values (name pltr-raw-hid, version 1,
     // rawHID 1, linkType 2). It is validated and then has nothing left to
@@ -625,7 +626,7 @@ enum PlankDrawingHandoffValidator {
         let pathEnd = afterAuthority.firstIndex { $0 == "?" || $0 == "#" }
             ?? afterAuthority.endIndex
         let path = String(afterAuthority[afterAuthority.startIndex..<pathEnd])
-        guard path == PlankDrawingHandoffContract.path else { return .rejected("url.path") }
+        guard path == PlankDrawingHandoffContract.path || path == "/v2" else { return .rejected("url.path") }
         let tail = String(afterAuthority[pathEnd...])
         guard !tail.contains("#") else { return .rejected("url.fragment") }
         guard tail.hasPrefix("?") else { return .rejected("url.query") }
@@ -650,11 +651,15 @@ enum PlankDrawingHandoffValidator {
               PlankDrawingHandoffBytes.encodeBase64URL(payload) == characters else {
             return .rejected("encoding.nonCanonical")
         }
-        return validatePayload(payload)
+        let result = validatePayload(payload, expectedVersion: path == "/v2" ? 2 : 1)
+        // The frozen V1 wrong-path vector used /v2 with a V1 payload. It is
+        // still a wrong path, not an upgrade of that payload.
+        if path == "/v2", result == .rejected("version.unsupported") { return .rejected("url.path") }
+        return result
     }
 
     /// Entry point 3, from the decoded payload bytes (§7.1 step 10 onward).
-    static func validatePayload(_ payload: Data) -> PlankDrawingHandoffParse {
+    static func validatePayload(_ payload: Data, expectedVersion: Int = 1) -> PlankDrawingHandoffParse {
         guard payload.count >= PlankDrawingHandoffContract.minDecodedBytes,
               payload.count <= PlankDrawingHandoffContract.maxDecodedBytes else {
             return .rejected("payload.length")
@@ -677,14 +682,15 @@ enum PlankDrawingHandoffValidator {
         // before the member-set check (§7.1 step 15).
         guard let versionValue = lookup["version"] else { return .rejected("version.missing") }
         guard let version = versionValue.integerValue else { return .rejected("version.type") }
-        guard version == PlankDrawingHandoffContract.version else {
+        guard version == expectedVersion && (version == 1 || version == 2) else {
             return .rejected("version.unsupported")
         }
 
-        let frozen: Set<String> = [
+        var frozen: Set<String> = [
             "version", "requestID", "displayName", "managementIdentity",
             "drawingIdentity", "drawingProtocol", "routes",
         ]
+        if version == 2 { frozen.insert("bluetooth") }
         guard members.allSatisfy({ frozen.contains($0.name) }) else {
             return .rejected("link.unknownMember")
         }
@@ -726,7 +732,18 @@ enum PlankDrawingHandoffValidator {
             return .rejected(reason)
         }
 
-        switch validateRoutes(lookup["routes"]!) {
+        var bluetoothIdentifier: UUID?
+        if let bluetooth = lookup["bluetooth"] {
+            guard let fields = bluetooth.members, Set(fields.map(\.name)) == ["linkType", "peripheralIdentifier"],
+                  fields.first(where: { $0.name == "linkType" })?.value.integerValue == 1,
+                  let text = fields.first(where: { $0.name == "peripheralIdentifier" })?.value.stringValue,
+                  isCanonicalRequestID(text), let id = UUID(uuidString: text),
+                  text != "00000000-0000-0000-0000-000000000000" else {
+                return .rejected("bluetooth.invalid")
+            }
+            bluetoothIdentifier = id
+        }
+        switch validateRoutes(lookup["routes"]!, allowEmpty: bluetoothIdentifier != nil) {
         case let .rejection(reason):
             return .rejected(reason)
         case let .value(routes):
@@ -736,7 +753,7 @@ enum PlankDrawingHandoffValidator {
                 displayName: displayName,
                 managementIdentity: managementIdentity,
                 drawingIdentity: drawingIdentity,
-                routes: routes
+                routes: routes, bluetoothIdentifier: bluetoothIdentifier
             ))
         }
     }
@@ -811,10 +828,10 @@ enum PlankDrawingHandoffValidator {
     }
 
     private static func validateRoutes(
-        _ value: PlankJSON
+        _ value: PlankJSON, allowEmpty: Bool = false
     ) -> PlankValidated<[PlankDrawingRoute]> {
         guard let elements = value.arrayValue else { return .rejection("routes.type") }
-        guard elements.count >= PlankDrawingHandoffContract.minRoutes,
+        guard elements.count >= (allowEmpty ? 0 : PlankDrawingHandoffContract.minRoutes),
               elements.count <= PlankDrawingHandoffContract.maxRoutes else {
             return .rejection("routes.count")
         }
@@ -831,7 +848,7 @@ enum PlankDrawingHandoffValidator {
         for route in routes where seen.insert("\(route.address):\(route.port)").inserted {
             surviving.append(route)
         }
-        guard !surviving.isEmpty else { return .rejection("routes.count") }
+        guard allowEmpty || !surviving.isEmpty else { return .rejection("routes.count") }
         return .value(surviving)
     }
 
@@ -955,13 +972,14 @@ struct PlankDrawingRouteSelection: Equatable {
     let drawingIdentity: String
     let displayName: String
     let routes: [PlankDrawingRoute]
+    var bluetoothIdentifier: UUID? = nil
 
     func route(forAttempt attempt: Int) -> PlankDrawingRoute? {
         guard !routes.isEmpty else { return nil }
         return routes[((attempt % routes.count) + routes.count) % routes.count]
     }
 
-    var routeLabel: String { routes.first?.displayLabel ?? "Network" }
+    var routeLabel: String { routes.first?.displayLabel ?? (bluetoothIdentifier != nil ? "Bluetooth" : "Network") }
 }
 
 /// Bounded, process-lifetime, non-persistent request deduplication (§10.5). A
@@ -1008,7 +1026,7 @@ struct PlankDrawingHandoffGate {
         return .verifyThenConnect(PlankDrawingRouteSelection(
             drawingIdentity: descriptor.drawingIdentity,
             displayName: descriptor.displayName,
-            routes: descriptor.routes
+            routes: descriptor.routes, bluetoothIdentifier: descriptor.bluetoothIdentifier
         ))
     }
 }

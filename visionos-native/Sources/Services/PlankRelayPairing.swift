@@ -123,7 +123,7 @@ private final class PlankConnectWaiter: @unchecked Sendable {
     }
 }
 
-private final class PlankRelayTCP: @unchecked Sendable {
+final class PlankRelayTCP: @unchecked Sendable {
     private let connection: NWConnection
     private let queue = DispatchQueue(label: "la.instinctual.plank.tablet-relay")
 
@@ -508,16 +508,19 @@ extension PlankRelayKeys {
     /// caller still completes the authenticated drawing handshake against this
     /// pin before reporting a connection or forwarding any input.
     static func savedDrawingConnection(attempt: Int) ->
-        (endpoint: NWEndpoint, account: String, routeLabel: String)? {
-        guard let selection = savedDrawingSelection(),
-              let route = selection.route(forAttempt: attempt),
-              let port = NWEndpoint.Port(rawValue: route.port) else { return nil }
-        let account = PlankDrawingIdentityAccounts
-            .identityAccount(selection.drawingIdentity)
+        (endpoint: NWEndpoint?, account: String, routeLabel: String, bluetoothIdentifier: UUID?)? {
+        guard let relay = relayRegistry().activeRelay,
+              let route = relay.connectionRoute(attempt: attempt) else { return nil }
+        let account = PlankDrawingIdentityAccounts.identityAccount(relay.drawingIdentity)
         guard (try? read(account))?.count == 32 else { return nil }
-        return (.hostPort(host: NWEndpoint.Host(route.address), port: port),
-                account, route.displayLabel)
+        switch route {
+        case let .bluetooth(identifier): return (nil, account, route.label, identifier)
+        case let .network(network):
+            guard let port = NWEndpoint.Port(rawValue: network.port) else { return nil }
+            return (.hostPort(host: NWEndpoint.Host(network.address), port: port), account, route.label, nil)
+        }
     }
+
 }
 
 // MARK: - App-link inbox
@@ -572,6 +575,13 @@ final class PlankRelayHandoffInbox: ObservableObject {
 
     private var gate = PlankDrawingHandoffGate()
     private var deferredDescriptor: PlankDrawingHandoffDescriptor?
+    @Published private(set) var enrollmentStatus = ""
+    private var pendingHandoffURL: URL?
+    private var setupRequest: DrawingRegistrationRequest?
+    private var setupDeadline: ContinuousClock.Instant?
+    private var enrollmentTask: Task<Void, Never>?
+    private var currentDesktopSessionActive = false
+
 
     init() {
         let conflicts = PlankRelayKeys.migrationConflictAccounts()
@@ -579,6 +589,11 @@ final class PlankRelayHandoffInbox: ObservableObject {
     }
 
     func receive(_ url: URL, desktopSessionActive: Bool) {
+        currentDesktopSessionActive = desktopSessionActive
+        if url.host == "enrollment" {
+            finishSetupRegistration(url, desktopSessionActive: desktopSessionActive)
+            return
+        }
         // Validation is pure: no Keychain, socket, Bonjour or DNS work happens
         // before the descriptor is accepted.
         let parse = PlankDrawingHandoffValidator.validateAppLink(url.absoluteString)
@@ -586,13 +601,21 @@ final class PlankRelayHandoffInbox: ObservableObject {
         case let .rejected(reason):
             state = .refused(reason: reason)
         case let .accepted(descriptor):
+            if setupRequest != nil || registration.approving { return }
+            pendingHandoffURL = url
             evaluate(descriptor, desktopSessionActive: desktopSessionActive)
         }
     }
 
     /// Called when a desktop session ends, to honour the offer made in
     /// `deferredUntilDisconnect` without replaying anything.
+    func desktopSessionChanged(_ active: Bool) {
+        currentDesktopSessionActive = active
+        if !active { desktopSessionEnded() }
+    }
+
     func desktopSessionEnded() {
+        currentDesktopSessionActive = false
         var current = PlankRelayKeys.relayRegistry()
         if current.desktopSessionEnded() { PlankRelayKeys.saveRelayRegistry(current) }
         registry = current
@@ -609,9 +632,124 @@ final class PlankRelayHandoffInbox: ObservableObject {
         registry = current
     }
 
+    func selectTransport(_ choice: PlankRelayTransportPreference, desktopSessionActive: Bool) {
+        var current = PlankRelayKeys.relayRegistry()
+        guard let relay = current.activeRelay else { return }
+        _ = current.requestTransport(choice, identity: relay.drawingIdentity, desktopSessionActive: desktopSessionActive)
+        PlankRelayKeys.saveRelayRegistry(current)
+        registry = current
+    }
+
     func reloadRegistry() { registry = PlankRelayKeys.relayRegistry() }
 
     // MARK: One-time registration approval
+
+    func requestSetupRegistration(open: @MainActor (URL) async -> Bool) async {
+        if let request = setupRequest, let deadline = setupDeadline, ContinuousClock.now < deadline {
+            // Reopen the same outstanding approval rather than manufacturing
+            // another grant when the user returns to PLANK before finishing.
+            _ = await open(request.url())
+            return
+        }
+        guard !registration.approving, setupRequest == nil,
+              let descriptor = registration.pending, let url = pendingHandoffURL,
+              case let .accepted(parsed) = PlankDrawingHandoffValidator.validateAppLink(url.absoluteString),
+              parsed == descriptor,
+              let handoff = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first?.value else { return }
+        var created: DrawingRegistrationRequest?
+        do {
+            let privateKey = try PlankRelayKeys.clientPrivateKey()
+            var publicKey = [UInt8](repeating: 0, count: 32)
+            guard privateKey.withUnsafeBytes({ bytes in
+                pltr_noise_public_key(bytes.bindMemory(to: UInt8.self).baseAddress, &publicKey)
+            }) == 0 else { throw PlankRelayError.crypto }
+            let request = try DrawingRegistrationRequest(
+                requestID: UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased(),
+                clientIdentity: Data(publicKey).hexadecimalText, handoff: handoff)
+            try DrawingRegistrationReceipt.create(request)
+            created = request
+            setupRequest = request; setupDeadline = .now + .seconds(120)
+            enrollmentStatus = "Complete Allow PLANK in Relay Setup."
+            guard await open(request.url()) else {
+                throw DrawingRegistrationError.invalidRequest
+            }
+            // A receipt/callback arriving after this deadline cannot create a
+            // pin. This task owns no socket and no tablet capture.
+            guard setupRequest == request, !registration.approving else { return }
+            enrollmentTask = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(120))
+                guard !Task.isCancelled, let self, self.setupRequest == request else { return }
+                DrawingRegistrationReceipt.remove(request)
+                self.setupRequest = nil; self.setupDeadline = nil
+                self.enrollmentStatus = "Registration expired. Continue in Relay Setup to start again."
+            }
+        } catch {
+            if let request = created {
+                DrawingRegistrationReceipt.remove(request)
+                guard setupRequest == request else { return }
+                enrollmentTask?.cancel()
+                setupRequest = nil; setupDeadline = nil
+            }
+            enrollmentStatus = error.localizedDescription
+        }
+    }
+
+    private func finishSetupRegistration(_ url: URL, desktopSessionActive: Bool) {
+        do {
+            let reply = try DrawingRegistrationRequest.parse(url, reply: true)
+            guard let pending = setupRequest, reply == pending,
+                  let deadline = setupDeadline, ContinuousClock.now < deadline,
+                  !registration.approving, let descriptor = registration.beginApproval() else {
+                throw DrawingRegistrationError.expired
+            }
+            // URLs cannot vouch for Setup approval. The protected receipt
+            // must match the exact outstanding Client request first.
+            do { try DrawingRegistrationReceipt.requireApproved(reply) }
+            catch {
+                _ = registration.finish(relayKey: nil)
+                _ = registration.offer(descriptor)
+                throw error
+            }
+            enrollmentTask?.cancel()
+            enrollmentStatus = "Verifying the Relay’s drawing connection…"
+            enrollmentTask = Task { [weak self] in
+                guard let self else { return }
+                defer {
+                    DrawingRegistrationReceipt.remove(reply)
+                    self.setupRequest = nil; self.setupDeadline = nil
+                    self.enrollmentTask = nil
+                }
+                do {
+                    let verified = try await PlankRelayEnrollmentProof.prove(reply, descriptor: descriptor)
+                    try Task.checkCancellation()
+                    guard !self.registration.cancelRequested, self.setupRequest == reply,
+                          ContinuousClock.now < deadline,
+                          let pin = Data(hexadecimal: verified), pin.count == 32 else {
+                        throw DrawingRegistrationError.expired
+                    }
+                    let account = PlankDrawingIdentityAccounts.identityAccount(verified)
+                    if let previous = try PlankRelayKeys.read(account), previous != pin {
+                        throw DrawingRegistrationError.invalidRequest
+                    }
+                    try PlankRelayKeys.write(pin, account: account)
+                    guard case let .approved(approved) = self.registration.finish(relayKey: verified) else {
+                        throw DrawingRegistrationError.expired
+                    }
+                    self.enrollmentStatus = ""
+                    // Selection still honors the desktop-session boundary.
+                    self.evaluate(approved, desktopSessionActive: self.currentDesktopSessionActive)
+                } catch {
+                    let canceled = self.registration.cancelRequested || Task.isCancelled
+                    _ = self.registration.finish(relayKey: nil)
+                    if !canceled { _ = self.registration.offer(descriptor) }
+                    self.enrollmentStatus = error.localizedDescription + " Existing approvals were kept."
+                    if canceled { self.state = .idle }
+                }
+            }
+        } catch {
+            enrollmentStatus = error.localizedDescription
+        }
+    }
 
     /// Runs PLANK's existing physical drawing approval for the pending
     /// descriptor. Only the exact drawing identity is saved, under its
@@ -656,6 +794,9 @@ final class PlankRelayHandoffInbox: ObservableObject {
     /// Closes the registration sheet. A running approval is canceled first;
     /// the prior selection and every approval are left exactly as they were.
     func cancelRegistration(_ approval: PlankRelayDrawingApproval) {
+        enrollmentTask?.cancel()
+        if let request = setupRequest { DrawingRegistrationReceipt.remove(request) }
+        setupRequest = nil; setupDeadline = nil; enrollmentStatus = ""
         if registration.approving {
             registration.cancel()
             approval.cancel()

@@ -10,6 +10,8 @@
 #if defined(PLANK_TABLET_RELAY)
 #include "client_link.h"
 #include "client_pair.h"
+#include "client_enrollment.h"
+#include "noise.h"
 #include "protocol.h"
 #endif
 

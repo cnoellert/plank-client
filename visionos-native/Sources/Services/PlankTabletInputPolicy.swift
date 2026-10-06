@@ -1,6 +1,12 @@
 // A paired tablet is part of the desktop session's input contract. A Relay
 // socket alone is not enough: the Host must acknowledge the current attachment.
 struct PlankTabletInputPolicy {
+    enum AvailabilityExpiry: Equatable {
+        case none
+        case continueWithoutTablet
+        case keepRecovering
+    }
+
     enum Release: Equatable {
         case mouse(UInt8)
         case key(UInt16, modifiers: UInt8)
@@ -10,11 +16,13 @@ struct PlankTabletInputPolicy {
         case noTablet
         case waiting
         case ready
+        case recovering
         case withoutTablet
     }
 
     private var state: State = .noTablet
     private var relayAttached = false
+    private var hasBeenReady = false
     private var suppressedMouseButtons = Set<UInt8>()
     private var forwardedMouseButtons = Set<UInt8>()
     private var suppressedKeys = Set<UInt16>()
@@ -28,6 +36,7 @@ struct PlankTabletInputPolicy {
     mutating func begin(hasPairedTablet: Bool) {
         state = hasPairedTablet ? .waiting : .noTablet
         relayAttached = false
+        hasBeenReady = false
         suppressedMouseButtons.removeAll()
         forwardedMouseButtons.removeAll()
         suppressedKeys.removeAll()
@@ -35,11 +44,19 @@ struct PlankTabletInputPolicy {
     }
 
     mutating func updatePreflight(ready: Bool, relayAttached: Bool = false) -> [Release] {
-        guard state == .waiting || state == .ready else { return [] }
-        let wasReady = state == .ready
+        guard state == .waiting || state == .ready || state == .recovering else { return [] }
+        let previouslyAllowedInput = state == .ready || state == .recovering
         self.relayAttached = relayAttached
-        state = ready ? .ready : .waiting
-        guard wasReady && !ready else { return [] }
+        if ready {
+            state = .ready
+            hasBeenReady = true
+        } else if state != .recovering || relayAttached {
+            // After a live outage the desktop remains usable while recovery
+            // continues. Once a tablet is claimed again, guard input until
+            // its fresh descriptors and Host acknowledgement have passed.
+            state = .waiting
+        }
+        guard previouslyAllowedInput && state == .waiting else { return [] }
         let releases = forwardedMouseButtons.sorted().map(Release.mouse) +
             forwardedKeys.sorted { $0.key < $1.key }.map {
                 Release.key($0.key, modifiers: $0.value)
@@ -57,11 +74,14 @@ struct PlankTabletInputPolicy {
         relayAttached = false
     }
 
-    @discardableResult
-    mutating func continueIfUnavailable() -> Bool {
-        guard shouldContinueWhenUnavailable else { return false }
+    mutating func expireAvailabilityGrace() -> AvailabilityExpiry {
+        guard shouldContinueWhenUnavailable else { return .none }
+        if hasBeenReady {
+            state = .recovering
+            return .keepRecovering
+        }
         continueWithoutTablet()
-        return true
+        return .continueWithoutTablet
     }
 
     mutating func allowsMouseButton(_ number: UInt8, pressed: Bool) -> Bool {

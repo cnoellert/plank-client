@@ -121,6 +121,9 @@ private final class PlankInputSenderState: @unchecked Sendable {
     private var accepted: UInt64 = 0
     private var maxSendNanos: UInt64 = 0
     private var failedSendNanos: UInt64 = 0
+    private var tabletReportsAccepted: UInt64 = 0
+    private var tabletMessagesAccepted: UInt64 = 0
+    private var lastTabletReportSend: UInt64 = 0
 
     func markFailed() {
         lock.lock()
@@ -128,11 +131,24 @@ private final class PlankInputSenderState: @unchecked Sendable {
         lock.unlock()
     }
 
-    func recordSend(nanos: UInt64, succeeded: Bool) {
+    func recordSend(nanos: UInt64, succeeded: Bool, tabletType: UInt16? = nil) {
         lock.lock()
         maxSendNanos = max(maxSendNanos, nanos)
         if succeeded { accepted &+= 1 } else { failedSendNanos = nanos }
+        if succeeded, let tabletType {
+            tabletMessagesAccepted &+= 1
+            if tabletType == 3 {
+                tabletReportsAccepted &+= 1
+                lastTabletReportSend = DispatchTime.now().uptimeNanoseconds
+            }
+        }
         lock.unlock()
+    }
+
+    var tabletSummary: (reports: UInt64, messages: UInt64, lastReport: UInt64) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (tabletReportsAccepted, tabletMessagesAccepted, lastTabletReportSend)
     }
 
     /// Events the native endpoint accepted, slowest submission, and the
@@ -414,6 +430,7 @@ struct PlankSessionEngine: Sendable {
             var lastFrameTime = UInt64(0)
             var recovery = PlankVideoDecoderRecovery()
             let senderState = PlankInputSenderState()
+            var lastTabletFlowLog = sessionStart
             let sender = Task.detached(priority: .userInitiated) {
                 for await _ in inputQueue.signals {
                     for event in inputQueue.drain() {
@@ -424,7 +441,11 @@ struct PlankSessionEngine: Sendable {
                         ) == PLANK_VISION_TRANSPORT_OK
                         senderState.recordSend(
                             nanos: DispatchTime.now().uptimeNanoseconds - sendStart,
-                            succeeded: sent
+                            succeeded: sent,
+                            tabletType: {
+                                guard case let .rawHid(frame) = event, frame.count >= 8 else { return nil }
+                                return UInt16(frame[6]) | (UInt16(frame[7]) << 8)
+                            }()
                         )
                         guard sent else {
                             senderState.markFailed()
@@ -453,6 +474,17 @@ struct PlankSessionEngine: Sendable {
                         payload.count - decoderPadding, &payloadSize, 30
                     )
                     let reportTime = DispatchTime.now().uptimeNanoseconds
+                    if reportTime - lastTabletFlowLog >= 5_000_000_000 {
+                        let tablet = senderState.tabletSummary
+                        let queued = inputQueue.diagnostics
+                        var stats = PlankVisionVideoStats()
+                        _ = plank_vision_transport_video_stats(transport, &stats)
+                        let age = tablet.lastReport == 0 ? "none" : String(format: "%.0fms", Double(max(reportTime, tablet.lastReport) - tablet.lastReport) / 1_000_000)
+                        NSLog("PLANK tablet submission: session=%@ reportsAccepted=%llu messagesAccepted=%llu lastReport=%@ queueDepth=%ld queueAge=%.0fms nativeInputSent=%llu relay=[%@]",
+                              sessionLabel, tablet.reports, tablet.messages, age, queued.depth,
+                              Double(queued.oldestAgeNanos) / 1_000_000, stats.input_packets_sent, relayState())
+                        lastTabletFlowLog = reportTime
+                    }
                     timing.roll()
                     if reportTime - lastVideoReport >= 1_000_000_000 {
                         if shouldReportVideoProgress() {

@@ -18,10 +18,44 @@ enum PlankRelaySelection: Equatable {
     case relay(String)
 }
 
+enum PlankRelayTransportPreference: String, CaseIterable, Equatable {
+    case automatic, bluetooth, network
+    var title: String { switch self { case .automatic: "Automatic"; case .bluetooth: "Bluetooth"; case .network: "Network" } }
+}
+
+enum PlankRelayDrawingRoute: Equatable {
+    case bluetooth(UUID)
+    case network(PlankDrawingRoute)
+    var label: String { switch self { case .bluetooth: "Bluetooth"; case let .network(route): "Network · " + route.displayLabel } }
+}
+
 struct PlankRegisteredRelay: Equatable {
     let drawingIdentity: String
     var name: String
     var routes: [PlankDrawingRoute]
+    var bluetoothIdentifier: UUID? = nil
+    var transport: PlankRelayTransportPreference = .automatic
+    var pendingTransport: PlankRelayTransportPreference? = nil
+
+    var availableTransports: [PlankRelayTransportPreference] {
+        var result: [PlankRelayTransportPreference] = [.automatic]
+        if bluetoothIdentifier != nil { result.append(.bluetooth) }
+        if !routes.isEmpty { result.append(.network) }
+        return result
+    }
+    var connectionRoutes: [PlankRelayDrawingRoute] {
+        let network = routes.map(PlankRelayDrawingRoute.network)
+        let bluetooth = bluetoothIdentifier.map { [PlankRelayDrawingRoute.bluetooth($0)] } ?? []
+        switch transport {
+        case .automatic: return network + bluetooth
+        case .bluetooth: return bluetooth
+        case .network: return network
+        }
+    }
+    func connectionRoute(attempt: Int) -> PlankRelayDrawingRoute? {
+        guard !connectionRoutes.isEmpty else { return nil }
+        return connectionRoutes[((attempt % connectionRoutes.count) + connectionRoutes.count) % connectionRoutes.count]
+    }
 }
 
 struct PlankRelayRegistry: Equatable {
@@ -49,13 +83,20 @@ struct PlankRelayRegistry: Equatable {
     /// route hints of the one existing entry; it never creates a duplicate.
     mutating func register(_ route: PlankDrawingRouteSelection) {
         guard PlankDrawingHandoffValidator.isCanonicalIdentity(route.drawingIdentity),
-              !route.routes.isEmpty else { return }
+              (!route.routes.isEmpty || route.bluetoothIdentifier != nil) else { return }
         if let index = relays.firstIndex(where: { $0.drawingIdentity == route.drawingIdentity }) {
             relays[index].name = route.displayName
             relays[index].routes = route.routes
+            // A V1 refresh has no Bluetooth hint; preserve a previously verified
+            // hint for this same identity. Every connection still proves its pin.
+            if let id = route.bluetoothIdentifier { relays[index].bluetoothIdentifier = id }
+            if !relays[index].availableTransports.contains(relays[index].transport) { relays[index].transport = .automatic }
+            if let pending = relays[index].pendingTransport, !relays[index].availableTransports.contains(pending) {
+                relays[index].pendingTransport = nil
+            }
         } else {
             relays.append(PlankRegisteredRelay(drawingIdentity: route.drawingIdentity,
-                                               name: route.displayName, routes: route.routes))
+                                               name: route.displayName, routes: route.routes, bluetoothIdentifier: route.bluetoothIdentifier))
         }
     }
 
@@ -81,12 +122,38 @@ struct PlankRelayRegistry: Equatable {
         return .applied
     }
 
+    mutating func requestTransport(_ choice: PlankRelayTransportPreference, identity: String,
+                                   desktopSessionActive: Bool) -> Request {
+        guard let index = relays.firstIndex(where: { $0.drawingIdentity == identity }),
+              relays[index].availableTransports.contains(choice) else { return .unknownRelay }
+        if desktopSessionActive {
+            relays[index].pendingTransport = choice == relays[index].transport ? nil : choice
+            return choice == relays[index].transport ? .unchanged : .deferredUntilDisconnect
+        }
+        relays[index].pendingTransport = nil
+        guard relays[index].transport != choice else { return .unchanged }
+        relays[index].transport = choice
+        return .applied
+    }
+
     /// Applies a deferred picker change. Returns true when the selection moved.
     @discardableResult
     mutating func desktopSessionEnded() -> Bool {
-        guard let pending = pendingSelection else { return false }
-        pendingSelection = nil
-        return request(pending, desktopSessionActive: false) == .applied
+        var changed = false
+        for index in relays.indices {
+            if let pending = relays[index].pendingTransport {
+                relays[index].pendingTransport = nil
+                if relays[index].availableTransports.contains(pending) {
+                    relays[index].transport = pending
+                    changed = true
+                }
+            }
+        }
+        if let pending = pendingSelection {
+            pendingSelection = nil
+            changed = request(pending, desktopSessionActive: false) == .applied || changed
+        }
+        return changed
     }
 
     var isOff: Bool { selection == .off }
@@ -108,7 +175,7 @@ struct PlankRelayRegistry: Equatable {
     var activeRouteSelection: PlankDrawingRouteSelection? {
         activeRelay.map {
             PlankDrawingRouteSelection(drawingIdentity: $0.drawingIdentity,
-                                       displayName: $0.name, routes: $0.routes)
+                                       displayName: $0.name, routes: $0.routes, bluetoothIdentifier: $0.bluetoothIdentifier)
         }
     }
 
@@ -154,8 +221,11 @@ enum PlankRelayRegistryCodec {
         var encoded: [String: Any] = [
             "version": 1,
             "relays": registry.relays.map { relay -> [String: Any] in
-                ["identity": relay.drawingIdentity, "name": relay.name,
-                 "routes": relay.routes.map(encode)]
+                var entry: [String: Any] = ["identity": relay.drawingIdentity, "name": relay.name,
+                    "routes": relay.routes.map(encode), "transport": relay.transport.rawValue]
+                if let id = relay.bluetoothIdentifier { entry["bluetoothIdentifier"] = id.uuidString.lowercased() }
+                if let pending = relay.pendingTransport { entry["pendingTransport"] = pending.rawValue }
+                return entry
             },
             "selection": encode(registry.selection),
         ]
@@ -177,8 +247,18 @@ enum PlankRelayRegistryCodec {
                   seen.insert(identity).inserted,
                   let name = entry["name"] as? String, !name.isEmpty else { return nil }
             let routes = ((entry["routes"] as? [[String: Any]]) ?? []).compactMap(decodeRoute)
-            guard !routes.isEmpty else { return nil }
-            return PlankRegisteredRelay(drawingIdentity: identity, name: name, routes: routes)
+            let bluetooth = (entry["bluetoothIdentifier"] as? String).flatMap { text -> UUID? in
+                guard PlankDrawingHandoffValidator.isCanonicalRequestID(text),
+                      text != "00000000-0000-0000-0000-000000000000" else { return nil }
+                return UUID(uuidString: text)
+            }
+            guard !routes.isEmpty || bluetooth != nil else { return nil }
+            var relay = PlankRegisteredRelay(drawingIdentity: identity, name: name, routes: routes, bluetoothIdentifier: bluetooth)
+            if let value = (entry["transport"] as? String).flatMap(PlankRelayTransportPreference.init),
+               relay.availableTransports.contains(value) { relay.transport = value }
+            if let value = (entry["pendingTransport"] as? String).flatMap(PlankRelayTransportPreference.init),
+               relay.availableTransports.contains(value) { relay.pendingTransport = value }
+            return relay
         }
         let registered = Set(relays.map(\.drawingIdentity))
         func selection(_ raw: Any?) -> PlankRelaySelection? {
@@ -358,6 +438,8 @@ enum PlankRelayLinkEvent: Equatable {
     case sessionStarted(configured: Bool)
     /// The authenticated drawing handshake completed.
     case ready
+    /// The route that completed authentication, never the saved preference.
+    case authenticatedRoute(String)
     /// The link closed unexpectedly. `wasReady` says whether it had connected;
     /// the bridge retries either way.
     case closed(wasReady: Bool)
@@ -368,20 +450,27 @@ enum PlankRelayLinkEvent: Equatable {
 
 struct PlankRelayLinkTracker: Equatable {
     private(set) var observation: PlankRelayLinkObservation = .none
+    private(set) var authenticatedRoute: String?
 
     mutating func apply(_ event: PlankRelayLinkEvent) {
         switch event {
         case let .sessionStarted(configured):
+            authenticatedRoute = nil
             observation = configured ? .connecting : .none
         case .ready:
             observation = .connected
+        case let .authenticatedRoute(route):
+            authenticatedRoute = route
         case let .closed(wasReady):
+            authenticatedRoute = nil
             // A drop from a working link is a reconnect in progress; an
             // attempt that never connected is a failure until one succeeds.
             observation = wasReady ? .connecting : .unavailable
         case .failed:
+            authenticatedRoute = nil
             observation = .unavailable
         case .sessionEnded:
+            authenticatedRoute = nil
             // A finished link is idle again; a failure stays reported.
             if observation != .unavailable { observation = .none }
         }
