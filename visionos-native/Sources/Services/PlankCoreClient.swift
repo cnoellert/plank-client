@@ -260,13 +260,13 @@ final class PlankCoreClient: ObservableObject {
         tabletRelayTransport = tabletRelayLinkTracker.authenticatedRoute
     }
 
-    private func continueWithoutTablet(status: String, whenUnavailableOnly: Bool = false) {
-        if whenUnavailableOnly {
-            guard tabletInputPolicy.continueIfUnavailable() else { return }
-        } else {
-            guard tabletInputPolicy.waitsForTablet else { return }
-            tabletInputPolicy.continueWithoutTablet()
-        }
+    private func continueWithoutTablet(status: String) {
+        guard tabletInputPolicy.waitsForTablet else { return }
+        tabletInputPolicy.continueWithoutTablet()
+        finishContinuingWithoutTablet(status: status)
+    }
+
+    private func finishContinuingWithoutTablet(status: String) {
         tabletWaitTimeoutID = UUID()
         tabletBridge?.close(reason: .continueWithoutTablet)
         stoppingTabletBridge = tabletBridge
@@ -293,11 +293,24 @@ final class PlankCoreClient: ObservableObject {
                   self.waitingForTablet,
                   self.tabletSceneActive,
                   self.tabletInputPolicy.shouldContinueWhenUnavailable else { return }
-            self.continueWithoutTablet(
-                status: "Wacom Relay unavailable; continuing this session without the tablet.",
-                whenUnavailableOnly: true
-            )
-            if self.tabletRelayLink != .connected { self.applyRelayLink(.failed) }
+            switch self.tabletInputPolicy.expireAvailabilityGrace() {
+            case .none:
+                return
+            case .continueWithoutTablet:
+                self.finishContinuingWithoutTablet(
+                    status: "Wacom Relay unavailable; continuing this session without the tablet."
+                )
+                if self.tabletRelayLink != .connected { self.applyRelayLink(.failed) }
+            case .keepRecovering:
+                // A tablet that worked earlier may be powered off for longer
+                // than the startup grace. Release the desktop input barrier,
+                // but retain the bridge, heartbeats and reconnect attempts.
+                self.tabletWaitTimeoutID = UUID()
+                self.waitingForTablet = false
+                self.showingTabletWaitScreen = false
+                self.tabletRelayStatus = "Waiting for Wacom to reconnect; mouse and keyboard remain available."
+                NSLog("PLANK tablet recovery: availability grace expired; keeping Relay recovery active")
+            }
         }
     }
 #endif

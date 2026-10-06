@@ -7,6 +7,14 @@ behind `PlankCoreClient`; the desktop Qt interface is not part of this target.
 
 ## Tablet session lifecycle
 
+Once a tablet has passed attachment checks in a desktop session, a later
+tablet outage retains Relay recovery even after the availability grace
+expires. Mouse and keyboard input become available during that wait. When
+tablet ownership returns, input is guarded until fresh descriptors and the
+Host acknowledgement pass. An explicit choice to continue without the tablet
+still disables it for that session; the initial absent-tablet startup policy
+is unchanged.
+
 The first raw tablet attachment on a new desktop transport queues DEVICE,
 DETACH, and the identical DEVICE on the ordered input lane, before forwarding
 the original descriptors. The preparatory DEVICE establishes the generation
