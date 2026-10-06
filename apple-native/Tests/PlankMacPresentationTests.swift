@@ -27,6 +27,15 @@ import AppKit
             width: 2, height: 2, hotspotX: 0, hotspotY: 0, visible: true, generation: 1)
         overlay.cursorShape(shape)
         check(!sprite.isHidden && sprite.frame == CGRect(x: 50,y: 50,width: 2,height: 2), "Host cursor position and artwork")
+        let native = overlay.nativeMouseCursor!
+        check(native.image.size == NSSize(width: 2,height: 2) && native.hotSpot == .zero, "native mouse uses Host artwork and hotspot")
+        overlay.setLocalMouse(true)
+        check(sprite.isHidden && !overlay.replacesSystemCursor, "mouse ownership suppresses echoed Host sprite")
+        overlay.cursor(PlankRemoteCursor(x: 1, y: 1, frameWidth: 100, frameHeight: 100, sequence: 2))
+        check(sprite.isHidden && overlay.nativeMouseCursor === native, "late mouse acknowledgement cannot move sprite or recreate artwork")
+        overlay.setLocalMouse(false)
+        check(!sprite.isHidden && sprite.frame.origin == NSPoint(x: 1,y: 1), "tablet ownership resumes actual Host position")
+        overlay.cursor(position())
         check(root.subviews.last === overlay && overlay.layer!.zPosition > video.layer!.zPosition, "cursor owns a view above video")
         // AppKit keeps backing layers of an unshown test window detached.
         // Compose its actual production cursor layer above the opaque video

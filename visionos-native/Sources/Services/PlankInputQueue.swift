@@ -15,6 +15,20 @@ final class PlankInputQueue: @unchecked Sendable {
     private let wakeupContinuation: AsyncStream<Void>.Continuation
     private var events: [PlankInputEvent] = []
     private var stopped = false
+#if PLANK_NATIVE_MAC_WACOM
+    // Presentation ownership only. This does not decode or change HID payloads,
+    // their ordering, capture, or transport behavior.
+    private var mouseOwnsPointer = false
+    var nativeMouseOwnsPointer: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return mouseOwnsPointer
+    }
+    private func observePointerSource(_ event: PlankInputEvent) {
+        if case .pointer = event { mouseOwnsPointer = true }
+        if case let .rawHid(frame) = event, frame.count >= 20,
+           frame[6] == 3, frame[7] == 0 { mouseOwnsPointer = false } // PLANK_RAW_HID_INPUT
+    }
+#endif
     // Bounded diagnostics only: timings and counts, never event contents.
     private var oldestEnqueueTime: UInt64 = 0
     private var highWaterDepth = 0
@@ -34,6 +48,9 @@ final class PlankInputQueue: @unchecked Sendable {
             lock.unlock()
             return
         }
+#if PLANK_NATIVE_MAC_WACOM
+        observePointerSource(event)
+#endif
         let shouldWake = events.isEmpty
         if shouldWake { oldestEnqueueTime = DispatchTime.now().uptimeNanoseconds }
         if case .pointer = event,
@@ -55,6 +72,7 @@ final class PlankInputQueue: @unchecked Sendable {
         guard !stopped, events.count < 256 else { lock.unlock(); return false }
         let shouldWake = events.isEmpty
         if shouldWake { oldestEnqueueTime = DispatchTime.now().uptimeNanoseconds }
+        observePointerSource(.rawHid(frame))
         events.append(.rawHid(frame))
         highWaterDepth = max(highWaterDepth, events.count)
         lock.unlock()

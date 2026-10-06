@@ -33,9 +33,12 @@ Late callbacks cannot use the destroyed Swift sender context.
 
 ## Desktop presentation
 
-The remote cursor is drawn in a separate AppKit view above the video. Positions
-received before the first cursor shape use an arrow at the Host position;
-the local pointer remains visible until a replacement is available. An explicit
+The tablet's remote cursor is drawn in a separate AppKit view above the video.
+Positions received before the first cursor shape use an arrow at the Host
+position. Mouse movement uses a native macOS cursor with the Host artwork and
+hotspot at the local pointer position, avoiding delayed position echoes.
+Only accepted mouse movement or tablet input changes presentation ownership;
+HID feature replies do not. Input forwarding and raw tablet reports are unchanged. An explicit
 Host request to hide its cursor is respected. Stale positions from a previous
 resolution are not drawn into the new canvas.
 
@@ -52,9 +55,11 @@ Pointer hiding follows the topmost view under the mouse. Toolbar buttons and
 the popover also own native arrow cursor regions, including AppKit's separate
 full-screen windows. Volume and bitrate use AppKit slider controls with
 explicitly painted handles and normal keyboard/accessibility input.
-The desktop hides the native arrow only until the next mouse movement; it
-never installs a transparent cursor image. This lets AppKit reveal the arrow
-over the system menu bar even without an event delivered to the Client.
+While the tablet owns the cursor, the native arrow is hidden only until the
+next mouse movement. Mouse ownership uses no repeated hide/show cycle.
+No transparent cursor image is installed. Local toolbars and the system menu
+bar retain their native pointer. The green control uses a reversible fullscreen
+action, revalidated after transitions independently of the window's zoom size.
 
 ## Build
 

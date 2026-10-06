@@ -10,7 +10,7 @@ xcrun swiftc -swift-version 6 -Onone -parse-as-library -DPLANK_NATIVE_MAC_WACOM 
     visionos-native/Sources/Services/PlankWacomPreflight.swift apple-native/Tests/PlankMacPolicyTests.swift -o "$out/mac-policy"
 "$out/mac-policy"
 xcrun swiftc -swift-version 6 -Onone -parse-as-library \
-    apple-native/Sources/PlankMacCursorOverlay.swift apple-native/Sources/PlankMacInputPolicy.swift \
+    apple-native/Sources/PlankMacCursorOverlay.swift apple-native/Sources/PlankMacWindowPresentation.swift apple-native/Sources/PlankMacInputPolicy.swift \
     visionos-native/Sources/Models/HostBookmark.swift apple-native/Tests/PlankMacPresentationTests.swift -o "$out/mac-presentation"
 "$out/mac-presentation"
 xcrun swiftc -swift-version 6 -Onone -parse-as-library \

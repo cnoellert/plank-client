@@ -7,6 +7,25 @@ final class PlankMacCursorOverlay: NSView {
     private var position: PlankRemoteCursor?
     private var shape: PlankRemoteCursorShape?
     private var shapeImage: CGImage?
+    private var localMouse = false
+    private var cachedNativeCursor: NSCursor?
+    private var cachedCursorScale: Double?
+    var nativeMouseCursor: NSCursor? {
+        if let shape, !shape.visible { return nil }
+        guard let shape, let shapeImage, width > 0 else { return .arrow }
+        let scale = min(max(PlankMacCoordinates.canvas(in: bounds, width: width, height: height).width / Double(width), 0.5), 1)
+        if cachedNativeCursor == nil || cachedCursorScale != scale {
+            let size = NSSize(width: Double(shape.width) * scale, height: Double(shape.height) * scale)
+            cachedNativeCursor = NSCursor(image: NSImage(cgImage: shapeImage, size: size),
+                hotSpot: NSPoint(x: Double(shape.hotspotX) * scale, y: Double(shape.hotspotY) * scale))
+            cachedCursorScale = scale
+        }
+        return cachedNativeCursor
+    }
+    func setLocalMouse(_ active: Bool) {
+        guard localMouse != active else { return }
+        localMouse = active; placeCursor()
+    }
     private let fallbackImage: CGImage?
     private let fallbackSize: CGSize
     private let fallbackHotspot: CGPoint
@@ -36,7 +55,7 @@ final class PlankMacCursorOverlay: NSView {
     func cursor(_ position: PlankRemoteCursor?) { self.position = position; placeCursor() }
     func cursorShape(_ shape: PlankRemoteCursorShape?) {
         self.shape = shape
-        shapeImage = nil
+        shapeImage = nil; cachedNativeCursor = nil; cachedCursorScale = nil
         // Artwork changes infrequently; never recreate it for every movement.
         if let shape, shape.width > 0, shape.height > 0,
            shape.pixels.count == shape.width * shape.height * 4,
@@ -55,6 +74,7 @@ final class PlankMacCursorOverlay: NSView {
         defer { CATransaction.commit() }
         replacesSystemCursor = false
         sprite.isHidden = true
+        guard !localMouse else { return }
         guard let position, width > 1, height > 1,
               position.frameWidth == width, position.frameHeight == height,
               bounds.width > 0, bounds.height > 0 else { return }
@@ -91,13 +111,22 @@ final class PlankMacCursorOverlay: NSView {
 
 enum PlankMacDesktopWindow {
     @MainActor static func configure(_ window: NSWindow) {
-        window.styleMask.insert(.resizable)
-        window.collectionBehavior.remove([.fullScreenAuxiliary, .fullScreenNone])
-        window.collectionBehavior.insert(.fullScreenPrimary)
+        // AppKit owns the full-screen style during its transition. Changing
+        // that style while already full screen can rebuild native controls.
+        if !window.styleMask.contains(.fullScreen) {
+            window.styleMask.insert(.resizable)
+            window.collectionBehavior.remove([.fullScreenAuxiliary, .fullScreenNone])
+            window.collectionBehavior.insert(.fullScreenPrimary)
+        }
         if let button = window.standardWindowButton(.zoomButton) {
             button.isEnabled = true
-            button.target = window
-            button.action = #selector(NSWindow.toggleFullScreen(_:))
+            if let presentation = window.delegate as? PlankMacWindowPresentation {
+                button.target = presentation
+                button.action = #selector(PlankMacWindowPresentation.toggleDesktopFullScreen(_:))
+            } else {
+                button.target = window
+                button.action = #selector(NSWindow.toggleFullScreen(_:))
+            }
         }
     }
 }

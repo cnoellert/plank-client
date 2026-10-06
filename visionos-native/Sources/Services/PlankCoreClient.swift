@@ -949,6 +949,10 @@ final class PlankCoreClient: ObservableObject {
         return (Int(remoteCursor.x), Int(remoteCursor.y))
     }
 
+#if PLANK_NATIVE_MAC_WACOM
+    var nativeMouseOwnsPointer: Bool { inputQueue.nativeMouseOwnsPointer }
+#endif
+
     func movePointer(x: Int, y: Int, width: Int, height: Int) {
 #if PLANK_TABLET_RELAY
         guard !waitingForTablet else { return }

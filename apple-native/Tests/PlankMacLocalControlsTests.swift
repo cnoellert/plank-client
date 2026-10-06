@@ -4,13 +4,14 @@ import SwiftUI
 // Only transport and video are substituted. The real AppKit input view,
 // cursor overlay, and window delegate run without connecting to a Host.
 @MainActor final class PlankCoreClient {
+    var nativeMouseOwnsPointer = false
     var keys: [(UInt16, Bool)] = []
     var tabletChanges = 0
     func setTabletActive(_ active: Bool) { tabletChanges += 1 }
     func registerVideoSurface(id: UUID, frame: (PlankRenderedFrame?) -> Void,
         cursor: (PlankRemoteCursor?) -> Void, cursorShape: (PlankRemoteCursorShape?) -> Void) {}
     func unregisterVideoSurface(id: UUID) {}
-    func movePointer(x: Int, y: Int, width: Int, height: Int) {}
+    func movePointer(x: Int, y: Int, width: Int, height: Int) { nativeMouseOwnsPointer = true }
     func setMouseButton(number: UInt8, pressed: Bool) {}
     func scroll(vertical: Int16, horizontal: Int16) {}
     func sendKey(code: UInt16, pressed: Bool, modifiers: UInt8) { keys.append((code, pressed)) }
@@ -37,6 +38,21 @@ final class PlankMacMetalView: NSView {
         window.delegate = original
         let presentation = PlankMacWindowPresentation(window: window)
         check(window.delegate === presentation, "desktop delegate installed")
+        let green = window.standardWindowButton(.zoomButton)!
+        check(green.target === presentation && green.action == #selector(PlankMacWindowPresentation.toggleDesktopFullScreen(_:)),
+            "green button has reversible desktop fullscreen action")
+        let fullscreenItem = NSMenuItem(title: "Full Screen", action: green.action, keyEquivalent: "")
+        check(presentation.validateUserInterfaceItem(fullscreenItem), "green button validates independently of zoom size")
+        check(presentation.validateUserInterfaceItem(NSMenuItem(title: "Other", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "")),
+            "unrelated action validation remains available")
+        let transition = Notification(name: NSWindow.willEnterFullScreenNotification, object: window)
+        presentation.windowWillEnterFullScreen(transition)
+        check(!presentation.validateUserInterfaceItem(fullscreenItem), "fullscreen transition prevents repeated requests")
+        presentation.windowDidEnterFullScreen(Notification(name: NSWindow.didEnterFullScreenNotification, object: window))
+        check(presentation.validateUserInterfaceItem(fullscreenItem), "completed fullscreen enables exit action")
+        presentation.windowWillExitFullScreen(Notification(name: NSWindow.willExitFullScreenNotification, object: window))
+        presentation.windowDidFailToExitFullScreen(window)
+        check(presentation.validateUserInterfaceItem(fullscreenItem), "failed transition cannot leave green action disabled")
         let options = window.delegate!.window!(window, willUseFullScreenPresentationOptions: [])
         check(options.contains([.fullScreen, .autoHideMenuBar, .autoHideDock, .autoHideToolbar]), "fullscreen chrome auto-hides")
         check(!options.contains(.hideMenuBar) && !options.contains(.hideDock), "mutually exclusive options removed")
