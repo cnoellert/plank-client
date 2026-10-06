@@ -105,7 +105,7 @@ final class PlankMacInputView: NSView {
         // Local controls retain tablet ownership. This affects cursor and
         // keyboard/mouse routing only, never the raw Wacom capture lifetime.
     }
-    func restoreLocalCursor() { NSCursor.arrow.set() }
+    func restoreLocalCursor() { PlankMacLocalPointerView.showArrow() }
     override func layout() { super.layout(); video.frame = canvas; software.frame = canvas; cursorOverlay.frame = bounds; refreshNativeCursor(); window?.invalidateCursorRects(for: self) }
     override func updateTrackingAreas() {
         if let tracking { removeTrackingArea(tracking) }

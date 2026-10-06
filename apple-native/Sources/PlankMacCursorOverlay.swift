@@ -94,6 +94,10 @@ enum PlankMacDesktopWindow {
         window.styleMask.insert(.resizable)
         window.collectionBehavior.remove([.fullScreenAuxiliary, .fullScreenNone])
         window.collectionBehavior.insert(.fullScreenPrimary)
-        window.standardWindowButton(.zoomButton)?.isEnabled = true
+        if let button = window.standardWindowButton(.zoomButton) {
+            button.isEnabled = true
+            button.target = window
+            button.action = #selector(NSWindow.toggleFullScreen(_:))
+        }
     }
 }

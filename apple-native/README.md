@@ -39,7 +39,7 @@ the local pointer remains visible until a replacement is available. An explicit
 Host request to hide its cursor is respected. Stale positions from a previous
 resolution are not drawn into the new canvas.
 
-The desktop's Full Screen toolbar button and Control-Command-F enter or leave
+The desktop's green window button, Full Screen toolbar button and Control-Command-F enter or leave
 native macOS full screen. That shortcut stays local rather than being sent to
 the workstation. The green window control is enabled too. Full screen hides
 the menu bar, Dock and toolbar until the pointer reaches their screen edge.
@@ -48,8 +48,10 @@ These are per-window presentation options, not changes to system preferences.
 Session controls restore the normal Mac pointer and keep their keyboard/mouse
 events local. Opening them releases held desktop keyboard/mouse input without
 releasing the Wacom. Closing them returns desktop input routing.
-Pointer hiding follows the topmost view under the mouse, so a revealed
-full-screen toolbar uses the native arrow even when it overlaps the video.
+Pointer hiding follows the topmost view under the mouse. Toolbar buttons and
+the popover also own native arrow cursor regions, including AppKit's separate
+full-screen windows. Volume and bitrate use AppKit slider controls with
+explicitly painted handles and normal keyboard/accessibility input.
 
 ## Build
 

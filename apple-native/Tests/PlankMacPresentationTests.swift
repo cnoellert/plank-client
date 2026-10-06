@@ -57,6 +57,9 @@ import AppKit
         check(window.styleMask.contains(.resizable), "desktop resizable")
         check(window.collectionBehavior.contains(.fullScreenPrimary) && !window.collectionBehavior.contains(.fullScreenAuxiliary), "desktop can be primary fullscreen window")
         check(window.standardWindowButton(.zoomButton)?.isEnabled == true, "green fullscreen control enabled")
+        check(window.standardWindowButton(.zoomButton)?.target === window &&
+            window.standardWindowButton(.zoomButton)?.action == #selector(NSWindow.toggleFullScreen(_:)),
+            "green window button invokes fullscreen rather than zoom")
         let shortcut = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [.control,.command], timestamp: 0,
             windowNumber: 0, context: nil, characters: "f", charactersIgnoringModifiers: "f", isARepeat: false, keyCode: 3)!
         check(PlankMacKeys.staysLocal(shortcut), "fullscreen shortcut is not forwarded to Host")

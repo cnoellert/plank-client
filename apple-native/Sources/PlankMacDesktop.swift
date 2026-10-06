@@ -23,12 +23,15 @@ struct PlankMacDesktop: View {
                 if let desktopWindow { PlankMacDesktopWindow.configure(desktopWindow); desktopWindow.toggleFullScreen(nil) }
             } label: { Label("Full Screen", systemImage: "arrow.up.left.and.arrow.down.right") }
                 .onHover { if $0 { NSCursor.arrow.set() } }
+                .background(PlankMacLocalPointerRegion())
                 .help("Enter or leave full screen").keyboardShortcut("f", modifiers: [.control, .command]) }
             ToolbarItem { Button { controls.toggle() } label: { Label("Session Controls", systemImage: "slider.horizontal.3") }
                 .onHover { if $0 { NSCursor.arrow.set() } }
+                .background(PlankMacLocalPointerRegion())
                 .popover(isPresented: $controls, arrowEdge: .bottom) { sessionControls } }
             ToolbarItem { Button("Disconnect", role: .destructive) { client.disconnectSession(); dismissWindow(id: "desktop") }
-                .onHover { if $0 { NSCursor.arrow.set() } } }
+                .onHover { if $0 { NSCursor.arrow.set() } }
+                .background(PlankMacLocalPointerRegion()) }
         }
         .onDisappear { client.setTabletActive(false); if client.hasActiveDesktopSession { client.disconnectSession() } }
         .onChange(of: statistics) { _, enabled in client.setVideoDiagnosticsEnabled(enabled) }
@@ -37,12 +40,12 @@ struct PlankMacDesktop: View {
     private var sessionControls: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Session Controls").font(.headline)
-            HStack { Button { muted.toggle(); applyAudio() } label: { Image(systemName: muted ? "speaker.slash" : "speaker.wave.2") }; Slider(value: $volume, in: 0...1).onChange(of: volume) { _,_ in applyAudio() } }.accessibilityLabel("Audio volume")
+            HStack { Button { muted.toggle(); applyAudio() } label: { Image(systemName: muted ? "speaker.slash" : "speaker.wave.2") }; PlankMacSlider(value: $volume, range: 0...1, label: "Audio volume").frame(height: 24).onChange(of: volume) { _,_ in applyAudio() } }.accessibilityLabel("Audio volume")
             if let status = client.liveBitrate {
                 Text("Bitrate · \(StreamBitrate.megabitsLabel(status.currentKbps))")
-                Slider(value: Binding(get: { Double(client.liveBitrate?.currentKbps ?? status.startupKbps) }, set: { client.chooseLiveBitrate(Int($0), final: false) }), in: 10_000...150_000, step: 500) { editing in
+                PlankMacSlider(value: Binding(get: { Double(client.liveBitrate?.currentKbps ?? status.startupKbps) }, set: { client.chooseLiveBitrate(Int($0), final: false) }), range: 10_000...150_000, step: 500, label: "Video bitrate") { editing in
                     if !editing { client.chooseLiveBitrate(client.liveBitrate?.currentKbps ?? status.startupKbps, final: true) }
-                }.disabled(!status.supported)
+                }.frame(height: 24).disabled(!status.supported)
                 if !status.supported { Text("This Host does not support live bitrate changes.").font(.caption).foregroundStyle(.secondary) }
             }
             Toggle("Show statistics", isOn: $statistics)
@@ -50,6 +53,7 @@ struct PlankMacDesktop: View {
             Text(client.tabletPreflightSummary).font(.caption)
             Text("Tablet: \(PlankMacTabletSource.saved.title)").font(.caption).foregroundStyle(.secondary)
         }.padding(20).frame(width: 340)
+            .background(PlankMacLocalPointerRegion())
             .onAppear { NSCursor.arrow.set() }
     }
     private func applyAudio() {

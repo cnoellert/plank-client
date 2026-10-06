@@ -14,7 +14,7 @@ xcrun swiftc -swift-version 6 -Onone -parse-as-library \
     visionos-native/Sources/Models/HostBookmark.swift apple-native/Tests/PlankMacPresentationTests.swift -o "$out/mac-presentation"
 "$out/mac-presentation"
 xcrun swiftc -swift-version 6 -Onone -parse-as-library \
-    apple-native/Sources/PlankMacWindowPresentation.swift apple-native/Sources/PlankMacInput.swift \
+    apple-native/Sources/PlankMacWindowPresentation.swift apple-native/Sources/PlankMacInput.swift apple-native/Sources/PlankMacLocalControls.swift \
     apple-native/Sources/PlankMacCursorOverlay.swift apple-native/Sources/PlankMacInputPolicy.swift \
     visionos-native/Sources/Models/HostBookmark.swift apple-native/Tests/PlankMacLocalControlsTests.swift -o "$out/mac-local-controls"
 "$out/mac-local-controls"

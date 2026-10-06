@@ -28,6 +28,14 @@ import AppKit
         if previous?.responds(to: selector) == true { return previous }
         return super.forwardingTarget(for: selector)
     }
+    func windowDidEnterFullScreen(_ notification: Notification) {
+        previous?.windowDidEnterFullScreen?(notification)
+        if let window { PlankMacDesktopWindow.configure(window) }
+    }
+    func windowDidExitFullScreen(_ notification: Notification) {
+        previous?.windowDidExitFullScreen?(notification)
+        if let window { PlankMacDesktopWindow.configure(window) }
+    }
     func window(_ window: NSWindow, willUseFullScreenPresentationOptions proposed: NSApplication.PresentationOptions) -> NSApplication.PresentationOptions {
         var options = previous?.window?(window, willUseFullScreenPresentationOptions: proposed) ?? proposed
         // AppKit requires auto-hidden menu bars to be paired with a hidden or
