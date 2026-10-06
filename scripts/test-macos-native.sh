@@ -13,6 +13,17 @@ xcrun clang++ -std=c++17 -O0 -DPLANK_NATIVE_MAC_WACOM -Iapple-native/Bridge -Iap
     -Imoonlight-common-c/moonlight-common-c/src apple-native/Bridge/PlankMacWacom.cpp \
     apple-native/Tests/PlankMacWacomLifetimeTests.cpp -o "$out/mac-wacom-lifetime"
 "$out/mac-wacom-lifetime"
+xcrun clang++ -std=c++17 -O0 -DPLANK_NATIVE_MAC_WACOM -Iapple-native/Bridge -Iapp/streaming/input \
+    -Imoonlight-common-c/moonlight-common-c/src -c apple-native/Bridge/PlankMacWacom.cpp -o "$out/mac-wacom-wrapper.o"
+xcrun clang++ -std=c++17 -O0 -DPLANK_NATIVE_MAC_WACOM -Iapple-native/Bridge -Iapp/streaming/input \
+    -Imoonlight-common-c/moonlight-common-c/src -c apple-native/Tests/PlankMacWacomWorkerDriver.cpp -o "$out/mac-wacom-worker.o"
+xcrun swiftc -swift-version 6 -Onone -parse-as-library -DPLANK_NATIVE_MAC_WACOM \
+    -import-objc-header apple-native/Tests/PlankMacWacomWorkerDriver.h -Iapple-native/Bridge \
+    apple-native/Sources/PlankMacWacomSession.swift apple-native/Sources/PlankMacInputPolicy.swift \
+    visionos-native/Sources/Services/PlankInputQueue.swift visionos-native/Sources/Services/PlankWacomPreflight.swift \
+    apple-native/Tests/PlankMacWacomWorkerTests.swift "$out/mac-wacom-wrapper.o" "$out/mac-wacom-worker.o" \
+    -lc++ -o "$out/mac-wacom-worker"
+"$out/mac-wacom-worker"
 xcrun swiftc -swift-version 6 -Onone -parse-as-library \
     visionos-native/Sources/Services/PlankWacomPreflight.swift visionos-native/Tests/PlankWacomPreflightTests.swift -o "$out/relay-preflight"
 "$out/relay-preflight" > "$out/relay-preflight.log" 2>&1

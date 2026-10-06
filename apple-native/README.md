@@ -48,6 +48,9 @@ folders and a signing identity. Local staging does not notarize or publish.
 
 Run `scripts/test-macos-native.sh <output-dir>` for focused production policy,
 Wacom callback lifetime, preflight, decoder recovery and tablet-input checks.
+The worker callback check constructs the production Swift session on the main
+actor and invokes its sender through the production C wrapper on a foreign
+thread. It also checks queue refusal and callback revocation after disconnect.
 
 ## First live acceptance
 

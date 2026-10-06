@@ -27,7 +27,14 @@ final class PlankMacWacomSession: @unchecked Sendable {
     @MainActor init(input: PlankInputQueue, preflight: PlankWacomPreflight) {
         self.input = input
         self.preflight = preflight
-        handle = plank_mac_wacom_create({ context, bytes, length in
+        handle = plank_mac_wacom_create(Self.makeWorkerSender(), Unmanaged.passUnretained(self).toOpaque())
+    }
+
+    // Create the C thunk outside the MainActor initializer. The HID worker
+    // calls it synchronously on its own thread, so it must never inherit UI
+    // isolation. All state used here has its own lock or release barrier.
+    nonisolated private static func makeWorkerSender() -> PlankMacWacomSend {
+        { context, bytes, length in
             guard let context, let bytes else { return false }
             let owner = Unmanaged<PlankMacWacomSession>.fromOpaque(context).takeUnretainedValue()
             let data = Data(bytes: bytes, count: length)
@@ -38,7 +45,7 @@ final class PlankMacWacomSession: @unchecked Sendable {
                 if type == 9 || type == 13 { owner.releases.didQueue(); owner.preflight.observeLocalCapture(owned: false) }
             }
             return true
-        }, Unmanaged.passUnretained(self).toOpaque())
+        }
     }
     func setActive(_ active: Bool) {
         inboxLock.lock()

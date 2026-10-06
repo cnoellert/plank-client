@@ -7,6 +7,8 @@
 extern "C" {
 #endif
 typedef struct PlankMacWacom PlankMacWacom;
+// Synchronous worker-thread callback; must not inherit UI/MainActor isolation.
+// false refuses a stopped or congested sender without discarding transitions.
 typedef bool (*PlankMacWacomSend)(void*, const uint8_t*, size_t);
 // Create on the UI thread for the normal macOS Input Monitoring prompt.
 PlankMacWacom* plank_mac_wacom_create(PlankMacWacomSend send, void* context);
