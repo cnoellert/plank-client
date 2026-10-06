@@ -4,7 +4,7 @@
 
 static MacRawWacomInput::SendFrame sender;
 class MacRawWacomInput::Impl {};
-MacRawWacomInput::MacRawWacomInput(std::function<void()>, SendFrame send) { sender = send; }
+MacRawWacomInput::MacRawWacomInput(std::function<void()>, SendFrame send, GenerationProvider,bool) { sender = send; }
 MacRawWacomInput::~MacRawWacomInput() = default;
 void MacRawWacomInput::setActive(bool) {}
 void MacRawWacomInput::handleControl(const unsigned char*, unsigned) {}

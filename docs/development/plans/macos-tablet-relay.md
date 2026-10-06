@@ -1,6 +1,6 @@
 # Mac-hosted Tablet Relay
 
-Date: 2026-10-06. Status: proposed implementation slice; no Mac Relay built.
+Date: 2026-10-06. Status: first network Relay pilot implemented on `codex/macos-tablet-relay`; physical acceptance pending.
 
 ## Product journey
 
@@ -99,3 +99,55 @@ Mac → AVP Bluetooth requires proof of macOS peripheral/listener APIs, negotiat
 L2CAP behavior and raw-HID throughput, then the versioned handoff contract.
 Linux BlueZ behavior cannot establish either Mac capability. Keep both separate
 from the network-first pilot and do not advertise them before qualification.
+
+## Candidate implementation and acceptance boundary
+
+Mac build 11 starts from the accepted build-9 runtime, with this optional Relay
+slice. Experimental native 10-bit capture from build 10 stays on its separate
+branch. The first Relay is USB-only and uses authenticated TCP on 28990, with
+Setup discovery/management on 28991. Both listeners exist only while sharing.
+Their stable ports allow saved routes to reconnect after quit/relaunch or wake.
+
+The existing raw codec is pinned at `029721f`; the managed Setup codec at
+`73a3743` has a separate symbol namespace and identity. Its public bootstrap
+only returns status and a public key. The first authenticated Setup connection
+requires **Approve Relay Setup** on the Mac. That durable Setup approval can
+then issue a 120-second, one-use PLEN grant; the AVP Client proves possession
+of its own key before durable drawing approval. Cancel, expiry, wrong keys and
+replays refuse enrollment. No private keys pass through links or Bonjour.
+
+Mac Settings includes **Share tablet with PLANK**, off at every app launch.
+Hosting and a local Mac workstation session cannot be started together in the
+pilot. A file lease held by the HID worker also coordinates cooperating processes;
+exclusive IOHID open remains protection against older clients. A stalled worker
+retains its lease and store until interfaces close. Raw reports are never
+coalesced. A full 256-record/256-KiB inbox closes the drawing link explicitly.
+
+Mac sleep releases active capture and listeners. Wake restarts sharing only if
+it was enabled before sleep; quit always ends sharing. USB disappearance uses
+the existing worker's retry path. OS Input Monitoring permission is requested
+only from the local Share action, never by an unauthenticated connection.
+
+This pilot registers through current Relay Setup; it does not implement Linux
+network administration, Bluetooth tablet pairing or Setup's decoded drawing
+preview. Those operations return a clear unsupported message. Register the Mac
+and test raw drawing in PLANK. Mac wireless tablets and Mac-to-AVP Bluetooth
+remain later slices.
+
+New suites pass: 1,791 raw/enrollment/lease checks, 55 Setup codec checks, and real socket discovery/validation checks. The existing Mac suites also pass. Deliberately bypassing approval or ignoring cancellation fails the new checks.
+
+Focused checks cover real Noise/PLTR/PLEN framing and approval persistence,
+wrong/unapproved keys, cancel after claim, deadlines, replay, byte preservation,
+bounded backlog, durable generations, capture exclusion in another process,
+late callbacks, fragmented Network discovery and duplicate JSON refusal.
+The actual HID worker is faked in the protocol tests. A signed app build and
+passing tests do not establish physical Wacom forwarding, focus independence,
+sleep/wake or reconnect quality.
+
+Run `scripts/test-macos-relay.sh <output-dir>` with the pinned raw/managed
+source and Sodium prefixes, plus the existing Mac regression checks. Build with
+`scripts/build-macos-native.sh`; the new managed source input is mandatory.
+First live pass: local sharing, Setup approval/registration, AVP selection,
+then hover, pressure, held drag and buttons. Leave the Mac app in the background
+while drawing, then Stop Sharing and confirm ordinary local tablet use returns.
+Only after that pass proceed to reconnect, unplug/replug and sleep/wake.

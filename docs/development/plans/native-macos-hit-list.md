@@ -136,3 +136,5 @@ notarization or release packaging.
   is on root upstream at the inspected revision above. Re-check exact candidate
   versions before implementation; newer contracts are not automatically in the
   pilot's pinned dependencies.
+
+Mac-hosted USB Tablet Relay implementation is staged as the next pilot; see `macos-tablet-relay.md`. Physical acceptance remains pending.
