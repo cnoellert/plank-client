@@ -109,6 +109,9 @@ final class PlankMacMetalView: NSView {
         check(region.hitTest(NSPoint(x: 20, y: 12)) == nil, "native pointer region never intercepts buttons")
         NSCursor.crosshair.set(); region.cursorUpdate(with: hover)
         check(NSCursor.current === NSCursor.arrow, "local control owns a visible native arrow")
+        PlankMacLocalPointerView.hideForDesktop()
+        check(NSCursor.current === NSCursor.arrow, "desktop hiding retains real arrow for system menu-bar reveal")
+        PlankMacLocalPointerView.showArrow()
 
         var bitrate = 50_000.0
         var finalUpdates = 0

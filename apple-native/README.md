@@ -52,6 +52,9 @@ Pointer hiding follows the topmost view under the mouse. Toolbar buttons and
 the popover also own native arrow cursor regions, including AppKit's separate
 full-screen windows. Volume and bitrate use AppKit slider controls with
 explicitly painted handles and normal keyboard/accessibility input.
+The desktop hides the native arrow only until the next mouse movement; it
+never installs a transparent cursor image. This lets AppKit reveal the arrow
+over the system menu bar even without an event delivered to the Client.
 
 ## Build
 

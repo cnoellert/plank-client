@@ -23,6 +23,13 @@ final class PlankMacLocalPointerView: NSView {
         NSCursor.setHiddenUntilMouseMoves(false)
         NSCursor.arrow.set()
     }
+    static func hideForDesktop() {
+        // A transparent cursor image survives crossing into the system menu
+        // bar, where this app cannot receive a cursor-update event. Keep a
+        // real arrow selected and let AppKit reveal it on the next movement.
+        NSCursor.arrow.set()
+        NSCursor.setHiddenUntilMouseMoves(true)
+    }
     override func cursorUpdate(with event: NSEvent) { Self.showArrow() }
     override func mouseEntered(with event: NSEvent) { Self.showArrow() }
 }
