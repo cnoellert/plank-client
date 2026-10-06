@@ -34,7 +34,10 @@ enum PlankMacKeys {
         (flags.contains(.shift) ? 1 : 0) | (flags.contains(.control) ? 2 : 0) |
             (flags.contains(.option) ? 4 : 0) | (flags.contains(.command) ? 8 : 0)
     }
-    static func staysLocal(_ event: NSEvent) -> Bool { event.modifierFlags.contains(.command) && [12,13].contains(event.keyCode) }
+    static func staysLocal(_ event: NSEvent) -> Bool {
+        event.modifierFlags.contains(.command) &&
+            ([12,13].contains(event.keyCode) || (event.keyCode == 3 && event.modifierFlags.contains(.control)))
+    }
 }
 
 

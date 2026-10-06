@@ -31,6 +31,18 @@ and requests physical tablet release. Disconnect waits for capture release and
 bounded submission of queued release messages before stopping the transport.
 Late callbacks cannot use the destroyed Swift sender context.
 
+## Desktop presentation
+
+The remote cursor is drawn in a separate AppKit view above the video. Positions
+received before the first cursor shape use an arrow at the Host position;
+the local pointer remains visible until a replacement is available. An explicit
+Host request to hide its cursor is respected. Stale positions from a previous
+resolution are not drawn into the new canvas.
+
+The desktop's Full Screen toolbar button and Control-Command-F enter or leave
+native macOS full screen. That shortcut stays local rather than being sent to
+the workstation. The green window control is enabled too.
+
 ## Build
 
 Initialize the existing common-C submodule. Supply compatible dependency inputs:
@@ -61,6 +73,8 @@ Client that owns the USB Wacom. Keep the existing network unchanged.
    Input Monitoring when macOS asks, restarting the pilot if required.
 2. Check hardware decoder selection in statistics, exact-colour video and
    audible left/right stereo. A hardware capability failure must be visible.
+   Check the remote cursor is visible, then enter/leave full screen and retest
+   pointer placement at the canvas edges.
 3. With the Wacom attached directly by USB, verify hover, light/firm pressure,
    tip taps, held drags, side buttons and supported ExpressKeys. Check the log's
    six preflight gates rather than inferring attachment from cursor movement.

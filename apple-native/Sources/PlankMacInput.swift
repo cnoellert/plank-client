@@ -3,13 +3,15 @@ import SwiftUI
 
 struct PlankMacSurface: NSViewRepresentable {
     let client: PlankCoreClient
+    var windowChanged: (NSWindow?) -> Void = { _ in }
     func makeNSView(context: Context) -> PlankMacInputView {
         let view = PlankMacInputView(client: client)
+        view.windowChanged = windowChanged
         client.registerVideoSurface(id: view.surfaceID, frame: { [weak view] in view?.display($0) },
             cursor: { [weak view] in view?.cursor($0) }, cursorShape: { [weak view] in view?.shape($0) })
         return view
     }
-    func updateNSView(_ view: PlankMacInputView, context: Context) {}
+    func updateNSView(_ view: PlankMacInputView, context: Context) { view.windowChanged = windowChanged }
     static func dismantleNSView(_ view: PlankMacInputView, coordinator: ()) {
         view.releaseInput(); view.client.setTabletActive(false); view.client.unregisterVideoSurface(id: view.surfaceID)
     }
@@ -19,15 +21,15 @@ final class PlankMacInputView: NSView {
     let surfaceID = UUID()
     private let video = PlankMacMetalView(frame: .zero)
     private let software = CALayer()
-    private let remoteCursor = CALayer()
-    private var cursorState: PlankRemoteCursor?
-    private var cursorShape: PlankRemoteCursorShape?
+    private let cursorOverlay = PlankMacCursorOverlay(frame: .zero)
+    var windowChanged: (NSWindow?) -> Void = { _ in }
     private var width = 0, height = 0
     private var heldButtons = Set<UInt8>()
     private var heldKeys = Set<UInt16>()
     private var modifierKeys = Set<UInt16>()
     private var observations = [NSObjectProtocol]()
     private var tracking: NSTrackingArea?
+    private var replacingSystemCursor = false
     private var canvas: CGRect { PlankMacCoordinates.canvas(in: bounds, width: width, height: height) }
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
@@ -35,7 +37,7 @@ final class PlankMacInputView: NSView {
         self.client = client; super.init(frame: .zero); wantsLayer = true
         layer?.backgroundColor = NSColor.black.cgColor; addSubview(video)
         layer?.addSublayer(software); software.contentsGravity = .resizeAspect
-        layer?.addSublayer(remoteCursor); remoteCursor.isHidden = true
+        addSubview(cursorOverlay, positioned: .above, relativeTo: video)
         let center = NotificationCenter.default
         for name in [NSApplication.didResignActiveNotification, NSApplication.didBecomeActiveNotification,
                      NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
@@ -46,20 +48,32 @@ final class PlankMacInputView: NSView {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:)") }
     isolated deinit { observations.forEach(NotificationCenter.default.removeObserver) }
-    override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); window?.acceptsMouseMovedEvents = true; window?.makeFirstResponder(self); updateFocus() }
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let window { PlankMacDesktopWindow.configure(window); window.acceptsMouseMovedEvents = true; window.makeFirstResponder(self) }
+        // SwiftUI's window reference is updated after the representable has
+        // completed its view update; no session action is taken here.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            if let window { PlankMacDesktopWindow.configure(window) }
+            windowChanged(window)
+        }
+        updateFocus()
+    }
     private func updateFocus() {
         let owned = NSApp.isActive && (window?.isKeyWindow == true || window?.isMainWindow == true)
         if !owned { releaseInput() }; client.setTabletActive(owned)
     }
-    override func layout() { super.layout(); video.frame = canvas; software.frame = canvas; placeCursor(); window?.invalidateCursorRects(for: self) }
+    override func layout() { super.layout(); video.frame = canvas; software.frame = canvas; cursorOverlay.frame = bounds; refreshNativeCursor(); window?.invalidateCursorRects(for: self) }
     override func updateTrackingAreas() {
         if let tracking { removeTrackingArea(tracking) }
         let next = NSTrackingArea(rect: .zero, options: [.inVisibleRect,.activeInKeyWindow,.mouseMoved,.cursorUpdate,.mouseEnteredAndExited], owner: self)
         addTrackingArea(next); tracking = next; super.updateTrackingAreas()
     }
     func display(_ frame: PlankRenderedFrame?) {
-        guard let frame else { width = 0; height = 0; video.isHidden = true; software.contents = nil; remoteCursor.isHidden = true; return }
+        guard let frame else { width = 0; height = 0; video.isHidden = true; software.contents = nil; cursorOverlay.setDimensions(width: 0, height: 0); refreshNativeCursor(); return }
         width = frame.width; height = frame.height; needsLayout = true
+        cursorOverlay.setDimensions(width: width, height: height)
         if let pixels = frame.pixelBuffer { video.isHidden = false; software.contents = nil; video.display(pixels) }
         else if let provider = CGDataProvider(data: frame.pixels as CFData) {
             video.isHidden = true
@@ -69,27 +83,8 @@ final class PlankMacInputView: NSView {
                 provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
         }
     }
-    func cursor(_ position: PlankRemoteCursor?) { cursorState = position; placeCursor() }
-    func shape(_ shape: PlankRemoteCursorShape?) {
-        cursorShape = shape
-        if let shape, shape.pixels.count == shape.width * shape.height * 4,
-           let provider = CGDataProvider(data: shape.pixels as CFData) {
-            remoteCursor.contents = CGImage(width: shape.width, height: shape.height, bitsPerComponent: 8, bitsPerPixel: 32,
-                bytesPerRow: shape.width * 4, space: CGColorSpaceCreateDeviceRGB(),
-                bitmapInfo: .byteOrder32Little.union(CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue)),
-                provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
-        } else { remoteCursor.contents = nil }
-        placeCursor()
-    }
-    private func placeCursor() {
-        guard let position = cursorState, let shape = cursorShape, shape.visible, width > 1, height > 1 else { remoteCursor.isHidden = true; return }
-        let scale = canvas.width / Double(width)
-        CATransaction.begin(); CATransaction.setDisableActions(true)
-        remoteCursor.frame = CGRect(x: canvas.minX + Double(position.x - shape.hotspotX) * scale,
-            y: canvas.minY + Double(position.y - shape.hotspotY) * scale,
-            width: Double(shape.width) * scale, height: Double(shape.height) * scale)
-        remoteCursor.isHidden = remoteCursor.contents == nil; CATransaction.commit()
-    }
+    func cursor(_ position: PlankRemoteCursor?) { cursorOverlay.cursor(position); refreshNativeCursor() }
+    func shape(_ shape: PlankRemoteCursorShape?) { cursorOverlay.cursorShape(shape); refreshNativeCursor() }
     private func pointer(_ event: NSEvent) -> Bool {
         guard NSApp.isActive, window?.isKeyWindow == true,
               let (x,y) = PlankMacCoordinates.remote(convert(event.locationInWindow, from: nil), canvas: canvas,
@@ -146,11 +141,19 @@ final class PlankMacInputView: NSView {
         heldButtons.removeAll(); heldKeys.removeAll(); modifierKeys.removeAll()
     }
     override func resetCursorRects() {
-        if !canvas.isEmpty { addCursorRect(canvas, cursor: NSCursor(image: NSImage(size: NSSize(width: 1,height: 1)), hotSpot: .zero)) }
+        if !canvas.isEmpty { addCursorRect(canvas, cursor: canvasCursor) }
+    }
+    private var canvasCursor: NSCursor {
+        cursorOverlay.replacesSystemCursor ? NSCursor(image: NSImage(size: NSSize(width: 1, height: 1)), hotSpot: .zero) : .arrow
+    }
+    private func refreshNativeCursor() {
+        guard replacingSystemCursor != cursorOverlay.replacesSystemCursor else { return }
+        replacingSystemCursor = cursorOverlay.replacesSystemCursor
+        window?.invalidateCursorRects(for: self)
     }
     override func cursorUpdate(with event: NSEvent) {
         if canvas.contains(convert(event.locationInWindow, from: nil)), width > 0 {
-            NSCursor(image: NSImage(size: NSSize(width: 1, height: 1)), hotSpot: .zero).set()
+            canvasCursor.set()
         } else { NSCursor.arrow.set() }
     }
     override func mouseExited(with event: NSEvent) { NSCursor.arrow.set() }

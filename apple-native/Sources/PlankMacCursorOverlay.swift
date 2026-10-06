@@ -1,0 +1,99 @@
+import AppKit
+
+// A real AppKit subview owns the cursor layer. AppKit can reorder backing
+// layers for video subviews; a sibling CALayer alone can end up behind video.
+final class PlankMacCursorOverlay: NSView {
+    private let sprite = CALayer()
+    private var position: PlankRemoteCursor?
+    private var shape: PlankRemoteCursorShape?
+    private var shapeImage: CGImage?
+    private let fallbackImage: CGImage?
+    private let fallbackSize: CGSize
+    private let fallbackHotspot: CGPoint
+    private var width = 0, height = 0
+    private(set) var replacesSystemCursor = false
+    override var isFlipped: Bool { true }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    override init(frame: CGRect) {
+        let arrow = NSCursor.arrow
+        fallbackImage = arrow.image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+        fallbackSize = arrow.image.size
+        fallbackHotspot = arrow.hotSpot
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.masksToBounds = true
+        layer?.zPosition = 10
+        layer?.addSublayer(sprite)
+        sprite.contentsGravity = .resize
+        sprite.isHidden = true
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:)") }
+
+    func setDimensions(width: Int, height: Int) {
+        self.width = width; self.height = height; placeCursor()
+    }
+    func cursor(_ position: PlankRemoteCursor?) { self.position = position; placeCursor() }
+    func cursorShape(_ shape: PlankRemoteCursorShape?) {
+        self.shape = shape
+        shapeImage = nil
+        // Artwork changes infrequently; never recreate it for every movement.
+        if let shape, shape.width > 0, shape.height > 0,
+           shape.pixels.count == shape.width * shape.height * 4,
+           let provider = CGDataProvider(data: shape.pixels as CFData) {
+            shapeImage = CGImage(width: shape.width, height: shape.height, bitsPerComponent: 8, bitsPerPixel: 32,
+                bytesPerRow: shape.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: .byteOrder32Little.union(CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedFirst.rawValue)),
+                provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)
+        }
+        placeCursor()
+    }
+    override func layout() { super.layout(); placeCursor() }
+
+    private func placeCursor() {
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        replacesSystemCursor = false
+        sprite.isHidden = true
+        guard let position, width > 1, height > 1,
+              position.frameWidth == width, position.frameHeight == height,
+              bounds.width > 0, bounds.height > 0 else { return }
+        let canvas = PlankMacCoordinates.canvas(in: bounds, width: width, height: height)
+        let scale = canvas.width / Double(width)
+        let pointer = CGPoint(x: canvas.minX + Double(position.x) * scale,
+                              y: canvas.minY + Double(position.y) * scale)
+        if let shape, !shape.visible {
+            // Honor an explicit Host request to hide its pointer.
+            replacesSystemCursor = true
+            return
+        }
+        var image: CGImage?
+        var size: CGSize
+        var hotspot: CGPoint
+        if let shape, let shapeImage {
+            image = shapeImage
+            let cursorScale = min(max(scale, 0.5), 1)
+            size = CGSize(width: Double(shape.width) * cursorScale, height: Double(shape.height) * cursorScale)
+            hotspot = CGPoint(x: Double(shape.hotspotX) * cursorScale, y: Double(shape.hotspotY) * cursorScale)
+        } else {
+            // Positions can precede the first shape. Use an arrow at the actual
+            // Host position so both raw Wacom and mouse remain visible.
+            image = fallbackImage
+            size = fallbackSize
+            hotspot = fallbackHotspot
+        }
+        sprite.contents = image
+        sprite.frame = CGRect(origin: CGPoint(x: pointer.x - hotspot.x, y: pointer.y - hotspot.y), size: size)
+        sprite.isHidden = image == nil
+        replacesSystemCursor = image != nil
+    }
+}
+
+enum PlankMacDesktopWindow {
+    @MainActor static func configure(_ window: NSWindow) {
+        window.styleMask.insert(.resizable)
+        window.collectionBehavior.remove([.fullScreenAuxiliary, .fullScreenNone])
+        window.collectionBehavior.insert(.fullScreenPrimary)
+        window.standardWindowButton(.zoomButton)?.isEnabled = true
+    }
+}

@@ -9,6 +9,10 @@ xcrun swiftc -swift-version 6 -Onone -parse-as-library -DPLANK_NATIVE_MAC_WACOM 
     apple-native/Sources/PlankMacInputPolicy.swift visionos-native/Sources/Services/PlankInputQueue.swift \
     visionos-native/Sources/Services/PlankWacomPreflight.swift apple-native/Tests/PlankMacPolicyTests.swift -o "$out/mac-policy"
 "$out/mac-policy"
+xcrun swiftc -swift-version 6 -Onone -parse-as-library \
+    apple-native/Sources/PlankMacCursorOverlay.swift apple-native/Sources/PlankMacInputPolicy.swift \
+    visionos-native/Sources/Models/HostBookmark.swift apple-native/Tests/PlankMacPresentationTests.swift -o "$out/mac-presentation"
+"$out/mac-presentation"
 xcrun clang++ -std=c++17 -O0 -DPLANK_NATIVE_MAC_WACOM -Iapple-native/Bridge -Iapp/streaming/input \
     -Imoonlight-common-c/moonlight-common-c/src apple-native/Bridge/PlankMacWacom.cpp \
     apple-native/Tests/PlankMacWacomLifetimeTests.cpp -o "$out/mac-wacom-lifetime"

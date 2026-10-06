@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 struct PlankMacDesktop: View {
     @EnvironmentObject private var client: PlankCoreClient
     @Environment(\.dismissWindow) private var dismissWindow
@@ -6,16 +7,21 @@ struct PlankMacDesktop: View {
     @State private var statistics = false
     @State private var volume = Double(PlankAudioPreferences.volume())
     @State private var muted = PlankAudioPreferences.muted()
+    @State private var desktopWindow: NSWindow?
     var body: some View {
         ZStack(alignment: .topLeading) {
-            PlankMacSurface(client: client)
+            PlankMacSurface(client: client, windowChanged: { desktopWindow = $0 })
             if statistics { Text(client.videoDiagnosticText + "\n" + client.audioDiagnosticText).font(.system(.caption, design: .monospaced)).padding(10).background(.black.opacity(0.8)).foregroundStyle(.white).padding().allowsHitTesting(false) }
             if client.showingTabletWaitScreen {
                 VStack { ProgressView("Waiting for Wacom…"); Button("Continue without tablet") { client.continueWithoutTablet() } }.padding(24).background(.regularMaterial)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-        }.frame(minWidth: 640, minHeight: 360)
+        }.frame(minWidth: 640, maxWidth: .infinity, minHeight: 360, maxHeight: .infinity)
         .toolbar {
+            ToolbarItem { Button {
+                if let desktopWindow { PlankMacDesktopWindow.configure(desktopWindow); desktopWindow.toggleFullScreen(nil) }
+            } label: { Label("Full Screen", systemImage: "arrow.up.left.and.arrow.down.right") }
+                .help("Enter or leave full screen").keyboardShortcut("f", modifiers: [.control, .command]) }
             ToolbarItem { Button { controls.toggle() } label: { Label("Session Controls", systemImage: "slider.horizontal.3") }.popover(isPresented: $controls, arrowEdge: .bottom) { sessionControls } }
             ToolbarItem { Button("Disconnect", role: .destructive) { client.disconnectSession(); dismissWindow(id: "desktop") } }
         }

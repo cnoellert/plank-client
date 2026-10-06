@@ -13,7 +13,7 @@ struct PlankMacApp: App {
         }.defaultSize(width: 860, height: 600)
         Window("PLANK Desktop", id: "desktop") {
             PlankMacDesktop().environmentObject(client)
-        }.defaultSize(width: 1280, height: 760)
+        }.defaultSize(width: 1280, height: 760).windowResizability(.contentMinSize)
         Settings { PlankMacSettings() }
     }
 }
