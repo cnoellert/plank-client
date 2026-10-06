@@ -18,10 +18,18 @@ import Foundation
         let peers = MacRelayTestPeers()
         listener.newConnectionHandler = { connection in Task { @MainActor in
             let peer = MacRelayPeer(connection:connection,native:native,setup:true,routes:["192.0.2.10"],drawingPort:28990,setupPort:28991,inventory:{ [.init(group:7,name:"Wacom test USB",serial:nil)] },event:{ event in
-                // The external interoperability fixture models the local user's
-                // explicit approval. Normal tests and production never auto-approve.
+                // The external Setup fixture must receive three pending replies
+                // before modeling an explicit local approval. No immediate
+                // approval can hide a broken first-use waiting screen.
                 if CommandLine.arguments.contains("--serve-discovery"), case .approval = event {
-                    Task { @MainActor in peers.peers.last?.approve() }
+                    Task { @MainActor in
+                        let pendingPeer = peers.peers.last
+                        let approvalFile = CommandLine.arguments.last! + ".approve"
+                        for _ in 0..<500 {
+                            if FileManager.default.fileExists(atPath: approvalFile) { pendingPeer?.approve(); return }
+                            try? await Task.sleep(for:.milliseconds(100))
+                        }
+                    }
                 }
             })
             peers.peers.append(peer);peer.start()
@@ -77,7 +85,17 @@ import Foundation
         let fractionalReply=try await receive(fractional);precondition(fractionalReply.isEmpty)
         fractional.cancel()
         precondition(!peers.peers.isEmpty)
-        let authenticatedStatus = peers.peers[0].status(id:2,authorized:true)!
+        let pendingStatus = peers.peers[0].status(id:2,access:.awaitingApproval)!
+        let pendingObject = try JSONSerialization.jsonObject(with:pendingStatus) as! [String:Any]
+        precondition(pendingObject["phase"] as? String == "verifying", "Existing Setup must display the local approval instruction")
+        precondition((pendingObject["message"] as? String)?.contains("Approve Relay Setup") == true)
+        precondition(pendingObject["canManage"] as? Bool == false && pendingObject["headsetAuthorized"] as? Bool == false && pendingObject["drawingHandoff"] == nil)
+        let candidates = pendingObject["usbTablets"] as! [[String:Any]]
+        precondition(candidates.count == 1 && candidates[0]["active"] as? Bool == false && candidates[0]["serial"] == nil)
+        precondition(pendingObject["attached"] as? Bool == false && pendingObject["captureActive"] as? Bool == false)
+        let unapproved = try JSONSerialization.jsonObject(with:peers.peers[0].status(id:2,access:.unapproved)!) as! [String:Any]
+        precondition((unapproved["usbTablets"] as? [[String:Any]])?.isEmpty == true && unapproved["drawingHandoff"] == nil)
+        let authenticatedStatus = peers.peers[0].status(id:2,access:.approved)!
         let approvedObject = try JSONSerialization.jsonObject(with:authenticatedStatus) as! [String:Any]
         let usb = approvedObject["usbTablets"] as! [[String:Any]]
         precondition(usb.count == 1 && usb[0]["name"] as? String == "Wacom test USB" && usb[0]["active"] as? Bool == true)

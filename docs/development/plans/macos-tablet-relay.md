@@ -188,3 +188,25 @@ false in this management status. Use in PLANK remains the drawing acceptance
 path. Focused checks cover authenticated presence, no unauthenticated inventory,
 multiple interfaces, empty inventory and bounded names/list size. A passive live
 probe detects one Wacom Intuos Pro M; end-to-end raw drawing is still pending.
+
+### Build 15 — first-use approval state
+
+Build 14's inventory was shown only after local approval. Before approval,
+current Setup rendered its `idle` reply as “No tablet connected” and hid the
+reply's instructions. Its diagnostic actions were disabled while management
+was in progress. Build 15 reports `verifying` for an encrypted first-use session
+awaiting Mac approval, which current Setup renders with the approval instruction.
+It includes bounded USB candidates with no serial numbers and no active
+selection. Public discovery still has no USB inventory. Management, capture,
+headset authorization and drawing handoff remain unavailable until local approval.
+
+The Mac clears the approval prompt when that management connection closes and
+directs the user to restart setup. Approval success is reported only after the
+native store accepts it. Setup cancels its operation when inactive; keep its
+screen open while approving on the Mac. This slice does not change that lifecycle.
+
+The real Setup client fixture received three pending replies, verified its
+waiting state and absent drawing authorization, then completed approval through
+the existing Noise management channel. Raw, Setup codec and socket checks pass.
+Build 15 is signed and staged; physical first-use approval and drawing acceptance
+remain pending.

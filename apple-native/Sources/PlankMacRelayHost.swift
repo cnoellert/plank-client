@@ -78,12 +78,23 @@ import Darwin
             Task { @MainActor in
                 guard let self, self.generation == current else { return }
                 switch event {
-                case .approval: self.approvalPending = true; self.message = "Relay Setup requests approval. Approve only the headset you are registering."
+                case .approval:
+                    guard self.managementPeer == id, self.sessions[id] != nil else { return }
+                    self.approvalPending = true; self.message = "Relay Setup requests approval. Approve only the headset you are registering."
+                case .approved:
+                    guard self.managementPeer == id else { return }
+                    self.approvalPending = false; self.message = "Setup approved. Continue registration on the headset."
                 case .ready: self.message = "Approved headset connected; waiting for USB tablet input"
                 case .tablet(let state): self.message = state
                 case .ended(let reason):
                     self.sessions.removeValue(forKey: id)
-                    if self.managementPeer == id { self.managementPeer = nil; self.approvalPending = false }
+                    if self.managementPeer == id {
+                        let awaitingApproval = self.approvalPending
+                        self.managementPeer = nil; self.approvalPending = false
+                        if awaitingApproval && self.drawingPeer == nil {
+                            self.message = "Setup connection closed before approval. On the headset, open Set up a tablet again, then approve here while Setup remains open."
+                        }
+                    }
                     if self.drawingPeer == id { self.drawingPeer = nil; self.message = "Sharing enabled. \(reason)" }
                 }
             }
@@ -92,7 +103,7 @@ import Darwin
     }
     func approveSetup() {
         guard let id = managementPeer, let peer = sessions[id], approvalPending else { return }
-        approvalPending = false; peer.approve(); message = "Setup approved. Continue registration on the headset."
+        peer.approve(); message = "Saving Setup approval…"
     }
     func stop() {
         resumeAfterSleep = false
@@ -146,7 +157,8 @@ final class MacRelayNative: @unchecked Sendable {
     }
     deinit { plank_mac_setup_destroy(setup); plank_mac_relay_store_destroy(store) }
 }
-enum MacRelayEvent: Sendable { case approval, ready, tablet(String), ended(String) }
+enum MacRelayEvent: Sendable { case approval, approved, ready, tablet(String), ended(String) }
+enum MacRelayStatusAccess { case discovery, unapproved, awaitingApproval, approved }
 // A single executor owns each codec and socket. Sends are one-at-a-time;
 // backpressure leaves raw reports in the bounded native inbox, never in an
 // unbounded stack of Network completions. The HID worker never calls Swift.
@@ -194,7 +206,7 @@ final class MacRelayPeer: @unchecked Sendable {
     func approve() { queue.async { [self] in
         guard !closed, mode == 2, plank_mac_setup_pending(native.setup) != 0 else { return }
         guard plank_mac_setup_accept(native.setup) == 0 else { finish("Setup approval failed"); return }
-        didAsk = false; processManagement()
+        didAsk = false; event(.approved); processManagement()
     } }
     private func finish(_ reason: String) {
         guard !closed else { return }; closed = true
@@ -253,7 +265,7 @@ final class MacRelayPeer: @unchecked Sendable {
             guard buffer.count == length + 2 else { return }
             guard let command = parse(Data(buffer.dropFirst(2))), command["op"] as? String == "status",
                   let id = integer(command["id"]), Set(command.keys).isSubset(of: ["version","id","op","drawingHandoffVersion"]) else { finish("Invalid public status request"); return }
-            guard let payload = status(id: id, authorized: false) else { finish("Status unavailable"); return }
+            guard let payload = status(id: id, access: .discovery) else { finish("Status unavailable"); return }
             var record = Data([UInt8(truncatingIfNeeded: payload.count),UInt8(payload.count >> 8)]); record.append(payload)
             buffer.removeAll(); send(record) { [weak self] in self?.finish("Discovery checked") }; return
         }
@@ -315,13 +327,14 @@ final class MacRelayPeer: @unchecked Sendable {
         guard let data = managementRequest else { return }
         guard let command = parse(data), let id = integer(command["id"]), let operation = command["op"] as? String else { finish("Invalid management request"); return }
         let authorized = plank_mac_setup_authorized(native.setup) != 0
-        if !authorized && plank_mac_setup_pending(native.setup) != 0 && !didAsk {
+        let pending = plank_mac_setup_pending(native.setup) != 0
+        if !authorized && pending && !didAsk {
             didAsk = true; event(.approval)
         }
         managementRequest = nil
         let payload: Data?
         if operation == "status", Set(command.keys).isSubset(of: ["version","id","op","drawingHandoffVersion"]) {
-            payload = status(id: id, authorized: authorized)
+            payload = status(id: id, access: authorized ? .approved : pending ? .awaitingApproval : .unapproved)
         } else if operation == "drawing-enrollment" && authorized {
             var reply: [String: Any] = ["version":1,"id":id,"ok":false]
             let expected: Set<String> = ["version","id","op","action","requestID","clientIdentity","drawingIdentity"]
@@ -345,14 +358,28 @@ final class MacRelayPeer: @unchecked Sendable {
         guard result == 0, written > 0 else { finish("Management reply failed"); return }
         send(Data(output.prefix(written)))
     }
-    func status(id: Int, authorized: Bool) -> Data? {
+    func status(id: Int, access: MacRelayStatusAccess) -> Data? {
+        let authorized = access == .approved
+        let pending = access == .awaitingApproval
         let identity = native.drawingKey.map { String(format:"%02x",$0) }.joined()
-        var object: [String:Any] = ["version":1,"id":id,"ok":true,"hostname":"Mac Tablet Relay","phase":authorized ? "ready" : "idle",
+        var object: [String:Any] = ["version":1,"id":id,"ok":true,"hostname":"Mac Tablet Relay","phase":authorized ? "ready" : pending ? "verifying" : "idle",
             "message":"USB tablet sharing is enabled on the Mac. Approve this headset on the Mac to register it.",
             "canManage":authorized,"initialSetup":true,"attached":false,"captureActive":false,"captureBusy":false,
             "secondsRemaining":0,"tablets":[],"candidates":[],"usbTablets":[],"bluetoothAvailable":false,
             "enrollmentVersion":1,"headsetAuthorized":authorized,
             "relayKey":native.setupKey.map { String(format:"%02x",$0) }.joined(),"tcpPort":setupPort,"networkAddresses":routes]
+        if pending {
+            // Current Setup displays message while verifying, but hides it in
+            // idle management. This is an authenticated first-use Noise link;
+            // physical presence does not authorize it or expose drawing routes.
+            object["message"] = "On the Mac, open PLANK Settings and choose Approve Relay Setup. Keep this Setup screen open until approval completes."
+            object["usbTablets"] = MacRelayUSBTablet.records(inventory()).map { tablet in
+                var candidate = tablet
+                candidate["active"] = false
+                candidate.removeValue(forKey: "serial")
+                return candidate
+            }
+        }
         if authorized {
             object["usbTablets"] = MacRelayUSBTablet.records(inventory())
             object["message"] = "USB tablet presence is reported without capture. Use in PLANK to test drawing; Setup preview is not provided by this Mac Relay."
