@@ -1,6 +1,22 @@
 # Mac-hosted Tablet Relay
 
-Date: 2026-10-06. Status: first network Relay pilot implemented on `codex/macos-tablet-relay`; physical acceptance pending.
+Date: 2026-10-06. Status: first network Relay pilot implemented on `codex/macos-tablet-relay`; build 16 passed targeted Mac-to-AVP drawing performance acceptance.
+
+## Current acceptance
+
+The development Mac's USB Wacom is registered through Setup and authorized for
+PLANK. After opening signed Mac build 16, restoring sharing and repeating the
+direct-IP drawing comparison, the user reported: “Perfect. Works super smooth
+now.” Accept that targeted live drawing/performance pass. Build 16 runtime is
+`a0c126c`; build 15 remains the signed rollback. Headset approvals and Relay
+identities were unchanged when build 16 was opened.
+
+The test used the Mac's shared Wi-Fi network after the venue LAN would not permit
+the tested AVP-to-Mac path. This does not qualify other network paths or wireless
+Wacom capture. Mac Relay background operation, reconnect, USB disappearance and
+return, sleep/wake and transfer back to local Mac Client capture remain separate
+physical checks. Earlier Linux Relay acceptance does not establish those Mac
+platform behaviors.
 
 ## Product journey
 
