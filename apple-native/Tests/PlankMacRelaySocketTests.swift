@@ -13,7 +13,13 @@ import Foundation
         let listener = try NWListener(using:.tcp,on:.any)
         let peers = MacRelayTestPeers()
         listener.newConnectionHandler = { connection in Task { @MainActor in
-            let peer = MacRelayPeer(connection:connection,native:native,setup:true,routes:["192.0.2.10"],drawingPort:28990,setupPort:28991,event:{_ in})
+            let peer = MacRelayPeer(connection:connection,native:native,setup:true,routes:["192.0.2.10"],drawingPort:28990,setupPort:28991,event:{ event in
+                // The external interoperability fixture models the local user's
+                // explicit approval. Normal tests and production never auto-approve.
+                if CommandLine.arguments.contains("--serve-discovery"), case .approval = event {
+                    Task { @MainActor in peers.peers.last?.approve() }
+                }
+            })
             peers.peers.append(peer);peer.start()
         } }
         try await withCheckedThrowingContinuation { (c:CheckedContinuation<Void,Error>) in
@@ -22,10 +28,20 @@ import Foundation
         }
         listener.stateUpdateHandler = nil
         guard let port=listener.port else { fatalError("port") }
+        // Optional local interoperability probe uses the real Setup client in a
+        // separate process, avoiding its C symbol namespace colliding with raw.
+        if CommandLine.arguments.contains("--serve-discovery") {
+            let portFile = URL(fileURLWithPath: CommandLine.arguments.last!)
+            try String(port.rawValue).write(to:portFile, atomically:true, encoding:.utf8)
+            try await Task.sleep(for:.seconds(60))
+            for peer in peers.peers { peer.close("Interoperability probe finished") }
+            listener.cancel(); return
+        }
         let connection=NWConnection(host:"127.0.0.1",port:port,using:.tcp)
         try await connect(connection)
         let json=Data(#"{"version":1,"id":1,"op":"status","drawingHandoffVersion":2}"#.utf8)
-        var record=Data("PLTRTCP1".utf8);record.append(0);record.append(UInt8(json.count));record.append(0);record.append(json)
+        var record=Data("PLTRTCP1".utf8);record.append(1);record.append(UInt8(json.count));record.append(0);record.append(json)
+        // Channel 1 matches the actual Setup client bootstrap (connection(.setup)).
         // Fragment the preface, length and body. No unauthenticated mutation or
         // drawing metadata may be returned by this discovery channel.
         for byte in record { try await send(connection,Data([byte])) }
@@ -45,13 +61,13 @@ import Foundation
         connection.cancel()
         let duplicate=NWConnection(host:"127.0.0.1",port:port,using:.tcp);try await connect(duplicate)
         let bad=Data(#"{"version":1,"id":1,"op":"status","op":"drawing-enrollment"}"#.utf8)
-        var invalid=Data("PLTRTCP1".utf8);invalid.append(0);invalid.append(UInt8(bad.count));invalid.append(0);invalid.append(bad)
+        var invalid=Data("PLTRTCP1".utf8);invalid.append(1);invalid.append(UInt8(bad.count));invalid.append(0);invalid.append(bad)
         try await send(duplicate,invalid)
         let rejected=try await receive(duplicate);precondition(rejected.isEmpty)
         duplicate.cancel()
         let fractional=NWConnection(host:"127.0.0.1",port:port,using:.tcp);try await connect(fractional)
         let fraction=Data(#"{"version":1,"id":1.0,"op":"status"}"#.utf8)
-        var fractionalRecord=Data("PLTRTCP1".utf8);fractionalRecord.append(0);fractionalRecord.append(UInt8(fraction.count));fractionalRecord.append(0);fractionalRecord.append(fraction)
+        var fractionalRecord=Data("PLTRTCP1".utf8);fractionalRecord.append(1);fractionalRecord.append(UInt8(fraction.count));fractionalRecord.append(0);fractionalRecord.append(fraction)
         try await send(fractional,fractionalRecord)
         let fractionalReply=try await receive(fractional);precondition(fractionalReply.isEmpty)
         fractional.cancel()

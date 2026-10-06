@@ -151,3 +151,14 @@ First live pass: local sharing, Setup approval/registration, AVP selection,
 then hover, pressure, held drag and buttons. Leave the Mac app in the background
 while drawing, then Stop Sharing and confirm ordinary local tablet use returns.
 Only after that pass proceed to reconnect, unplug/replug and sleep/wake.
+
+### Build 12 — Setup channel interoperability correction
+
+Build 11 reversed the established TCP channel mapping, preventing current Setup
+from completing its discovery probe. Build 12 uses channel 1 for read-only
+status and channel 0 for authenticated management, matching RelayPairingClient
+and the Linux network service. The corrected socket check uses those existing
+channel numbers. A separate process using the actual Setup client now completes
+both discovery and local approval against the Mac server fixture. Physical Mac
+Relay drawing acceptance remains pending. Peer-to-peer Wi-Fi was not enabled as
+part of this fix; network reachability is a separate live gate.

@@ -235,7 +235,9 @@ final class MacRelayPeer: @unchecked Sendable {
             if setupMode {
                 guard buffer.count >= 9 else { return }
                 guard buffer.prefix(8) == Data("PLTRTCP1".utf8), buffer[8] <= 1 else { finish("Invalid Setup channel"); return }
-                mode = buffer[8] == 0 ? 1 : 2; buffer = Data(buffer.dropFirst(9))
+                // Existing Setup TCP contract: 0 = authenticated management,
+                // 1 = read-only status discovery. Keep parity with RelayPairingClient.
+                mode = buffer[8] == 1 ? 1 : 2; buffer = Data(buffer.dropFirst(9))
             } else {
                 guard buffer.count >= 5 else { return }
                 if buffer.prefix(5) == Data([80,76,69,78,1]) {
