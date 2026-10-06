@@ -51,6 +51,9 @@ struct PlankMacDesktop: View {
             }
             Toggle("Show statistics", isOn: $statistics)
             Divider()
+            Text(client.nativeVideoQuality.title).font(.caption)
+            Text("HEVC 10-bit · 4:4:4 · identity").font(.caption).foregroundStyle(.secondary)
+            Divider()
             Text(client.tabletPreflightSummary).font(.caption)
             Text("Tablet: \(PlankMacTabletSource.saved.title)").font(.caption).foregroundStyle(.secondary)
         }.padding(20).frame(width: 340)

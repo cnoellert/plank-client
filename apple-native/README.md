@@ -13,6 +13,13 @@ The [native Mac hit list](../docs/development/plans/native-macos-hit-list.md)
 records the accepted build-9 checkpoint and the next quality, multiple-screen
 and webcam slices, with Wacom and release gates.
 
+Build 10 adds a per-workstation capture-quality choice: the accepted NvFBC
+8-bit source or experimental native 10-bit X11 capture, both using the existing
+HEVC 10-bit 4:4:4 identity stream. Host capabilities and exact launch acceptance
+are checked; changes require closing the session and signing in again. Other
+codec/profile choices are not yet offered. See the
+[quality audit and acceptance](../docs/development/plans/native-macos-quality-audit.md).
+
 ## Wacom boundary
 
 The initial Mac UI offers **Off** or **USB Wacom on this Mac**. Source selection

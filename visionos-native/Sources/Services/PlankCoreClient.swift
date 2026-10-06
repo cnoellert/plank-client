@@ -146,6 +146,8 @@ final class PlankCoreClient: ObservableObject {
 #endif
 
 #if PLANK_NATIVE_MAC_WACOM
+    @Published private(set) var nativeVideoCapabilities: PlankHostVideoCapabilities?
+    @Published private(set) var nativeVideoQuality: PlankVideoQuality = .nvfbc
     private var nativeWacom: PlankMacWacomSession?
     private var sessionNativeSource = PlankMacTabletSource.off
 #endif
@@ -347,6 +349,9 @@ final class PlankCoreClient: ObservableObject {
         }
         activeHostID = host.id
         phase = .probing
+#if PLANK_NATIVE_MAC_WACOM
+        nativeVideoCapabilities = nil
+#endif
         do {
             let client = try PlankHTTPClient(host: host)
             let identity = try await client.fetchServerInfo()
@@ -355,6 +360,9 @@ final class PlankCoreClient: ObservableObject {
             }
             httpClient = client
             lastIdentity = identity
+#if PLANK_NATIVE_MAC_WACOM
+            nativeVideoCapabilities = identity.videoCapabilities
+#endif
             connectedHost = host
             activeHostID = host.id
             phase = .needsCredentials(identity)
@@ -379,6 +387,9 @@ final class PlankCoreClient: ObservableObject {
         connectedHost.streamFrameRate = StreamFrameRate.normalized(frameRate)
         connectedHost.videoBitrateKbps = StreamBitrate.normalized(videoBitrateKbps)
         self.connectedHost = connectedHost
+#if PLANK_NATIVE_MAC_WACOM
+        nativeVideoQuality = connectedHost.nativeVideoQuality
+#endif
 
         let previousStreamTask = streamTask ?? stoppingStreamTask
         previousStreamTask?.cancel()
@@ -450,6 +461,24 @@ final class PlankCoreClient: ObservableObject {
         phase = .authenticated(identity, authentication)
         startSession(displaySize: displaySize, frameRate: frameRate,
                      videoBitrateKbps: videoBitrateKbps)
+    }
+
+#if PLANK_NATIVE_MAC_WACOM
+    func startMacSession(bookmark: HostBookmark) {
+        guard connectedHost?.id == bookmark.id else { return }
+        connectedHost?.nativeVideoQuality = bookmark.nativeVideoQuality
+        startSession(displaySize: bookmark.spatialDisplaySize,
+                     frameRate: bookmark.streamFrameRate,
+                     videoBitrateKbps: bookmark.videoBitrateKbps)
+    }
+#endif
+
+    private func captureSource(for bookmark: HostBookmark) -> String {
+#if PLANK_NATIVE_MAC_WACOM
+        bookmark.nativeVideoQuality.captureSource
+#else
+        "nvfbc"
+#endif
     }
 
     private func runSession(
@@ -762,7 +791,8 @@ final class PlankCoreClient: ObservableObject {
                 topology: requestedTopology,
                 applicationID: applicationID,
                 frameRate: connectedHost.streamFrameRate,
-                playAudioOnHost: playAudioOnHost
+                playAudioOnHost: playAudioOnHost,
+                captureSource: captureSource(for: connectedHost)
             )
             return (initialClient, initialAuthentication, requestedTopology, launch)
         } catch let PlankHTTPError.rejected(code, _) where code == 425 {
@@ -814,7 +844,8 @@ final class PlankCoreClient: ObservableObject {
                     topology: verifiedRequest,
                     applicationID: applicationID,
                     frameRate: connectedHost.streamFrameRate,
-                    playAudioOnHost: playAudioOnHost
+                    playAudioOnHost: playAudioOnHost,
+                    captureSource: captureSource(for: connectedHost)
                 )
                 return (client, authentication, verifiedRequest, launch)
             } catch let PlankHTTPError.rejected(code, _) where code == 401 {
@@ -831,6 +862,8 @@ final class PlankCoreClient: ObservableObject {
                 continue
             } catch is CancellationError {
                 throw CancellationError()
+            } catch let failure as PlankHTTPError where failure.isVideoQualityFailure {
+                throw failure
             } catch {
                 // The replacement worker briefly drops HTTP while X restarts.
                 needsAuthentication = true
@@ -1104,6 +1137,10 @@ final class PlankCoreClient: ObservableObject {
         httpClient = nil
         lastIdentity = nil
         connectedHost = nil
+#if PLANK_NATIVE_MAC_WACOM
+        nativeVideoCapabilities = nil
+        nativeVideoQuality = .nvfbc
+#endif
         activeHostID = nil
         transitionCredentials = nil
         lastAuthentication = nil

@@ -6,6 +6,12 @@ mkdir -p "$1"
 out=$(cd -- "$1" && pwd)
 cd "$root"
 xcrun swiftc -swift-version 6 -Onone -parse-as-library -DPLANK_NATIVE_MAC_WACOM \
+    apple-native/Sources/PlankMacVideoQuality.swift visionos-native/Sources/Models/HostBookmark.swift \
+    visionos-native/Sources/Models/PlankAudioFormat.swift visionos-native/Sources/Models/PlankStreamRequest.swift \
+    visionos-native/Sources/Services/PlankHTTPClient.swift visionos-native/Sources/Services/HostDiscovery.swift \
+    visionos-native/Sources/Services/HostStore.swift apple-native/Tests/PlankMacVideoQualityTests.swift -o "$out/mac-video-quality"
+"$out/mac-video-quality"
+xcrun swiftc -swift-version 6 -Onone -parse-as-library -DPLANK_NATIVE_MAC_WACOM \
     apple-native/Sources/PlankMacInputPolicy.swift visionos-native/Sources/Services/PlankInputQueue.swift \
     visionos-native/Sources/Services/PlankWacomPreflight.swift apple-native/Tests/PlankMacPolicyTests.swift -o "$out/mac-policy"
 "$out/mac-policy"
