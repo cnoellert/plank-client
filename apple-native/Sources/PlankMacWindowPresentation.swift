@@ -17,9 +17,13 @@ import AppKit
         install()
     }
     func install() {
-        guard let window, window.delegate !== self else { return }
-        previous = window.delegate
-        window.delegate = self
+        guard let window else { return }
+        if window.delegate !== self {
+            previous = window.delegate
+            window.delegate = self
+        }
+        // SwiftUI/AppKit may replace or revalidate the fullscreen titlebar
+        // controls without replacing this delegate. Repair those controls too.
         PlankMacDesktopWindow.configure(window)
     }
     func remove() {

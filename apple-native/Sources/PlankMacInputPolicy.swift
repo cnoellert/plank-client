@@ -58,3 +58,27 @@ final class PlankMacWacomReleaseBarrier: @unchecked Sendable {
         return true
     }
 }
+
+
+/// Preserve fractional trackpad motion instead of truncating every event.
+/// Legacy wheel notches retain the existing 120-unit protocol scale.
+struct PlankMacScrollAccumulator {
+    private var verticalRemainder = 0.0
+    private var horizontalRemainder = 0.0
+    mutating func reset() { verticalRemainder = 0; horizontalRemainder = 0 }
+    mutating func take(vertical: Double, horizontal: Double, precise: Bool) -> (Int16, Int16) {
+        guard vertical.isFinite, horizontal.isFinite else { reset(); return (0, 0) }
+        if !precise { reset() }
+        let factor = precise ? 1.0 : 120.0
+        return (Self.axis(vertical * factor, remainder: &verticalRemainder),
+                Self.axis(horizontal * factor, remainder: &horizontalRemainder))
+    }
+    private static func axis(_ delta: Double, remainder: inout Double) -> Int16 {
+        let total = delta + remainder
+        guard total.isFinite else { remainder = 0; return 0 }
+        let whole = total.rounded(.towardZero)
+        // Saturation discards excess rather than replaying a huge delayed tail.
+        remainder = total - whole
+        return Int16(min(max(whole, Double(Int16.min)), Double(Int16.max)))
+    }
+}

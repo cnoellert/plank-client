@@ -71,6 +71,10 @@ final class PlankMacMetalView: NSView {
         check(window.styleMask.contains(.resizable) && green.isEnabled, "lost fullscreen capabilities repaired without transition latch")
         check(green.target === presentation && green.action == #selector(PlankMacWindowPresentation.toggleDesktopFullScreen(_:)), "repair retains shared fullscreen action")
         let options = window.delegate!.window!(window, willUseFullScreenPresentationOptions: [])
+        green.isEnabled = false; green.target = window; green.action = #selector(NSWindow.performZoom(_:))
+        presentation.install()
+        check(green.isEnabled && green.target === presentation && green.action == #selector(PlankMacWindowPresentation.toggleDesktopFullScreen(_:)),
+            "reinstall repairs revalidated green button even when delegate is unchanged")
         check(options.contains([.fullScreen, .autoHideMenuBar, .autoHideDock, .autoHideToolbar]), "fullscreen chrome auto-hides")
         check(!options.contains(.hideMenuBar) && !options.contains(.hideDock), "mutually exclusive options removed")
         check(options.contains(.disableProcessSwitching), "original delegate options preserved")
@@ -268,6 +272,10 @@ final class PlankMacMetalView: NSView {
         view.cursorUpdate(with: hover)
         check(NSCursor.current === NSCursor.arrow, "toolbar cursor update restores visible arrow")
         check(client.tabletChanges == ownershipChanges, "toolbar hover leaves tablet capture unchanged")
+        green.isEnabled = false; green.target = window; green.action = #selector(NSWindow.performZoom(_:))
+        view.updatePointerAppearance(for: hover)
+        check(green.isEnabled && green.target === window.delegate && green.action == #selector(PlankMacWindowPresentation.toggleDesktopFullScreen(_:)),
+            "native toolbar hover repairs window-specific green button before input dispatch")
         toolbar.removeFromSuperview()
         check(view.ownsDesktopPoint(center), "desktop routing resumes after toolbar retracts")
         view.setLocalControlsPresented(true)

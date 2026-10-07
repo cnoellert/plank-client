@@ -24,6 +24,23 @@ import Foundation
         check(PlankMacKeys.modifiers([.shift,.control,.option,.command]) == 15, "modifier bits")
         check(PlankMacKeys.mouseButton(1) == 3 && PlankMacKeys.mouseButton(2) == 2, "right and middle protocol buttons")
         check(PlankMacKeys.mouseButton(3) == 4 && PlankMacKeys.mouseButton(99) == nil, "side buttons bounded")
+        var scroll = PlankMacScrollAccumulator()
+        for _ in 0..<3 { check(scroll.take(vertical: 0.25, horizontal: 0, precise: true).0 == 0, "fractional wheel motion retained") }
+        check(scroll.take(vertical: 0.25, horizontal: 0, precise: true).0 == 1, "small trackpad events accumulate to protocol motion")
+        for _ in 0..<3 { _ = scroll.take(vertical: -0.25, horizontal: 0.125, precise: true) }
+        check(scroll.take(vertical: -0.25, horizontal: 0.125, precise: true).0 == -1, "negative precise scrolling keeps direction")
+        check(scroll.take(vertical: 0, horizontal: 0.5, precise: true).1 == 1, "horizontal remainder independent")
+        let notch = scroll.take(vertical: 1, horizontal: -2, precise: false)
+        check(notch.0 == 120 && notch.1 == -240, "legacy wheel scale unchanged")
+        _ = scroll.take(vertical: 0.75, horizontal: 0.75, precise: true); scroll.reset()
+        let reset = scroll.take(vertical: 0.25, horizontal: 0.25, precise: true)
+        check(reset.0 == 0 && reset.1 == 0, "release cannot replay old scroll fractions")
+        let huge = scroll.take(vertical: 1e10, horizontal: -1e10, precise: false)
+        check(huge.0 == Int16.max && huge.1 == Int16.min, "scroll packet is bounded without conversion overflow")
+        let afterHuge = scroll.take(vertical: 0, horizontal: 0, precise: true)
+        check(afterHuge.0 == 0 && afterHuge.1 == 0, "saturated scroll cannot replay as a delayed tail")
+        let invalid = scroll.take(vertical: .nan, horizontal: .infinity, precise: true)
+        check(invalid.0 == 0 && invalid.1 == 0, "invalid scroll deltas cannot trap or forward")
         let input = PlankInputQueue()
         for n in 0..<256 { check(input.offerNativeRawHid(Data([UInt8(truncatingIfNeeded:n)])), "ordered report accepted") }
         check(!input.offerNativeRawHid(Data([0])), "full raw queue refuses instead of discarding a transition")

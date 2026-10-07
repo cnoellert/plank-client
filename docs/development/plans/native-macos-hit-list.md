@@ -180,3 +180,10 @@ for both exit acknowledgements before disposing the desktops. A bounded focus
 hold preserves existing Wacom ownership through group animations only while
 PLANK is active. Physical acceptance is pending; capture console output on the
 next authorized launch to retain startup/attachment diagnostics.
+
+Build 20 targeted feedback: pen works well; green button works windowed but
+not on the main window in fullscreen, and wheel input is intermittent. Build 21
+is a narrow fullscreen-control revalidation and pointer-targeted scroll candidate.
+It retains fractional precise scroll movement and the existing legacy wheel
+scale. Independent green-button and both-output wheel behavior need live
+acceptance; prior Wacom startup failures remain separately unresolved.

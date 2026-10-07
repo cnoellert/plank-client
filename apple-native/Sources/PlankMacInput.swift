@@ -40,6 +40,7 @@ final class PlankMacInputView: NSView {
     private var latestFrame: PlankRenderedFrame?
     private var geometry: PlankMacDisplayGeometry?
     private var heldButtons = Set<UInt8>()
+    private var scrollAccumulator = PlankMacScrollAccumulator()
     private var heldKeys = Set<UInt16>()
     private var modifierKeys = Set<UInt16>()
     private var observations = [NSObjectProtocol]()
@@ -99,6 +100,7 @@ final class PlankMacInputView: NSView {
         updateFocus()
     }
     private func updateFocus() {
+        windowPresentation?.install()
         let owned = NSApp.isActive && (window?.isKeyWindow == true || window?.isMainWindow == true)
         if !NSApp.isActive || window?.isKeyWindow != true || localControlsPresented { restoreLocalCursor() }
         if !owned { releaseInput() }
@@ -177,8 +179,8 @@ final class PlankMacInputView: NSView {
             convert(windowPoint, from: nil), in: bounds, dragging: false) else { return nil }
         return (x, y, width, height)
     }
-    private func pointer(_ event: NSEvent) -> Bool {
-        guard !localControlsPresented, NSApp.isActive, window?.isKeyWindow == true,
+    private func pointer(_ event: NSEvent, requireKeyWindow: Bool = true) -> Bool {
+        guard !localControlsPresented, NSApp.isActive, !requireKeyWindow || window?.isKeyWindow == true,
               let geometry else { return false }
         let dragging = !heldButtons.isEmpty
         var result: (Int, Int, Int, Int)?
@@ -216,10 +218,13 @@ final class PlankMacInputView: NSView {
     override func otherMouseDown(with event: NSEvent) { if let button = PlankMacKeys.mouseButton(event.buttonNumber) { down(event, button: button) } }
     override func otherMouseUp(with event: NSEvent) { if let button = PlankMacKeys.mouseButton(event.buttonNumber) { up(button) } }
     override func scrollWheel(with event: NSEvent) {
-        guard !localControlsPresented, NSApp.isActive, window?.isKeyWindow == true,
-              ownsDesktopPoint(event.locationInWindow) else { return }
-        let factor = event.hasPreciseScrollingDeltas ? 1.0 : 120.0
-        client.scroll(vertical: Int16(clamping: Int(event.scrollingDeltaY * factor)), horizontal: Int16(clamping: Int(event.scrollingDeltaX * factor)))
+        // A wheel event is targeted at the canvas under the pointer, including
+        // the other session window. Move the Host pointer there first without
+        // changing keyboard focus or recapturing the tablet.
+        guard ownsDesktopPoint(event.locationInWindow), pointer(event, requireKeyWindow: false) else { return }
+        let (vertical, horizontal) = scrollAccumulator.take(vertical: event.scrollingDeltaY,
+            horizontal: event.scrollingDeltaX, precise: event.hasPreciseScrollingDeltas)
+        if vertical != 0 || horizontal != 0 { client.scroll(vertical: vertical, horizontal: horizontal) }
     }
     override func keyDown(with event: NSEvent) {
         guard !localControlsPresented else { super.keyDown(with: event); return }
@@ -248,6 +253,7 @@ final class PlankMacInputView: NSView {
     }
     override func resignFirstResponder() -> Bool { releaseInput(); restoreLocalCursor(); return true }
     func releaseInput() {
+        scrollAccumulator.reset()
         heldButtons.forEach { client.setMouseButton(number: $0, pressed: false) }
         heldKeys.union(modifierKeys).forEach { client.sendKey(code: $0, pressed: false, modifiers: 0) }
         heldButtons.removeAll(); heldKeys.removeAll(); modifierKeys.removeAll()
@@ -265,7 +271,13 @@ final class PlankMacInputView: NSView {
         return hit === self || hit.isDescendant(of: self)
     }
     func updatePointerAppearance(for event: NSEvent) {
-        if event.window === window { updatePointerAppearance(at: event.locationInWindow) }
+        if event.window === window {
+            // Revealed fullscreen chrome can be revalidated after the delegate's
+            // did-enter callback. Rebind its native button before local hover or
+            // click dispatch, including on the non-key desktop window.
+            if !ownsDesktopPoint(event.locationInWindow) { windowPresentation?.install() }
+            updatePointerAppearance(at: event.locationInWindow)
+        }
         else if !PlankMacSessionWindows.owns(client: client, window: event.window) { restoreLocalCursor() }
         // Another session window handles its own cursor appearance.
     }

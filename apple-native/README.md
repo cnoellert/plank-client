@@ -197,3 +197,24 @@ green-button actions, repeated clicks, disconnect during entry, transition
 failure, single shared disconnect and disposal after both exit acknowledgements.
 The AppKit animation is substituted in these checks; physical dual-display
 fullscreen and Wacom behavior require the targeted live pass.
+
+## Build 21 fullscreen chrome and scroll candidate
+
+Build 20's operator report accepts ongoing pen operation but identifies the
+primary window's green button as unavailable in fullscreen (available when
+windowed), plus intermittent scrolling. Global fullscreen entry and exit are
+recorded in its runtime log; complete disconnect acceptance is not inferred.
+
+Build 21 revalidates each window's native green button on focus changes and
+local-chrome hover/click dispatch, including when its delegate is unchanged.
+This preserves independent green-button behavior and session-wide toolbar
+commands. Physical fullscreen-button acceptance remains pending.
+
+Wheel input targets the desktop under the pointer even when it is the non-key
+session window. The Host pointer is positioned before scrolling without
+changing keyboard focus or Wacom capture. Precise deltas keep fractional
+remainders instead of losing every sub-unit event; ordinary wheel notches keep
+the existing 120-unit scale. Controls, letterboxing and inactive-app input remain
+excluded. Release clears fractional state, and saturation cannot replay a long
+scroll tail. Focused checks cover fractional/sign/axis handling, legacy scale,
+reset, saturation and invalid deltas, plus native green-button revalidation.

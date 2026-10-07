@@ -134,7 +134,7 @@ enum PlankMacDesktopWindow {
             window.collectionBehavior.insert(.fullScreenPrimary)
         }
         if let button = window.standardWindowButton(.zoomButton) {
-            button.isEnabled = true
+            if !button.isEnabled { button.isEnabled = true }
             if let presentation = window.delegate as? PlankMacWindowPresentation {
                 button.target = presentation
                 button.action = #selector(PlankMacWindowPresentation.toggleDesktopFullScreen(_:))
