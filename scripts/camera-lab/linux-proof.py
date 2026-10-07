@@ -31,6 +31,7 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     probe = out / "v4l2-probe"
     device = "/dev/video42"
+    assert sorted(str(p) for p in Path("/dev").glob("video*")) == [device], "Runner must contain only the disposable lab camera"
     report = {"kernel": run("uname", "-r"), "physicalCameraUsed": False,
               "transportIntegrated": False, "tests": {}, "passed": False}
     producer = None
@@ -112,10 +113,10 @@ def main():
                     page.goto(origin)
                     report["browserEnumeration"] = page.evaluate("""async () =>
                         (await navigator.mediaDevices.enumerateDevices()).map(d=>({
-                            kind:d.kind, labCamera:d.label.includes('PLANK Camera Lab'), labelExposed:!!d.label}))""")
+                            kind:d.kind, labCamera:d.label.includes('PLANK-Camera-Lab'), labelExposed:!!d.label}))""")
                     selection = page.evaluate("""async () => {
                         const devices = await navigator.mediaDevices.enumerateDevices();
-                        const camera = devices.find(d => d.kind === 'videoinput' && d.label.includes('PLANK Camera Lab'));
+                        const camera = devices.find(d => d.kind === 'videoinput' && d.label.includes('PLANK-Camera-Lab'));
                         if (!camera) throw new Error('Lab camera not enumerated');
                         window.stream = await navigator.mediaDevices.getUserMedia({audio:false, video:{
                             deviceId:{exact:camera.deviceId}, width:{exact:1280}, height:{exact:720}}});
