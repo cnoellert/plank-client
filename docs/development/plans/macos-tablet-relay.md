@@ -20,9 +20,13 @@ desktop reconnect. The initial full-recovery report is superseded by that
 correction. Read-only inspection after the reconnect found Host 1.1.024 and
 Pressure Recalibration = 1 on the PLANK UHID stylus. This is a suspected
 workstation initialization confound, not proof of the failure cause. Flame4
-has the previously accepted Host 1.1.030 pressure policy; a comparison there
-requires verification of the active stylus policy before USB hotplug. No Host
-configuration or package was changed during this investigation. Sleep/wake and
+has the previously accepted Host 1.1.030 pressure policy. Its active virtual
+stylus was verified at Pressure Recalibration = 0 before USB hotplug and again
+after reattachment (generation 12 to 13). USB return restored all input with
+hover first, and a second test with tip contact during USB return also passed
+without desktop reconnect. These passes strengthen the policy explanation but
+do not establish the cause of the Flame3 failure. No Host configuration or
+package was changed during this investigation. Sleep/wake and
 transfer back to local Mac Client capture remain pending. Earlier Linux Relay
 acceptance does not establish those Mac platform behaviors.
 
