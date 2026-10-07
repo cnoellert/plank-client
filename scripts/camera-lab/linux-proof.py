@@ -105,10 +105,14 @@ def main():
             threading.Thread(target=server.serve_forever, daemon=True).start()
             origin = f"http://127.0.0.1:{server.server_port}"
             with sync_playwright() as pw:
-                with pw.chromium.launch(args=["--no-sandbox"]) as browser:
+                # Use the full browser's new headless mode, not headless-shell.
+                with pw.chromium.launch(channel="chromium", args=["--no-sandbox"]) as browser:
                     context = browser.new_context(permissions=["camera"], base_url=origin)
                     page = context.new_page()
                     page.goto(origin)
+                    report["browserEnumeration"] = page.evaluate("""async () =>
+                        (await navigator.mediaDevices.enumerateDevices()).map(d=>({
+                            kind:d.kind, labCamera:d.label.includes('PLANK Camera Lab'), labelExposed:!!d.label}))""")
                     selection = page.evaluate("""async () => {
                         const devices = await navigator.mediaDevices.enumerateDevices();
                         const camera = devices.find(d => d.kind === 'videoinput' && d.label.includes('PLANK Camera Lab'));
