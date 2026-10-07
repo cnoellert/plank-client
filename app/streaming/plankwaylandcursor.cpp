@@ -140,6 +140,7 @@ public:
             return false;
         }
         wl_surface_attach(m_AnchorSurface, anchorBuffer->object, 0, 0);
+        wl_surface_damage(m_AnchorSurface, 0, 0, 1, 1);
         wl_surface_commit(m_Surface);
         wl_surface_commit(m_AnchorSurface);
         wl_display_flush(m_Display);
