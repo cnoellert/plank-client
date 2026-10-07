@@ -8,10 +8,12 @@ The existing transport pin and working Wacom paths are unchanged.
 
 The dedicated workflow builds v4l2loopback `0f9ee867` (v0.15.4) against a disposable
 Ubuntu runner's own kernel. It creates one private synthetic device, feeds 720p
-YUYV frames, and checks:
+YUYV frames decoded from the included synthetic Mac VideoToolbox H.264 fixture,
+and checks:
 
 - capture is unavailable before and after the producer;
 - a second producer cannot claim the stream;
+- Linux decodes all 90 Mac-encoded frames with the expected image transition;
 - an independent FFmpeg reader receives the exact generated pixels;
 - Chromium enumerates and reads that actual V4L2 camera through getUserMedia;
 - starving the producer replaces the previous image, then resumes without
@@ -36,6 +38,9 @@ No physical camera is opened, and no camera permission is requested. Use an
 independent decoder to verify dimensions, frame count, color and generated image
 transition. This is an encoding feasibility check, not the current PCAM v1 source
 contract: that contract explicitly requires unchanged native compressed capture.
+The fixture manifest records its SHA-256 and local hardware/independent-decoder
+results. It contains generated dark/bright fields only. Copying this fixture
+between platforms does not establish authenticated network transport.
 
 ## Product boundary and next integration
 

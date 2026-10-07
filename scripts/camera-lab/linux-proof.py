@@ -6,6 +6,7 @@ The workflow creates the only device this script is permitted to touch.
 """
 import argparse
 import functools
+import hashlib
 import http.server
 import json
 import os
@@ -42,11 +43,28 @@ def main():
         assert caps() == {"capture": False, "output": True}, caps()
         report["tests"]["offBeforeProducer"] = True
 
-        # Neutral-chroma dark/bright halves, independent of a codec or real scene.
-        pair_dark = bytes((32, 128, 32, 128))
-        pair_bright = bytes((200, 128, 200, 128))
-        pattern = (pair_dark * 320 + pair_bright * 320) * 720
-        (out / "pattern.yuyv").write_bytes(pattern)
+        # Actual synthetic Mac VideoToolbox output, copied as a bounded test fixture.
+        # This crosses platforms through a fixture, NOT an authenticated PLANK lane.
+        fixture = Path(__file__).with_name("synthetic-vt-720p.h264")
+        manifest = json.loads(fixture.with_suffix(".json").read_text())
+        assert manifest["synthetic"] and hashlib.sha256(fixture.read_bytes()).hexdigest() == manifest["sha256"]
+        metadata = json.loads(run("ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0",
+            "-show_entries", "stream=width,height,nb_read_frames,color_space", "-of", "json", str(fixture)))["streams"][0]
+        assert metadata == {"width": 1280, "height": 720, "color_space": "bt709", "nb_read_frames": "90"}, metadata
+        subprocess.run(["ffmpeg", "-nostdin", "-v", "error", "-i", str(fixture), "-pix_fmt", "yuyv422",
+                        "-f", "rawvideo", "-y", str(out / "pattern.yuyv")], check=True, timeout=15)
+        decoded = (out / "pattern.yuyv").read_bytes()
+        frame_size = 1280 * 720 * 2
+        assert len(decoded) == frame_size * 90
+        reference_hashes = set()
+        for i in range(90):
+            frame = decoded[i * frame_size:(i + 1) * frame_size]
+            expected = (32, 200) if i < 45 else (64, 170)
+            left, right = frame[(360 * 1280 + 320) * 2], frame[(360 * 1280 + 960) * 2]
+            assert abs(left - expected[0]) <= 3 and abs(right - expected[1]) <= 3, (i, left, right)
+            reference_hashes.add(hashlib.sha256(frame).hexdigest())
+        report["fixtureSHA256"] = manifest["sha256"]
+        report["tests"]["linuxDecodesMacHardwareOutput"] = True
         # Prevent the module from replaying the last scene indefinitely on a stall.
         run("v4l2-ctl", "-d", device, "-c", "timeout=250")
         with (out / "producer.log").open("w") as log:
@@ -72,7 +90,9 @@ def main():
                 "-i", device, "-frames:v", "3", "-pix_fmt", "yuyv422", "-f", "rawvideo",
                 "-y", str(out / "capture.yuyv")], check=True, timeout=15)
             captured = (out / "capture.yuyv").read_bytes()
-            assert captured == pattern * 3, "V4L2 sample mismatch"
+            assert len(captured) == frame_size * 3
+            for i in range(3):
+                assert hashlib.sha256(captured[i * frame_size:(i + 1) * frame_size]).hexdigest() in reference_hashes, "V4L2 sample mismatch"
             report["tests"]["independentReaderExactPixels"] = True
 
             # getUserMedia uses the real V4L2 device, NOT Chromium fake video capture.
