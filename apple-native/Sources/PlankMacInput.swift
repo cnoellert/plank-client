@@ -256,8 +256,12 @@ final class PlankMacInputView: NSView {
     override func otherMouseDown(with event: NSEvent) { if let button = PlankMacKeys.mouseButton(event.buttonNumber) { down(event, button: button) } }
     override func otherMouseUp(with event: NSEvent) { if let button = PlankMacKeys.mouseButton(event.buttonNumber) { up(button) } }
     private func forwardScroll(_ event: NSEvent) -> Bool {
-        guard event.window === window, ownsDesktopPoint(event.locationInWindow),
-              pointer(event, requireKeyWindow: false) else { return false }
+        guard NSApp.isActive, event.window === window, geometry != nil,
+              ownsDesktopPoint(event.locationInWindow) else { return false }
+        // Real mouse movement positions the Host pointer, including over a
+        // non-key desktop. Do not manufacture motion for wheel-only input:
+        // Linux uses XTEST for absolute motion and uinput for scrolling. That
+        // alternation resets GTK's scroll baseline before each wheel tick.
         let (vertical, horizontal) = scrollAccumulator.take(event: event)
         if vertical != 0 || horizontal != 0 { client.scroll(vertical: vertical, horizontal: horizontal) }
         wheelForwarded += 1; wheelVertical += Int(vertical); wheelHorizontal += Int(horizontal)

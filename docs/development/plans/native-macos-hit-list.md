@@ -214,3 +214,13 @@ Cocoa/SDL Mac path and routes eligible wheel events once from the local monitor.
 It retains display activation in Session Controls even while the second window
 exists. Physical wheel type and smoothness remain to be verified; no Host/Relay,
 raw HID worker or shared Vision source changes are included.
+
+Build 23 subsequently delivered physical wheel detents to the Linux virtual
+mouse while gedit still barely scrolled. Build 24 matches the established
+desktop Client by sending wheel input without an extra absolute pointer event
+on every tick. Linux uses different devices for those operations; GTK's device
+change handling resets its smooth-scroll baseline. The mechanism is supported
+by source comparison but not yet confirmed by a correlated live trace. Existing
+mouse movement still targets either desktop; controls and inactive-app input
+stay local. Physical scrolling on both outputs and through fullscreen changes
+requires acceptance. No further Host or tablet changes are included.

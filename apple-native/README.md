@@ -275,3 +275,21 @@ Gesture start/cancellation, completed momentum and input release clear stale
 fractions. Bounded per-second wheel counters identify forwarding without logging
 pointer coordinates or event contents. Synthetic, unposted AppKit line/pixel
 fixtures verify the production converter; physical wheel acceptance is pending.
+
+## Build 24 wheel routing candidate
+
+Build 23's physical wheel events reached the Linux virtual mouse, including
+conventional up/down detents, but the operator reported little scrolling in
+gedit. The established desktop Client sends wheel changes without preceding
+absolute motion. The native pilot had repositioned the pointer on every tick.
+On Linux those operations use XTEST and uinput respectively; GTK resets its
+scroll baseline when the source device changes. This is a source-supported
+explanation, with live correlation and acceptance still pending.
+
+Build 24 removes that extra motion from wheel handling. Actual mouse movement
+continues to position the Host pointer over either desktop, including the
+non-key window. Eligible wheel events retain their existing conversion and
+single delivery through the event monitor. Local controls, inactive apps and
+letterboxes remain excluded. Host policy, tablet capture and pointer movement
+are unchanged. Qualify stationary scrolling in both desktop windows, then
+movement between them and fullscreen/windowed transitions.
