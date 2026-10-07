@@ -237,3 +237,13 @@ alongside the earlier accepted placement and session-wide controls.
 Proceed with P3 webcam feasibility before implementation. This does not close
 the remaining Wacom startup/interruption or general Mac release gates, and
 does not authorize a new Host package or installation.
+
+### October 7 camera component proof
+
+The [webcam plan](native-macos-webcam.md) defines one Mac encoded source and
+Linux destination, plus the root contract and Host packaging work it requires.
+The isolated camera lab tests generated VideoToolbox H.264 against an independent
+decoder and a disposable Linux virtual camera/browser. It starts no physical
+capture, links into neither product, and changes no working transport or Wacom
+path. Component results do not establish authenticated transport, a Rocky Host
+installation or the artist's actual receiving application.
