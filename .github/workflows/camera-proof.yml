@@ -23,6 +23,7 @@ jobs:
           git clone https://github.com/v4l2loopback/v4l2loopback.git /tmp/plank-v4l2loopback
           git -C /tmp/plank-v4l2loopback checkout 0f9ee86760b7f2bea174b7e3e7a1d38845da0ab4
           make -C /tmp/plank-v4l2loopback
+          sudo modprobe videodev
           sudo insmod /tmp/plank-v4l2loopback/v4l2loopback.ko video_nr=42 card_label="PLANK Camera Lab" exclusive_caps=1
           sudo chmod 600 /dev/video42
           sudo chown "$(id -u):$(id -g)" /dev/video42
