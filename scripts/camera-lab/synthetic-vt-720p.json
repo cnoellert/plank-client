@@ -27,6 +27,16 @@
     "passed": true,
     "transitionFrame": 45
   },
+  "independentRecovery": {
+    "dimensions": [
+      1280,
+      720
+    ],
+    "independentDecodedFrames": 45,
+    "passed": true,
+    "sampledPixelsMatchPostTransition": true,
+    "startsFromRequestedKeyFrame": 45
+  },
   "keyFrames": [
     0,
     30,
