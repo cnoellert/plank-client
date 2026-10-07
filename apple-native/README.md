@@ -84,14 +84,21 @@ close the connection or deactivate a focused first window.
 
 Session Controls shows the output identity/primary role and offers **Move to
 Mac display**. Leave fullscreen before moving a window to another display.
+The primary Host output opens on the Mac's system primary display; the second
+opens on its secondary display, including when the Mac primary is on the right.
+Window roles follow the Host primary flag rather than the left/right crop order.
+Changing focus does not change that assignment. Display configuration changes
+reassign windowed surfaces; fullscreen surfaces defer placement until exit.
+With one remaining Mac display, both windows stay available on that display.
 The first window can reopen the second. Disconnect closes both, waiting for
 AppKit fullscreen exit before disposal. Screen removal uses AppKit's normal
 window migration and updates backing scale; this requires physical acceptance.
 
 Focused tests cover authenticated topology parsing, independent modes, negative
 origins, crops, aspect/letterbox edges, mixed local point scales, cursor seams,
-stale-frame rejection, shared frame delivery, bookmark compatibility and window
-focus. Fullscreen close/transition tests use an AppKit window double; they do
+stale-frame rejection, shared frame delivery, bookmark compatibility, primary
+mapping on either side, display removal fallback and window focus.
+Fullscreen close/transition tests use an AppKit window double; they do
 not establish physical Space disposal or multi-monitor Wacom acceptance.
 The fixture `Tests/Fixtures/output-topology-v13.json` is from the accepted root
 `e532a5e`, `tests/protocol/output-topology-v13.json`.

@@ -97,6 +97,14 @@ into this comparison. Focused checks and Mac/Vision compilation are evidence
 of source correctness; live two-output, mixed-scale, fullscreen/screen-removal
 and Wacom acceptance remain pending.
 
+The operator observed two remote windows in build 17 and requested that their
+assignment follow Mac primary/secondary priority. Build 18 explicitly places
+both windows by that priority, uses the Host primary flag for window roles,
+and retains source rectangles for rendering and input even when the primary
+Host output is on the right. Focus does not change priority. A Mac display
+configuration change reassigns windowed surfaces; fullscreen placement waits
+until exit. Live placement/fullscreen and Wacom acceptance remain pending.
+
 ## P3: Webcam feasibility
 
 At inspected root upstream commit `e92060b`, `protocol/camera.md` describes an

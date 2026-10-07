@@ -9,15 +9,13 @@ struct PlankMacDesktop: View {
     @AppStorage(PlankAudioPreferences.volumeKey) private var volume = Double(PlankAudioPreferences.volume())
     @AppStorage(PlankAudioPreferences.mutedKey) private var muted = PlankAudioPreferences.muted()
     @State private var desktopWindow: NSWindow?
-    @State private var placed = false
-    @State private var screens = NSScreen.screens
+    @State private var placedGeneration: String?
+    @State private var screens = PlankMacDisplayPriority.screens()
     var body: some View {
         ZStack(alignment: .topLeading) {
             PlankMacSurface(client: client, windowChanged: { if let window = $0 {
                 desktopWindow = window
-                if outputIndex == 1, !placed, screens.count > 1 {
-                    place(window, on: screens[1]); placed = true
-                }
+                placeOnAssignedDisplay()
             } }, localControlsPresented: controls || client.showingTabletWaitScreen,
                             topology: client.sessionTopology, outputIndex: outputIndex)
             if client.videoDiagnosticsEnabled { Text(client.videoDiagnosticText + "\n" + client.audioDiagnosticText).font(.system(.caption, design: .monospaced)).padding(10).background(.black.opacity(0.8)).foregroundStyle(.white).padding().allowsHitTesting(false) }
@@ -50,11 +48,12 @@ struct PlankMacDesktop: View {
         .onAppear { synchronizeWindows() }
         .onChange(of: client.sessionTopology) { _, _ in synchronizeWindows() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
-            screens = NSScreen.screens
-            // AppKit migrates windows/Spaces after unplugging a display. Keep
-            // a window that has no screen reachable on the remaining display.
-            if let window = desktopWindow, window.screen == nil, let screen = screens.first,
-               !window.styleMask.contains(.fullScreen) { place(window, on: screen) }
+            screens = PlankMacDisplayPriority.screens()
+            placedGeneration = nil
+            placeOnAssignedDisplay()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didExitFullScreenNotification)) { event in
+            if let window = event.object as? NSWindow, window === desktopWindow { placeOnAssignedDisplay() }
         }
         .onChange(of: client.phase) { _, phase in if case .failed = phase { closeThisWindow() } }
     }
@@ -62,12 +61,14 @@ struct PlankMacDesktop: View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Session Controls").font(.headline)
             if let topology = client.sessionTopology, topology.splitPresentation,
-               topology.orderedOutputs.indices.contains(outputIndex) {
-                let output = topology.orderedOutputs[outputIndex]
-                Text("\(outputIndex == 0 ? "Left" : "Right") display · \(output.width) × \(output.height)\(output.primary ? " · Primary" : "")").font(.caption)
+               topology.macPresentationOutputs.indices.contains(outputIndex) {
+                let output = topology.macPresentationOutputs[outputIndex]
+                Text("\(output.primary ? "Primary" : "Secondary") display · \(output.width) × \(output.height)").font(.caption)
                 Menu("Move to Mac display") {
                     ForEach(Array(screens.enumerated()), id: \.offset) { index, screen in
-                        Button("\(index + 1): \(screen.localizedName)") { if let window = desktopWindow { place(window, on: screen) } }
+                        Button("\(index == 0 ? "Primary" : "Secondary"): \(screen.localizedName)") {
+                            if let window = desktopWindow { place(window, on: screen) }
+                        }
                     }
                 }.disabled(desktopWindow?.styleMask.contains(.fullScreen) == true)
                 if outputIndex == 0 { Button("Show second display") { openWindow(id: "desktop-secondary") } }
@@ -86,14 +87,31 @@ struct PlankMacDesktop: View {
             Text("Tablet: \(PlankMacTabletSource.saved.title)").font(.caption).foregroundStyle(.secondary)
         }.padding(20).frame(width: 340)
             .background(PlankMacLocalPointerRegion())
-            .onAppear { NSCursor.arrow.set() }
+            .onAppear { screens = PlankMacDisplayPriority.screens(); NSCursor.arrow.set() }
     }
     private func synchronizeWindows() {
+        placeOnAssignedDisplay()
         if outputIndex == 0, client.sessionTopology?.splitPresentation == true {
             openWindow(id: "desktop-secondary")
         } else if outputIndex == 1, client.sessionTopology?.splitPresentation != true {
             closeThisWindow()
         }
+    }
+    private func placeOnAssignedDisplay() {
+        guard let topology = client.sessionTopology, topology.splitPresentation else {
+            placedGeneration = nil
+            return
+        }
+        guard placedGeneration != topology.generation, let window = desktopWindow,
+              !window.styleMask.contains(.fullScreen) else { return }
+        guard let screen = PlankMacDisplayPriority.screen(outputIndex: outputIndex),
+              topology.macPresentationOutputs.indices.contains(outputIndex) else { return }
+        place(window, on: screen)
+        placedGeneration = topology.generation
+        NSLog("PLANK Mac placement: role=%@ host=%@ mac=%@ displayID=%u generation=%@",
+            outputIndex == 0 ? "primary" : "secondary",
+            topology.macPresentationOutputs[outputIndex].id, screen.localizedName,
+            PlankMacDisplayPriority.id(screen) ?? 0, topology.generation)
     }
     private func closeThisWindow() {
         let id = outputIndex == 0 ? "desktop" : "desktop-secondary"

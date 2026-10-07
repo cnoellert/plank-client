@@ -1,4 +1,49 @@
 import AppKit
+import CoreGraphics
+
+extension PlankTopology {
+    /// Window roles are primary/secondary; stream rectangles stay in Host
+    /// coordinates. A primary output on the right must not be recropped as left.
+    var macPresentationOutputs: [Output] {
+        let spatial = orderedOutputs
+        return spatial.filter(\.primary) + spatial.filter { !$0.primary }
+    }
+}
+
+enum PlankMacDisplayPriority {
+    struct Display {
+        let id: CGDirectDisplayID
+        let frame: CGRect
+    }
+    static func orderedIDs(_ displays: [Display], primary: CGDirectDisplayID) -> [CGDirectDisplayID] {
+        displays.sorted {
+            if ($0.id == primary) != ($1.id == primary) { return $0.id == primary }
+            return ($0.frame.minX, $0.frame.minY, $0.id) < ($1.frame.minX, $1.frame.minY, $1.id)
+        }.map(\.id)
+    }
+    static func targetID(outputIndex: Int, displays: [Display], primary: CGDirectDisplayID) -> CGDirectDisplayID? {
+        guard outputIndex >= 0, outputIndex < 2 else { return nil }
+        let ids = orderedIDs(displays, primary: primary)
+        guard !ids.isEmpty else { return nil }
+        return ids[min(outputIndex, ids.count - 1)]
+    }
+    @MainActor static func id(_ screen: NSScreen) -> CGDirectDisplayID? {
+        (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
+    }
+    @MainActor static func screens() -> [NSScreen] {
+        // NSScreen.main follows keyboard focus. CGMainDisplayID follows the
+        // system primary instead; fetch current screens on each assignment.
+        let current = NSScreen.screens
+        let displays = current.compactMap { screen in id(screen).map { Display(id: $0, frame: screen.frame) } }
+        return orderedIDs(displays, primary: CGMainDisplayID()).compactMap { target in current.first { id($0) == target } }
+    }
+    @MainActor static func screen(outputIndex: Int) -> NSScreen? {
+        let current = NSScreen.screens
+        let displays = current.compactMap { screen in id(screen).map { Display(id: $0, frame: screen.frame) } }
+        guard let target = targetID(outputIndex: outputIndex, displays: displays, primary: CGMainDisplayID()) else { return nil }
+        return current.first { id($0) == target }
+    }
+}
 
 /// Source pixels, local points and Host desktop origins are different spaces.
 /// Use source_rect for both the video crop and absolute input into the one
@@ -11,8 +56,8 @@ struct PlankMacDisplayGeometry: Equatable {
         self.frameWidth = frameWidth; self.frameHeight = frameHeight
         if let topology, topology.splitPresentation {
             guard topology.desktopWidth == frameWidth, topology.desktopHeight == frameHeight,
-                  topology.orderedOutputs.indices.contains(outputIndex) else { return nil }
-            source = topology.orderedOutputs[outputIndex].sourceRect
+                  topology.macPresentationOutputs.indices.contains(outputIndex) else { return nil }
+            source = topology.macPresentationOutputs[outputIndex].sourceRect
         } else {
             guard outputIndex == 0 else { return nil }
             source = .init(x: 0, y: 0, width: frameWidth, height: frameHeight)

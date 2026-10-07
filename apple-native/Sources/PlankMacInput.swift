@@ -128,8 +128,8 @@ final class PlankMacInputView: NSView {
         releaseInput()
         self.topology = topology; outputIndex = index
         geometry = nil
-        if let topology, topology.splitPresentation, topology.orderedOutputs.indices.contains(index) {
-            let output = topology.orderedOutputs[index]
+        if let topology, topology.splitPresentation, topology.macPresentationOutputs.indices.contains(index) {
+            let output = topology.macPresentationOutputs[index]
             NSLog("PLANK Mac output: index=%d id=%@ generation=%@ source=%d,%d %dx%d primary=%d",
                 index, output.id, topology.generation, output.sourceRect.x, output.sourceRect.y,
                 output.sourceRect.width, output.sourceRect.height, output.primary ? 1 : 0)

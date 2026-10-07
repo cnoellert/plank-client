@@ -17,6 +17,33 @@ import Foundation
         check(real.displayMode == "separate-displays", "dual negotiates existing composite mode")
         check(real.matches(.ultraHD, second: .portrait1280), "independent Host modes retained")
         check(real.requesting(.ultraHD, second: .portrait1280) == real, "matching request preserves snapshot")
+        var rightPrimary = real
+        rightPrimary.outputs = real.outputs.map { .init(id: $0.id, name: $0.name, x: $0.x,
+            y: $0.y, width: $0.width, height: $0.height, primary: !$0.primary, sourceRect: $0.sourceRect) }
+        check(rightPrimary.macPresentationOutputs.map(\.id) == ["x11:DP-2", "x11:DP-0"], "primary window follows Host primary even on right")
+        check(rightPrimary.orderedOutputs.map(\.id) == real.orderedOutputs.map(\.id), "primary choice leaves Host spatial mode order intact")
+        let primaryGeometry = PlankMacDisplayGeometry(frameWidth: 5120, frameHeight: 2160, topology: rightPrimary, outputIndex: 0)!
+        let secondaryGeometry = PlankMacDisplayGeometry(frameWidth: 5120, frameHeight: 2160, topology: rightPrimary, outputIndex: 1)!
+        check(primaryGeometry.source == real.orderedOutputs[1].sourceRect, "primary on right retains original stream crop")
+        check(secondaryGeometry.source == real.orderedOutputs[0].sourceRect, "secondary on left retains original stream crop")
+        let primaryPoint = primaryGeometry.remote(.zero, in: CGRect(x: 0, y: 0, width: 1280, height: 2160), dragging: false)!
+        check(primaryPoint == (3840, 0), "primary window input includes right output offset")
+        check(primaryGeometry.localCursor(.init(x: 3840, y: 200, frameWidth: 5120, frameHeight: 2160, sequence: 1)) == CGPoint(x: 0, y: 200), "primary cursor follows its output crop")
+        let priority = PlankMacDisplayPriority.self
+        let macLeft = priority.Display(id: 12, frame: CGRect(x: -1920, y: 0, width: 1920, height: 1080))
+        let macMain = priority.Display(id: 34, frame: CGRect(x: 0, y: 0, width: 2560, height: 1440))
+        let macRight = priority.Display(id: 56, frame: CGRect(x: 2560, y: -200, width: 1920, height: 1080))
+        let displays = [macLeft, macRight, macMain]
+        check(priority.orderedIDs(displays, primary: 34) == [34, 12, 56], "system primary first even when not leftmost or enumerated first")
+        check(priority.targetID(outputIndex: 0, displays: displays, primary: 34) == 34, "Host primary assigned to Mac primary")
+        check(priority.targetID(outputIndex: 1, displays: displays, primary: 34) == 12, "secondary uses remaining display in stable spatial order")
+        check(priority.orderedIDs(Array(displays.reversed()), primary: 34) == [34, 12, 56], "enumeration changes cannot swap window roles")
+        check(priority.targetID(outputIndex: 0, displays: displays, primary: 12) == 12, "changed Mac primary reassigns primary role")
+        check(priority.targetID(outputIndex: 1, displays: displays, primary: 12) == 34, "changed Mac primary reassigns secondary role")
+        check(priority.targetID(outputIndex: 1, displays: [macMain], primary: 34) == 34, "removed secondary falls back to remaining screen")
+        check(priority.targetID(outputIndex: 1, displays: [], primary: 34) == nil, "no displays defers assignment")
+        check(priority.targetID(outputIndex: 2, displays: displays, primary: 34) == nil, "unknown window role rejected")
+        check(priority.id(priority.screens().first!) == CGMainDisplayID(), "production adapter uses system primary")
         let single = real.requesting(.standard)
         check(single.displayMode == "scaled-span" && single.outputs.isEmpty && single.desktopWidth == 2560,
               "layout replacement never invents source identities")
