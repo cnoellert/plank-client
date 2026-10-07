@@ -9,7 +9,7 @@ using namespace std::chrono_literals;
 
 // Keep checks active in release/package builds too.
 #define CHECK(condition) do { if (!(condition)) { \
-    std::cerr << "check failed at line " << __LINE__ << ": " #condition "\\n"; \
+    std::cerr << "check failed at line " << __LINE__ << ": " #condition "\n"; \
     std::abort(); \
 } } while (false)
 

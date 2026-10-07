@@ -78,7 +78,7 @@ private:
                 auto* resource = wl_resource_create(client, &wl_surface_interface, 4, id);
                 wl_resource_set_implementation(resource, &SurfaceImpl, state.get(), nullptr);
                 owner->surfaces.push_back(std::move(state));
-                wl_client_set_user_data(client, owner);
+                wl_client_set_user_data(client, owner, nullptr);
             },
             [](wl_client* client, wl_resource*, uint32_t id) {
                 static const struct wl_region_interface impl {
