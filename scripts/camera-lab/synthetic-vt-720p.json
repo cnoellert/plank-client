@@ -1,0 +1,55 @@
+{
+  "callbackAgeMaxMs": 19.744042,
+  "callbackAgeMeanMs": 5.808063433333335,
+  "encodedBy": "VideoToolbox",
+  "frames": 90,
+  "hardwareEncoder": true,
+  "height": 720,
+  "independentDecode": {
+    "afterTransition": [
+      56,
+      179
+    ],
+    "allSampledFrameCentersWithin3LumaUnits": true,
+    "decodedFrames": 90,
+    "dimensions": [
+      1280,
+      720
+    ],
+    "first": [
+      19,
+      214
+    ],
+    "last": [
+      56,
+      179
+    ],
+    "passed": true,
+    "transitionFrame": 45
+  },
+  "independentRecovery": {
+    "dimensions": [
+      1280,
+      720
+    ],
+    "independentDecodedFrames": 45,
+    "passed": true,
+    "sampledPixelsMatchPostTransition": true,
+    "startsFromRequestedKeyFrame": 45
+  },
+  "keyFrames": [
+    0,
+    30,
+    45,
+    75
+  ],
+  "nominalFPS": 30,
+  "passed": true,
+  "physicalCameraUsed": false,
+  "runtime": "Apple silicon macOS; VideoToolbox hardware encoder",
+  "sha256": "5b8502c469a51b114b578dda5d1ba0d83a30526b26d0f12962a76b72fcefd38b",
+  "source": "mac-encoder-proof.swift",
+  "synthetic": true,
+  "transportIntegrated": false,
+  "width": 1280
+}

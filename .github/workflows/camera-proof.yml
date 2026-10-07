@@ -1,0 +1,48 @@
+name: Disposable Linux camera proof
+on:
+  push:
+    branches: [codex/macos-camera-proof]
+    paths: ['scripts/camera-lab/**', '.github/workflows/camera-proof.yml']
+permissions:
+  contents: read
+jobs:
+  linux-camera:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Install disposable runner prerequisites
+        timeout-minutes: 5
+        run: |
+          sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update -qq
+          sudo apt-get -o Acquire::Retries=1 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y build-essential "linux-headers-$(uname -r)" "linux-modules-extra-$(uname -r)" ffmpeg v4l-utils python3-venv
+      - name: Install disposable browser reader
+        timeout-minutes: 4
+        run: |
+          python3 -m venv /tmp/plank-camera-venv
+          /tmp/plank-camera-venv/bin/pip install playwright==1.55.0
+          /tmp/plank-camera-venv/bin/playwright install --with-deps chromium
+      - name: Build pinned virtual camera module for this runner
+        run: |
+          git clone https://github.com/v4l2loopback/v4l2loopback.git /tmp/plank-v4l2loopback
+          git -C /tmp/plank-v4l2loopback checkout 0f9ee86760b7f2bea174b7e3e7a1d38845da0ab4
+          make -C /tmp/plank-v4l2loopback
+          sudo modprobe videodev
+          sudo insmod /tmp/plank-v4l2loopback/v4l2loopback.ko video_nr=42 card_label=PLANK-Camera-Lab exclusive_caps=1
+          sudo chmod 600 /dev/video42
+          sudo chown "$(id -u):$(id -g)" /dev/video42
+      - name: Read camera from independent applications and exercise lifecycle
+        run: /tmp/plank-camera-venv/bin/python scripts/camera-lab/linux-proof.py --output /tmp/plank-camera-evidence
+      - name: Remove disposable virtual camera
+        if: always()
+        run: |
+          if test -d /sys/module/v4l2loopback; then sudo rmmod v4l2loopback; fi
+          test ! -e /dev/video42
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: linux-camera-evidence
+          path: |
+            /tmp/plank-camera-evidence/*.json
+            /tmp/plank-camera-evidence/*.log
+          if-no-files-found: warn
