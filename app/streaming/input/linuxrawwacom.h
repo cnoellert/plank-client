@@ -8,6 +8,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include "linuxwacomreportworker.h"
 
 enum class PlankWacomTransport
 {
@@ -74,12 +75,10 @@ private:
                    std::uint32_t transactionId,
                    const unsigned char* payload, std::size_t payloadLength);
     void handlePhysicalReports();
-    void handleGetReport(std::uint16_t interfaceId, std::uint32_t transactionId,
-                         const unsigned char* payload, std::size_t payloadLength);
-    void handleSetReport(std::uint16_t type, std::uint16_t interfaceId,
-                         std::uint32_t transactionId,
-                         const unsigned char* payload, std::size_t payloadLength);
-    void setGrabbed(bool grabbed);
+    void queueReport(std::uint16_t type, std::uint16_t interfaceId,
+                     std::uint32_t transactionId,
+                     const unsigned char* payload, std::size_t payloadLength);
+    bool setGrabbed(bool grabbed);
     void suspendForFocusLoss();
     void release(bool notifyHost);
 
@@ -97,4 +96,5 @@ private:
     bool m_Attached;
     std::function<void()> m_TabletActivity;
     std::chrono::steady_clock::time_point m_AttachDeadline;
+    LinuxWacomReportWorker m_ReportWorker;
 };
