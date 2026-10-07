@@ -104,7 +104,8 @@ struct PlankMacDisplayGeometry: Equatable {
 
 enum PlankMacSessionFocus {
     struct Window { let key, main: Bool }
-    static func active(appActive: Bool, windows: [Window]) -> Bool {
-        appActive && windows.contains { $0.key || $0.main }
+    static func active(appActive: Bool, windows: [Window],
+                       presentationInProgress: Bool = false, previouslyActive: Bool = false) -> Bool {
+        appActive && ((presentationInProgress && previouslyActive) || windows.contains { $0.key || $0.main })
     }
 }

@@ -166,3 +166,17 @@ notarization or release packaging.
   pilot's pinned dependencies.
 
 Mac-hosted USB Tablet Relay build 16 passed targeted drawing and lifecycle acceptance on Flame4 Host 1.1.030, including background use, reconnect, USB return, sleep/wake and return to local Mac capture. Flame3 Host 1.1.024 had a hover-only USB-return failure; see [the Relay acceptance record](macos-tablet-relay.md) for that limitation and unqualified transports. Multiple screens is the next development slice.
+
+### October 7 session-window controls
+
+The operator accepted build 19's spatial placement and primary negotiation,
+using the existing Host contract. Wacom startup required three connections;
+that remains unresolved and does not block recording the narrower display pass.
+
+Before further features, build 20 makes Disconnect and the toolbar fullscreen
+command act on the whole session from either desktop. The green macOS button
+remains per-window. Group Space transitions are serialized; disconnect waits
+for both exit acknowledgements before disposing the desktops. A bounded focus
+hold preserves existing Wacom ownership through group animations only while
+PLANK is active. Physical acceptance is pending; capture console output on the
+next authorized launch to retain startup/attachment diagnostics.

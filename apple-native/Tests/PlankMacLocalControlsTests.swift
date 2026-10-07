@@ -7,6 +7,8 @@ import SwiftUI
     var nativeMouseOwnsPointer = false
     var keys: [(UInt16, Bool)] = []
     var tabletChanges = 0
+    var disconnects = 0
+    func disconnectSession() { disconnects += 1 }
     func setTabletActive(_ active: Bool) { tabletChanges += 1 }
     func registerVideoSurface(id: UUID, frame: (PlankRenderedFrame?) -> Void,
         cursor: (PlankRemoteCursor?) -> Void, cursorShape: (PlankRemoteCursorShape?) -> Void) {}
@@ -141,6 +143,109 @@ final class PlankMacMetalView: NSView {
         secondary.simulatedFullScreen = false
         secondaryPresentation.windowDidExitFullScreen(Notification(name: NSWindow.didExitFullScreenNotification, object: secondary))
         check(disposed == 4, "normal exit acknowledgement releases disposal")
+
+        // Use the production group coordinator and window registry. Only
+        // AppKit's asynchronous Space animation is substituted.
+        func makeWindow() -> FullScreenWindowDouble {
+            FullScreenWindowDouble(contentRect: CGRect(x: 0, y: 0, width: 640, height: 360),
+                styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        }
+        func completed(_ window: FullScreenWindowDouble, _ full: Bool) {
+            window.simulatedFullScreen = full
+            let name = full ? NSWindow.didEnterFullScreenNotification : NSWindow.didExitFullScreenNotification
+            let event = Notification(name: name, object: window)
+            let delegate = window.delegate as! PlankMacWindowPresentation
+            if full { delegate.windowDidEnterFullScreen(event) }
+            else { delegate.windowDidExitFullScreen(event) }
+            NotificationCenter.default.post(event)
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+        let left = makeWindow(), right = makeWindow()
+        let leftPresentation = PlankMacWindowPresentation(window: left)
+        let rightPresentation = PlankMacWindowPresentation(window: right)
+        let group = PlankMacSessionPresentation()
+        group.toggle(windows: [left, right, left])
+        let first = left.exitRequests == 1 ? left : right
+        let second = first === left ? right : left
+        check(group.busy && first.exitRequests == 1 && second.exitRequests == 0, "group enters one Space at a time and deduplicates windows")
+        group.toggle(windows: [left, right])
+        check(first.exitRequests == 1 && second.exitRequests == 0, "repeated toolbar press cannot reverse pending entry")
+        completed(first, true)
+        check(group.busy && second.exitRequests == 1, "second entry begins only after first acknowledges")
+        completed(second, true)
+        check(!group.busy && left.simulatedFullScreen && right.simulatedFullScreen, "toolbar enters both desktop windows")
+        group.toggle(windows: [left, right])
+        check(first.exitRequests == 2 && second.exitRequests == 1, "global exit serializes both Spaces")
+        completed(first, false); completed(second, false)
+        check(!group.busy && !left.simulatedFullScreen && !right.simulatedFullScreen, "toolbar returns both to windowed mode")
+        left.simulatedFullScreen = true
+        let leftCount = left.exitRequests, rightCount = right.exitRequests
+        group.toggle(windows: [right, left])
+        check(left.exitRequests == leftCount + 1 && right.exitRequests == rightCount, "mixed-state toolbar exits fullscreen member without entering windowed member")
+        completed(left, false)
+        check(!group.busy, "mixed-state exit completes")
+        rightPresentation.toggleDesktopFullScreen(nil)
+        check(right.exitRequests == rightCount + 1 && left.exitRequests == leftCount + 1 && !group.busy, "green button remains independent")
+
+        leftPresentation.windowWillEnterFullScreen(Notification(name: NSWindow.willEnterFullScreenNotification, object: left))
+        var closeCalls = 0
+        group.windowed(windows: [left, right]) { if $0 { closeCalls += 1 } }
+        check(left.exitRequests == leftCount + 1 && closeCalls == 0, "disconnect during green entry waits instead of reversing animation")
+        completed(left, true)
+        check(left.exitRequests == leftCount + 2 && closeCalls == 0, "entry acknowledgement starts required exit")
+        completed(left, false)
+        check(closeCalls == 1 && !group.busy, "close completion follows windowed acknowledgement")
+
+        group.toggle(windows: [left, right])
+        let failing = left.exitRequests > leftCount + 2 ? left : right
+        (failing.delegate as! PlankMacWindowPresentation).windowDidFailToEnterFullScreen(failing)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        check(!group.busy, "AppKit failure releases coordinator for retry")
+        left.simulatedFullScreen = true; right.simulatedFullScreen = true
+        let groupClient = PlankCoreClient(), leftID = UUID(), rightID = UUID()
+        PlankMacSessionWindows.attach(client: groupClient, surface: leftID, window: left)
+        PlankMacSessionWindows.attach(client: groupClient, surface: rightID, window: right)
+        var dismissCalls = 0
+        PlankMacSessionWindows.disconnect(client: groupClient) { dismissCalls += 1 }
+        PlankMacSessionWindows.disconnect(client: groupClient) { dismissCalls += 1 }
+        check(groupClient.disconnects == 1 && dismissCalls == 0, "disconnect from either surface stops shared session exactly once")
+        completed(first, false)
+        check(dismissCalls == 0, "disconnect keeps both windows until both Spaces exit")
+        completed(second, false)
+        check(dismissCalls == 1, "disconnect dismisses both only after their exit acknowledgements")
+        PlankMacSessionWindows.attach(client: groupClient, surface: leftID, window: nil)
+        PlankMacSessionWindows.attach(client: groupClient, surface: rightID, window: nil)
+        check(client.tabletChanges == 0, "presentation operations never directly recreate tablet capture")
+
+        let unacknowledged = makeWindow()
+        unacknowledged.simulatedFullScreen = true
+        let unacknowledgedPresentation = PlankMacWindowPresentation(window: unacknowledged)
+        let bounded = PlankMacSessionPresentation(timeoutSeconds: 0.01)
+        var timeoutResult: Bool?
+        bounded.windowed(windows: [unacknowledged]) { timeoutResult = $0 }
+        RunLoop.main.run(until: Date().addingTimeInterval(0.04))
+        check(!bounded.busy && timeoutResult == false && unacknowledged.simulatedFullScreen,
+            "unacknowledged exit times out without destroying a fullscreen window")
+        unacknowledgedPresentation.windowDidFailToExitFullScreen(unacknowledged)
+        bounded.windowed(windows: []) { timeoutResult = $0 }
+        check(!bounded.busy && timeoutResult == true, "deadline cannot latch future actions off")
+        let single = makeWindow()
+        let singlePresentation = PlankMacWindowPresentation(window: single)
+        group.toggle(windows: [single])
+        completed(single, true)
+        check(!group.busy && single.simulatedFullScreen, "single-display toolbar still enters fullscreen")
+        group.toggle(windows: [single]); completed(single, false)
+        check(!group.busy && !single.simulatedFullScreen, "single-display toolbar still exits fullscreen")
+        withExtendedLifetime(singlePresentation) {}
+
+        check(PlankMacSessionFocus.active(appActive: true, windows: [], presentationInProgress: true, previouslyActive: true),
+            "Space transition retains already-owned tablet through transient focus gap")
+        check(!PlankMacSessionFocus.active(appActive: false, windows: [.init(key: true, main: true)], presentationInProgress: true, previouslyActive: true),
+            "switching to another app releases tablet even during group transition")
+        check(!PlankMacSessionFocus.active(appActive: true, windows: [], presentationInProgress: true, previouslyActive: false),
+            "group transition cannot acquire an unowned tablet")
+        check(!PlankMacSessionFocus.active(appActive: true, windows: [], presentationInProgress: false, previouslyActive: true),
+            "finished transition cannot retain tablet after real focus loss")
 
         // Full-screen toolbars overlap content without leaving its bounds.
         // Exercise the actual input view beneath a real native control.

@@ -49,6 +49,10 @@ import AppKit
             PlankMacDesktopWindow.toggle(window)
         }
     }
+    var isTransitioning: Bool { enteringFullScreen || requestingExit }
+    var isFullScreenOrEntering: Bool { enteringFullScreen || window?.styleMask.contains(.fullScreen) == true }
+    static let transitionFailed = Notification.Name("PLANKMacFullScreenTransitionFailed")
+
     func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
         if item.action == #selector(toggleDesktopFullScreen(_:)) { return window != nil }
         return (previous as? any NSUserInterfaceValidations)?.validateUserInterfaceItem(item) ?? true
@@ -88,6 +92,7 @@ import AppKit
         enteringFullScreen = false
         previous?.windowDidFailToEnterFullScreen?(window); repairFullScreenButton()
         if let close = afterFullScreenExit { afterFullScreenExit = nil; closeWhenWindowed(close) }
+        NotificationCenter.default.post(name: Self.transitionFailed, object: window)
     }
     func windowDidFailToExitFullScreen(_ window: NSWindow) {
         previous?.windowDidFailToExitFullScreen?(window); repairFullScreenButton()
@@ -95,6 +100,7 @@ import AppKit
         // Keep the window reachable if AppKit refuses the exit; do not leave
         // a detached Space. The operator can retry its normal exit control.
         NSLog("PLANK Mac fullscreen: disposal deferred because exit failed")
+        NotificationCenter.default.post(name: Self.transitionFailed, object: window)
     }
     func window(_ window: NSWindow, willUseFullScreenPresentationOptions proposed: NSApplication.PresentationOptions) -> NSApplication.PresentationOptions {
         var options = previous?.window?(window, willUseFullScreenPresentationOptions: proposed) ?? proposed

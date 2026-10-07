@@ -26,17 +26,21 @@ struct PlankMacDesktop: View {
         }.frame(minWidth: 640, maxWidth: .infinity, minHeight: 360, maxHeight: .infinity)
         .toolbar {
             ToolbarItem { Button {
-                if let desktopWindow { PlankMacDesktopWindow.toggle(desktopWindow) }
-                else { NSLog("PLANK Mac fullscreen: toolbar has no desktop window") }
+                PlankMacSessionWindows.toggleFullScreen(client: client)
             } label: { Label("Full Screen", systemImage: "arrow.up.left.and.arrow.down.right") }
                 .onHover { if $0 { NSCursor.arrow.set() } }
                 .background(PlankMacLocalPointerRegion())
-                .help("Enter or leave full screen").keyboardShortcut("f", modifiers: [.control, .command]) }
+                .help("Enter or leave full screen for all desktop windows").keyboardShortcut("f", modifiers: [.control, .command]) }
             ToolbarItem { Button { controls.toggle() } label: { Label("Session Controls", systemImage: "slider.horizontal.3") }
                 .onHover { if $0 { NSCursor.arrow.set() } }
                 .background(PlankMacLocalPointerRegion())
                 .popover(isPresented: $controls, arrowEdge: .bottom) { sessionControls } }
-            ToolbarItem { Button("Disconnect", role: .destructive) { client.disconnectSession(); closeThisWindow() }
+            ToolbarItem { Button("Disconnect", role: .destructive) {
+                PlankMacSessionWindows.disconnect(client: client) {
+                    dismissWindow(id: "desktop-secondary")
+                    dismissWindow(id: "desktop")
+                }
+            }
                 .onHover { if $0 { NSCursor.arrow.set() } }
                 .background(PlankMacLocalPointerRegion()) }
         }
@@ -97,7 +101,8 @@ struct PlankMacDesktop: View {
         placeOnAssignedDisplay()
         if outputIndex == 0, client.sessionTopology?.splitPresentation == true {
             openWindow(id: "desktop-secondary")
-        } else if outputIndex == 1, client.sessionTopology?.splitPresentation != true {
+        } else if outputIndex == 1, client.sessionTopology?.splitPresentation != true,
+                  !PlankMacSessionWindows.isClosing(client: client) {
             closeThisWindow()
         }
     }

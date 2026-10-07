@@ -46,8 +46,10 @@ HID feature replies do not. Input forwarding and raw tablet reports are unchange
 Host request to hide its cursor is respected. Stale positions from a previous
 resolution are not drawn into the new canvas.
 
-The desktop's green window button, Full Screen toolbar button and Control-Command-F enter or leave
-native macOS full screen. That shortcut stays local rather than being sent to
+The Full Screen toolbar button and Control-Command-F control all desktop
+windows in the session. If any desktop is fullscreen, both return to windowed
+mode; otherwise both enter native macOS fullscreen. The green macOS window
+button remains independent and changes only its own window. That shortcut stays local rather than being sent to
 the workstation. The green window control is enabled too. Full screen hides
 the menu bar, Dock and toolbar until the pointer reaches their screen edge.
 These are per-window presentation options, not changes to system preferences.
@@ -63,7 +65,7 @@ While the tablet owns the cursor, the native arrow is hidden only until the
 next mouse movement. Mouse ownership uses no repeated hide/show cycle.
 No transparent cursor image is installed. Local toolbars and the system menu
 bar retain their native pointer. The green control uses a reversible fullscreen
-action shared with the toolbar, revalidated after transitions independently of
+per-window action, revalidated after transitions independently of
 the window's zoom size. Exit does not depend on a separate transition latch;
 resizability lost during SwiftUI content reparenting is repaired.
 
@@ -99,8 +101,15 @@ they are not replaced with Retina logical sizes or backing dimensions.
 Unmapped arrangements and old/physical-startup Hosts receive no primary hint.
 Display removal keeps windows reachable; fullscreen placement waits for exit.
 With one remaining Mac display, both windows stay available on that display.
-The first window can reopen the second. Disconnect closes both, waiting for
-AppKit fullscreen exit before disposal. Screen removal uses AppKit's normal
+The first window can reopen the second. Disconnect from either toolbar stops
+the shared session once and closes both desktop windows. AppKit fullscreen
+transitions are serialized; disposal waits for both exit acknowledgements.
+Disconnect during entry waits for entry to finish before requesting exit.
+Repeated toolbar fullscreen clicks during an animation are ignored. Failed or
+unacknowledged transitions retain reachable windows for retry, with a bounded
+30-second deadline. An already-active tablet stays owned through temporary
+Space-transition focus gaps while PLANK remains active; switching to another
+app or disconnecting still releases ownership. Screen removal uses AppKit's normal
 window migration and updates backing scale; this requires physical acceptance.
 
 Focused tests cover authenticated topology parsing, independent modes, negative
@@ -174,3 +183,17 @@ pilot needs UIKit presentation/audio/lifecycle adapters, an explicit input
 scope, and Relay enrollment. It must use the Relay raw-HID path for Wacom;
 this Mac IOHID capture worker is not an iOS implementation. Validate the Mac
 engine before extracting a broader shared Apple module.
+
+## Build 20 session-window controls
+
+Build 19 display arrangement was accepted by the operator on October 7. Wacom
+startup failed twice and worked on the third connection; the failed symptoms
+and workstation are not established, and attachment logs were not retained.
+That remains an open investigation, not a qualified startup fix.
+
+Build 20 makes toolbar fullscreen/disconnect actions global as described above.
+Focused checks exercise serial two-window entry/exit, mixed states, independent
+green-button actions, repeated clicks, disconnect during entry, transition
+failure, single shared disconnect and disposal after both exit acknowledgements.
+The AppKit animation is substituted in these checks; physical dual-display
+fullscreen and Wacom behavior require the targeted live pass.
