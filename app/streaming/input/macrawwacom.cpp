@@ -1,6 +1,7 @@
 #include "macrawwacom.h"
 #include "macrawwacomasync.h"
 #include "macrawwacomlogic.h"
+#include "macwacomcapturelease.h"
 #include "linuxrawwacom.h" // shared device-family policy; no Linux dependencies
 #if defined(PLANK_NATIVE_MAC_WACOM)
 #define SDL_LOG_CATEGORY_APPLICATION 0
@@ -101,12 +102,13 @@ class MacRawWacomInput::Impl : public std::enable_shared_from_this<Impl>
         std::function<void()> callback;
     };
 public:
-    explicit Impl(std::function<void()> activity, SendFrame sender)
-        : activity(std::make_shared<ActivityGuard>(std::move(activity))), sender(std::move(sender))
+    explicit Impl(std::function<void()> activity, SendFrame sender, GenerationProvider generations, bool requestPermission)
+        : activity(std::make_shared<ActivityGuard>(std::move(activity))), sender(std::move(sender)),
+          generations(std::move(generations))
     {
         // Constructor runs on the Client UI thread. Only the normal OS prompt
         // may grant access; never edit privacy databases or run as root.
-        if (IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeUnknown)
+        if (requestPermission && IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) == kIOHIDAccessTypeUnknown)
             IOHIDRequestAccess(kIOHIDRequestTypeListenEvent);
     }
     void start()
@@ -176,6 +178,8 @@ private:
     };
     std::shared_ptr<ActivityGuard> activity;
     SendFrame sender;
+    GenerationProvider generations;
+    MacWacomCaptureLease captureLease;
     std::shared_ptr<MacWacomAsyncResults> reportResults = std::make_shared<MacWacomAsyncResults>();
     MacWacomLifecycle lifecycle;
     std::atomic<bool> stopping{false}, shutdownRequested{false}, overflow{false};
@@ -272,11 +276,17 @@ private:
         }
         if (!interfaces.empty()) SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Mac Wacom ownership released");
         interfaces.clear();
+        captureLease.release(); // after every physical interface was closed
         ioFailed = false;
     }
     bool discover()
     {
         if (IOHIDCheckAccess(kIOHIDRequestTypeListenEvent) != kIOHIDAccessTypeGranted) return false;
+        if (!captureLease.acquire()) return false;
+        // Every discovery refusal (including an absent/unsupported tablet)
+        // releases the lease, so it never masquerades as physical ownership.
+        auto leaseOnFailure = std::unique_ptr<MacWacomCaptureLease, std::function<void(MacWacomCaptureLease*)>>(
+            &captureLease, [](MacWacomCaptureLease* lease) { lease->release(); });
         IOHIDManagerRef manager = IOHIDManagerCreate(kCFAllocatorDefault, 0);
         if (!manager) return false;
         const int vendor = 0x056a;
@@ -354,6 +364,7 @@ private:
         if (devices) CFRelease(devices);
         CFRelease(manager);
         if (!success) release(false);
+        if (success) leaseOnFailure.release();
         return success;
     }
     bool attach()
@@ -370,7 +381,15 @@ private:
         stringProperty(first, CFSTR(kIOHIDSerialNumberKey), device.unique, sizeof(device.unique));
         std::snprintf(device.physical, sizeof(device.physical), "plank/mac-usb/%08lx",
                       number(first, CFSTR(kIOHIDLocationIDKey)));
-        do { generation = static_cast<std::uint16_t>(++nextGeneration); } while (!generation);
+        if (generations) {
+            generation = generations();
+            if (!generation) {
+                SDL_LogWarn(SDL_LOG_CATEGORY_APPLICATION, "Mac Wacom durable generation unavailable; refusing attachment");
+                return false;
+            }
+        } else {
+            do { generation = static_cast<std::uint16_t>(++nextGeneration); } while (!generation);
+        }
         sequence = 0;
         pending = true;
         deadline = Clock::now() + std::chrono::seconds(3);
@@ -512,8 +531,9 @@ private:
     }
 };
 
-MacRawWacomInput::MacRawWacomInput(std::function<void()> activity, SendFrame sender)
-    : m_Impl(std::make_shared<Impl>(std::move(activity), std::move(sender))) { m_Impl->start(); }
+MacRawWacomInput::MacRawWacomInput(std::function<void()> activity, SendFrame sender,
+                                 GenerationProvider generations, bool requestPermission)
+    : m_Impl(std::make_shared<Impl>(std::move(activity), std::move(sender), std::move(generations), requestPermission)) { m_Impl->start(); }
 MacRawWacomInput::~MacRawWacomInput() { m_Impl->shutdown(); }
 void MacRawWacomInput::setActive(bool active) { m_Impl->setActive(active); }
 void MacRawWacomInput::beginReconnect() { m_Impl->beginReconnect(); }
