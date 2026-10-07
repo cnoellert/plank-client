@@ -18,6 +18,7 @@ import SwiftUI
     func pressKey(code: UInt16) {}
 }
 final class PlankMacMetalView: NSView {
+    var sourceCrop = CGRect(x: 0, y: 0, width: 1, height: 1)
     func display(_ buffer: CVPixelBuffer) {}
 }
 @MainActor final class OriginalDelegate: NSObject, NSWindowDelegate {
@@ -26,6 +27,15 @@ final class PlankMacMetalView: NSView {
     func window(_ window: NSWindow, willUseFullScreenPresentationOptions proposed: NSApplication.PresentationOptions) -> NSApplication.PresentationOptions {
         proposed.union([.disableProcessSwitching, .hideMenuBar, .hideDock])
     }
+}
+@MainActor final class FullScreenWindowDouble: NSWindow {
+    var exitRequests = 0
+    var simulatedFullScreen = false
+    override var styleMask: NSWindow.StyleMask {
+        get { simulatedFullScreen ? super.styleMask.union(.fullScreen) : super.styleMask }
+        set { super.styleMask = newValue.subtracting(.fullScreen); simulatedFullScreen = newValue.contains(.fullScreen) }
+    }
+    override func toggleFullScreen(_ sender: Any?) { exitRequests += 1 }
 }
 @main @MainActor struct PlankMacLocalControlsTests {
     static var checks = 0
@@ -98,6 +108,39 @@ final class PlankMacMetalView: NSView {
         view.releaseInput()
         check(client.keys.count == 4 && !client.keys[3].1, "resumed key releases normally")
         check(client.tabletChanges == 0, "control dismissal does not recapture tablet")
+
+        let secondary = FullScreenWindowDouble(contentRect: CGRect(x: 0, y: 0, width: 640, height: 360),
+            styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        secondary.simulatedFullScreen = true
+        let secondaryPresentation = PlankMacWindowPresentation(window: secondary)
+        var disposed = 0
+        secondaryPresentation.closeWhenWindowed { disposed += 1 }
+        secondaryPresentation.closeWhenWindowed { disposed += 1 }
+        check(disposed == 0 && secondary.exitRequests == 1, "secondary disposal waits for one fullscreen exit")
+        secondary.styleMask.remove(.fullScreen)
+        secondaryPresentation.windowDidExitFullScreen(Notification(name: NSWindow.didExitFullScreenNotification, object: secondary))
+        check(disposed == 1, "secondary disposes once after fullscreen exit acknowledgement")
+        secondaryPresentation.closeWhenWindowed { disposed += 1 }
+        check(disposed == 2, "windowed secondary can dispose immediately")
+
+        // A close requested during entry waits for entry to complete, then
+        // requests one exit; a close during a user exit never toggles it back.
+        secondaryPresentation.windowWillEnterFullScreen(Notification(name: NSWindow.willEnterFullScreenNotification, object: secondary))
+        secondaryPresentation.closeWhenWindowed { disposed += 1 }
+        check(disposed == 2 && secondary.exitRequests == 1, "entering fullscreen defers disposal without reversing entry")
+        secondary.simulatedFullScreen = true
+        secondaryPresentation.windowDidEnterFullScreen(Notification(name: NSWindow.didEnterFullScreenNotification, object: secondary))
+        check(secondary.exitRequests == 2 && disposed == 2, "entry completion starts pending exit once")
+        secondary.simulatedFullScreen = false
+        secondaryPresentation.windowDidExitFullScreen(Notification(name: NSWindow.didExitFullScreenNotification, object: secondary))
+        check(disposed == 3, "entry and exit complete before disposal")
+        secondary.simulatedFullScreen = true
+        secondaryPresentation.windowWillExitFullScreen(Notification(name: NSWindow.willExitFullScreenNotification, object: secondary))
+        secondaryPresentation.closeWhenWindowed { disposed += 1 }
+        check(secondary.exitRequests == 2 && disposed == 3, "normal exit is not reversed by disconnect")
+        secondary.simulatedFullScreen = false
+        secondaryPresentation.windowDidExitFullScreen(Notification(name: NSWindow.didExitFullScreenNotification, object: secondary))
+        check(disposed == 4, "normal exit acknowledgement releases disposal")
 
         // Full-screen toolbars overlap content without leaving its bounds.
         // Exercise the actual input view beneath a real native control.

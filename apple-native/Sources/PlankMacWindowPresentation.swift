@@ -4,6 +4,9 @@ import AppKit
 // presentation options are changed; normal window lifecycle stays with it.
 @MainActor final class PlankMacWindowPresentation: NSObject, NSWindowDelegate, NSUserInterfaceValidations {
     private weak var window: NSWindow?
+    private var afterFullScreenExit: (() -> Void)?
+    private var requestingExit = false
+    private var enteringFullScreen = false
     // Objective-C may probe optional delegate selectors outside the UI actor.
     // This weak reference is only changed by install/remove on the main actor.
     nonisolated(unsafe) private weak var previous: (any NSWindowDelegate)?
@@ -36,14 +39,26 @@ import AppKit
         if let window { PlankMacDesktopWindow.toggle(window, sender: sender) }
         else { NSLog("PLANK Mac fullscreen: green action has no desktop window") }
     }
+    /// Do not dispose a secondary window while it owns a fullscreen Space.
+    /// Its SwiftUI window remains alive until AppKit confirms the exit.
+    func closeWhenWindowed(_ close: @escaping () -> Void) {
+        guard let window, enteringFullScreen || window.styleMask.contains(.fullScreen) else { close(); return }
+        afterFullScreenExit = close
+        if !requestingExit && !enteringFullScreen {
+            requestingExit = true
+            PlankMacDesktopWindow.toggle(window)
+        }
+    }
     func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
         if item.action == #selector(toggleDesktopFullScreen(_:)) { return window != nil }
         return (previous as? any NSUserInterfaceValidations)?.validateUserInterfaceItem(item) ?? true
     }
     func windowWillEnterFullScreen(_ notification: Notification) {
+        enteringFullScreen = true
         previous?.windowWillEnterFullScreen?(notification)
     }
     func windowWillExitFullScreen(_ notification: Notification) {
+        requestingExit = true
         previous?.windowWillExitFullScreen?(notification)
     }
     private func repairFullScreenButton() {
@@ -55,20 +70,31 @@ import AppKit
         }
     }
     func windowDidEnterFullScreen(_ notification: Notification) {
+        enteringFullScreen = false
         NSLog("PLANK Mac fullscreen: entered")
         previous?.windowDidEnterFullScreen?(notification)
         repairFullScreenButton()
+        if let close = afterFullScreenExit { closeWhenWindowed(close) }
     }
     func windowDidExitFullScreen(_ notification: Notification) {
         NSLog("PLANK Mac fullscreen: exited")
         previous?.windowDidExitFullScreen?(notification)
         repairFullScreenButton()
+        requestingExit = false
+        let close = afterFullScreenExit; afterFullScreenExit = nil
+        close?()
     }
     func windowDidFailToEnterFullScreen(_ window: NSWindow) {
+        enteringFullScreen = false
         previous?.windowDidFailToEnterFullScreen?(window); repairFullScreenButton()
+        if let close = afterFullScreenExit { afterFullScreenExit = nil; closeWhenWindowed(close) }
     }
     func windowDidFailToExitFullScreen(_ window: NSWindow) {
         previous?.windowDidFailToExitFullScreen?(window); repairFullScreenButton()
+        requestingExit = false
+        // Keep the window reachable if AppKit refuses the exit; do not leave
+        // a detached Space. The operator can retry its normal exit control.
+        NSLog("PLANK Mac fullscreen: disposal deferred because exit failed")
     }
     func window(_ window: NSWindow, willUseFullScreenPresentationOptions proposed: NSApplication.PresentationOptions) -> NSApplication.PresentationOptions {
         var options = previous?.window?(window, willUseFullScreenPresentationOptions: proposed) ?? proposed

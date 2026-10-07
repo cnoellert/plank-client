@@ -86,6 +86,17 @@ fullscreen exit/reentry, screen removal and reconnect. Verify pen pressure,
 tip/button release, held drag across seams, mouse coordinates and teardown.
 Do not change Host topology policy to compensate for a Client mapping defect.
 
+### P2 implementation checkpoint
+
+Local Mac build 17 adds a compatible second-resolution bookmark field, bounded
+v13 output parsing, two surfaces consuming one decoded frame, shared output
+crop/input geometry, session-wide Wacom focus ownership, explicit Mac screen
+placement and fullscreen-aware secondary disposal. This follows the accepted
+Mac Relay build 16. The separate experimental quality branch is not folded
+into this comparison. Focused checks and Mac/Vision compilation are evidence
+of source correctness; live two-output, mixed-scale, fullscreen/screen-removal
+and Wacom acceptance remain pending.
+
 ## P3: Webcam feasibility
 
 At inspected root upstream commit `e92060b`, `protocol/camera.md` describes an

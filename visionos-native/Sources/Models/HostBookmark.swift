@@ -98,6 +98,8 @@ struct HostBookmark: Identifiable, Codable, Hashable, Sendable {
     var spatialDisplaySize: SpatialDisplaySize
     var streamFrameRate: Int
     var videoBitrateKbps: Int
+    /// nil preserves the existing single-display bookmark. Mac only.
+    var secondDisplaySize: SpatialDisplaySize?
 
     init(
         id: UUID = UUID(),
@@ -107,7 +109,8 @@ struct HostBookmark: Identifiable, Codable, Hashable, Sendable {
         lastConnectedAt: Date? = nil,
         spatialDisplaySize: SpatialDisplaySize = .standard,
         streamFrameRate: Int = StreamFrameRate.defaultValue,
-        videoBitrateKbps: Int = StreamBitrate.defaultKbps
+        videoBitrateKbps: Int = StreamBitrate.defaultKbps,
+        secondDisplaySize: SpatialDisplaySize? = nil
     ) {
         self.id = id
         self.name = name
@@ -117,11 +120,12 @@ struct HostBookmark: Identifiable, Codable, Hashable, Sendable {
         self.spatialDisplaySize = spatialDisplaySize
         self.streamFrameRate = StreamFrameRate.normalized(streamFrameRate)
         self.videoBitrateKbps = StreamBitrate.normalized(videoBitrateKbps)
+        self.secondDisplaySize = secondDisplaySize
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, name, address, port, lastConnectedAt, spatialDisplaySize, streamFrameRate
-        case videoBitrateKbps
+        case videoBitrateKbps, secondDisplaySize
     }
 
     init(from decoder: Decoder) throws {
@@ -139,6 +143,7 @@ struct HostBookmark: Identifiable, Codable, Hashable, Sendable {
             (try? values.decodeIfPresent(Int.self, forKey: .streamFrameRate)) ??
             StreamFrameRate.defaultValue
         )
+        secondDisplaySize = try? values.decodeIfPresent(SpatialDisplaySize.self, forKey: .secondDisplaySize)
         // Bookmarks saved before this field existed keep the previous fixed
         // 50 Mbps target. A malformed value must not throw: HostStore decodes
         // the whole list, so one failure would drop every bookmark.
@@ -173,6 +178,7 @@ enum PlankBookmarkSessionPolicy {
                                 authenticated: Bool) -> Bool {
         guard authenticated, let connected, edited.id == connected.id else { return false }
         return edited.spatialDisplaySize != connected.spatialDisplaySize ||
+            edited.secondDisplaySize != connected.secondDisplaySize ||
             StreamFrameRate.normalized(edited.streamFrameRate) !=
                 StreamFrameRate.normalized(connected.streamFrameRate) ||
             edited.address != connected.address || edited.port != connected.port
@@ -191,25 +197,60 @@ struct PlankTopology: Equatable, Sendable {
     let desktopWidth: Int
     let desktopHeight: Int
     let layout: Layout
+    var desktopX = 0
+    var desktopY = 0
+    var outputs: [Output] = []
 
-    func requesting(_ displaySize: SpatialDisplaySize) -> PlankTopology {
-        let pixels = displaySize.pixelSize
-        return PlankTopology(
-            schemaVersion: schemaVersion,
-            featureFlags: featureFlags,
-            generation: generation,
-            desktopWidth: pixels.width,
-            desktopHeight: pixels.height,
-            layout: .init(kind: "single", virtualModes: [displaySize.virtualMode])
-        )
+    struct Rect: Equatable, Sendable {
+        let x, y, width, height: Int
+        func fits(width: Int, height: Int) -> Bool {
+            x >= 0 && y >= 0 && self.width > 0 && self.height > 0 &&
+                x <= width && y <= height && self.width <= width - x && self.height <= height - y
+        }
+    }
+    struct Output: Equatable, Sendable, Identifiable {
+        let id, name: String
+        let x, y, width, height: Int
+        let primary: Bool
+        let sourceRect: Rect
+    }
+    var orderedOutputs: [Output] {
+        outputs.sorted { ($0.x, $0.y, $0.id) < ($1.x, $1.y, $1.id) }
+    }
+    var splitPresentation: Bool { layout.kind == "dual-horizontal" }
+    var displayMode: String { splitPresentation ? "separate-displays" : "scaled-span" }
+
+    func requesting(_ displaySize: SpatialDisplaySize, second: SpatialDisplaySize? = nil) -> PlankTopology {
+        let first = displaySize.pixelSize
+        let other = second?.pixelSize
+        let matches = matches(displaySize, second: second)
+        return PlankTopology(schemaVersion: schemaVersion, featureFlags: featureFlags,
+            generation: generation, desktopWidth: first.width + (other?.width ?? 0),
+            desktopHeight: max(first.height, other?.height ?? 0),
+            layout: .init(kind: second == nil ? "single" : "dual-horizontal",
+                          virtualModes: [displaySize.virtualMode] + (second.map { [$0.virtualMode] } ?? [])),
+            desktopX: matches ? desktopX : 0, desktopY: matches ? desktopY : 0,
+            outputs: matches ? outputs : [])
+    }
+    func matches(_ displaySize: SpatialDisplaySize, second: SpatialDisplaySize? = nil) -> Bool {
+        let other = second?.pixelSize
+        if let second {
+            guard orderedOutputs.count == 2,
+                  orderedOutputs[0].width == displaySize.pixelSize.width,
+                  orderedOutputs[0].height == displaySize.pixelSize.height,
+                  orderedOutputs[1].width == second.pixelSize.width,
+                  orderedOutputs[1].height == second.pixelSize.height else { return false }
+        }
+        return layout.kind == (second == nil ? "single" : "dual-horizontal") &&
+            layout.virtualModes == [displaySize.virtualMode] + (second.map { [$0.virtualMode] } ?? []) &&
+            desktopWidth == displaySize.pixelSize.width + (other?.width ?? 0) &&
+            desktopHeight == max(displaySize.pixelSize.height, other?.height ?? 0)
+    }
+    static func validCanvas(first: SpatialDisplaySize, second: SpatialDisplaySize?) -> Bool {
+        // Host v13 plank_topology.h limits the combined virtual canvas to 8192.
+        first.pixelSize.width + (second?.pixelSize.width ?? 0) <= 8192
     }
 
-    func matches(_ displaySize: SpatialDisplaySize) -> Bool {
-        layout.kind == "single" &&
-            layout.virtualModes == [displaySize.virtualMode] &&
-            desktopWidth == displaySize.pixelSize.width &&
-            desktopHeight == displaySize.pixelSize.height
-    }
 }
 
 struct PlankLaunchCredentials: Equatable, Sendable {

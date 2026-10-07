@@ -125,6 +125,8 @@ final class PlankCoreClient: ObservableObject {
     @Published private(set) var phase: ConnectionPhase = .idle
     @Published private(set) var isClosingSession = false
     @Published private(set) var frameDimensions: PlankFrameDimensions?
+    @Published private(set) var sessionTopology: PlankTopology?
+    @Published private(set) var videoDiagnosticsEnabled = false
     @Published private(set) var videoDiagnosticText = "Video starting…"
     @Published private(set) var audioDiagnosticText = "Audio starting…"
     /// The running session's live encoder target; nil outside a session.
@@ -152,10 +154,7 @@ final class PlankCoreClient: ObservableObject {
     private var latestFrame: PlankRenderedFrame?
     private var remoteCursor: PlankRemoteCursor?
     private var remoteCursorShape: PlankRemoteCursorShape?
-    private var videoSurfaceID: UUID?
-    private var presentFrame: ((PlankRenderedFrame?) -> Void)?
-    private var presentCursor: ((PlankRemoteCursor?) -> Void)?
-    private var presentCursorShape: ((PlankRemoteCursorShape?) -> Void)?
+    private let videoSurfaces = PlankVideoSurfaces()
 
     private var httpClient: PlankHTTPClient?
     private var lastIdentity: PlankHostIdentity?
@@ -197,6 +196,7 @@ final class PlankCoreClient: ObservableObject {
     }
 
     func setVideoDiagnosticsEnabled(_ enabled: Bool) {
+        videoDiagnosticsEnabled = enabled
         videoDiagnostics.setEnabled(enabled)
     }
 
@@ -365,7 +365,7 @@ final class PlankCoreClient: ObservableObject {
         }
     }
 
-    func startSession(displaySize: SpatialDisplaySize, frameRate: Int, videoBitrateKbps: Int) {
+    func startSession(displaySize: SpatialDisplaySize, frameRate: Int, videoBitrateKbps: Int, secondDisplaySize: SpatialDisplaySize? = nil) {
         guard !isClosingSession else { return }
         guard let httpClient,
               let identity = lastIdentity,
@@ -375,6 +375,14 @@ final class PlankCoreClient: ObservableObject {
             return
         }
 
+        guard PlankTopology.validCanvas(first: displaySize, second: secondDisplaySize) else {
+            phase = .failed("The two display widths must total no more than 8192 pixels.")
+            return
+        }
+        connectedHost.secondDisplaySize = secondDisplaySize
+        sessionTopology = nil
+        latestFrame = nil; frameDimensions = nil
+        videoSurfaces.frame(nil); videoSurfaces.cursor(nil); videoSurfaces.shape(nil)
         connectedHost.spatialDisplaySize = displaySize
         connectedHost.streamFrameRate = StreamFrameRate.normalized(frameRate)
         connectedHost.videoBitrateKbps = StreamBitrate.normalized(videoBitrateKbps)
@@ -530,7 +538,7 @@ final class PlankCoreClient: ObservableObject {
             }) ?? applications.first else {
                 throw PlankHTTPError.invalidResponse("The Host has no Desktop application.")
             }
-            let requestedTopology = hostTopology.requesting(connectedHost.spatialDisplaySize)
+            let requestedTopology = hostTopology.requesting(connectedHost.spatialDisplaySize, second: connectedHost.secondDisplaySize)
             let (activeHTTPClient, activeAuthentication, topology, launch) = try await launchDesktop(
                 httpClient: httpClient,
                 authentication: readyAuthentication,
@@ -543,6 +551,7 @@ final class PlankCoreClient: ObservableObject {
             if self.streamGeneration == generation {
                 self.httpClient = activeHTTPClient
                 self.lastAuthentication = activeAuthentication
+                self.sessionTopology = topology
             }
             // Once launch has reserved the Host, enter the transport even if
             // cancellation arrived with the HTTP response. Its cancellation
@@ -606,7 +615,7 @@ final class PlankCoreClient: ObservableObject {
                         if self.frameDimensions != dimensions {
                             self.frameDimensions = dimensions
                         }
-                        self.presentFrame?(newest)
+                        self.videoSurfaces.frame(newest)
                         if case .streaming = self.phase {
                             // Frame presentation already updates the surface directly.
                             // Connection phase changes only on a lifecycle transition.
@@ -636,10 +645,10 @@ final class PlankCoreClient: ObservableObject {
                             switch update {
                             case let .position(cursor):
                                 self.remoteCursor = cursor
-                                self.presentCursor?(cursor)
+                                self.videoSurfaces.cursor(cursor)
                             case let .shape(shape):
                                 self.remoteCursorShape = shape
-                                self.presentCursorShape?(shape)
+                                self.videoSurfaces.shape(shape)
                             }
                         }
                     }
@@ -706,6 +715,9 @@ final class PlankCoreClient: ObservableObject {
             showingTabletWaitScreen = false
             tabletWaitTimeoutID = UUID()
 #endif
+            sessionTopology = nil
+            latestFrame = nil; frameDimensions = nil
+            videoSurfaces.frame(nil); videoSurfaces.cursor(nil); videoSurfaces.shape(nil)
             phase = .failed(Self.message(for: error))
         }
     }
@@ -806,10 +818,10 @@ final class PlankCoreClient: ObservableObject {
                 }
 
                 let currentTopology = try await client.fetchTopology()
-                guard currentTopology.matches(connectedHost.spatialDisplaySize) else {
+                guard currentTopology.matches(connectedHost.spatialDisplaySize, second: connectedHost.secondDisplaySize) else {
                     continue
                 }
-                let verifiedRequest = currentTopology.requesting(connectedHost.spatialDisplaySize)
+                let verifiedRequest = currentTopology.requesting(connectedHost.spatialDisplaySize, second: connectedHost.secondDisplaySize)
                 let launch = try await client.launchDesktop(
                     topology: verifiedRequest,
                     applicationID: applicationID,
@@ -899,13 +911,14 @@ final class PlankCoreClient: ObservableObject {
         remoteCursor = nil
         remoteCursorShape = nil
         frameDimensions = nil
+        sessionTopology = nil
         videoDiagnosticText = "Video starting…"
         audioDiagnosticText = "Audio starting…"
         liveBitrateController = nil
         liveBitrate = nil
-        presentFrame?(nil)
-        presentCursor?(nil)
-        presentCursorShape?(nil)
+        videoSurfaces.frame(nil)
+        videoSurfaces.cursor(nil)
+        videoSurfaces.shape(nil)
         if let resumable {
             phase = .authenticated(resumable.0, resumable.1)
         } else {
@@ -1112,13 +1125,14 @@ final class PlankCoreClient: ObservableObject {
         remoteCursor = nil
         remoteCursorShape = nil
         frameDimensions = nil
+        sessionTopology = nil
         videoDiagnosticText = "Video starting…"
         audioDiagnosticText = "Audio starting…"
         liveBitrateController = nil
         liveBitrate = nil
-        presentFrame?(nil)
-        presentCursor?(nil)
-        presentCursorShape?(nil)
+        videoSurfaces.frame(nil)
+        videoSurfaces.cursor(nil)
+        videoSurfaces.shape(nil)
         phase = .idle
         return closure
     }
@@ -1129,21 +1143,14 @@ final class PlankCoreClient: ObservableObject {
         cursor: @escaping (PlankRemoteCursor?) -> Void,
         cursorShape: @escaping (PlankRemoteCursorShape?) -> Void
     ) {
-        videoSurfaceID = id
-        presentFrame = frame
-        presentCursor = cursor
-        presentCursorShape = cursorShape
+        videoSurfaces.register(id: id, surface: .init(frame: frame, cursor: cursor, shape: cursorShape))
         frame(latestFrame)
         cursor(remoteCursor)
         cursorShape(remoteCursorShape)
     }
 
     func unregisterVideoSurface(id: UUID) {
-        guard videoSurfaceID == id else { return }
-        videoSurfaceID = nil
-        presentFrame = nil
-        presentCursor = nil
-        presentCursorShape = nil
+        videoSurfaces.unregister(id: id)
     }
 
     private static func message(for error: Error) -> String {

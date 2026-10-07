@@ -67,6 +67,42 @@ action shared with the toolbar, revalidated after transitions independently of
 the window's zoom size. Exit does not depend on a separate transition latch;
 resizability lost during SwiftUI content reparenting is repaired.
 
+## Two remote displays (local candidate)
+
+The Mac bookmark editor can request two displays with independent resolutions
+and one refresh rate. The combined width is limited to the Host v13 limit of
+8192 pixels. Existing bookmarks remain single-display. Changing the layout or
+either resolution uses the existing close-session/sign-in warning.
+
+One authenticated composite stream and one decoder supply two native windows.
+Each window crops the Host's `source_rect`; the same retained topology snapshot
+maps cursor positions and absolute mouse coordinates. Negative desktop origins
+are not added to composite pixel coordinates. Raw Wacom messages remain
+unchanged and one session-owned worker serves both windows. Session focus is
+the union of its desktop windows; closing only the second window does not
+close the connection or deactivate a focused first window.
+
+Session Controls shows the output identity/primary role and offers **Move to
+Mac display**. Leave fullscreen before moving a window to another display.
+The first window can reopen the second. Disconnect closes both, waiting for
+AppKit fullscreen exit before disposal. Screen removal uses AppKit's normal
+window migration and updates backing scale; this requires physical acceptance.
+
+Focused tests cover authenticated topology parsing, independent modes, negative
+origins, crops, aspect/letterbox edges, mixed local point scales, cursor seams,
+stale-frame rejection, shared frame delivery, bookmark compatibility and window
+focus. Fullscreen close/transition tests use an AppKit window double; they do
+not establish physical Space disposal or multi-monitor Wacom acceptance.
+The fixture `Tests/Fixtures/output-topology-v13.json` is from the accepted root
+`e532a5e`, `tests/protocol/output-topology-v13.json`.
+
+Targeted acceptance: start single, change to two 2560 × 1440 outputs at 60 fps,
+move one window to another Mac display, and check mouse edges plus pen pressure,
+taps, buttons and held drags across outputs. Switch focus, close/reopen display
+2, enter/exit fullscreen, disconnect with it fullscreen, and return to single.
+Finish with display removal/reconnect if two physical displays are available.
+No acceptance is inferred from a compiled build or from two local windows.
+
 ## Build
 
 Initialize the existing common-C submodule. Supply compatible dependency inputs:
