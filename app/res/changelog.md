@@ -1,3 +1,15 @@
+## 1.1.033 — Wacom recovery candidate
+
+### Client
+- Preserve clicks and releases when the connection temporarily cannot accept more input.
+- Keep Linux tablet queries from blocking pen input and cursor updates.
+- Update the Wayland tablet cursor independently of video playback.
+
+### Host
+- Preserve tablet replies through temporary connection congestion.
+- Improve Linux tablet suspend and reconnect handling without changing a healthy tablet's identity.
+- Keep pen pressure and contact intact when pressing pen buttons.
+
 ## 1.1.030 — Audio synchronization and mainline release
 
 ### Client
