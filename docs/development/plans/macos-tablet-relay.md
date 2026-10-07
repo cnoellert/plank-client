@@ -1,6 +1,6 @@
 # Mac-hosted Tablet Relay
 
-Date: 2026-10-06. Status: first network Relay pilot implemented on `codex/macos-tablet-relay`; build 16 passed targeted Mac-to-AVP drawing performance acceptance.
+Date: 2026-10-06. Status: first network Relay pilot implemented on `codex/macos-tablet-relay`; build 16 passed targeted Mac-to-AVP drawing performance and USB/TCP lifecycle acceptance on Flame4.
 
 ## Current acceptance
 
@@ -26,9 +26,13 @@ after reattachment (generation 12 to 13). USB return restored all input with
 hover first, and a second test with tip contact during USB return also passed
 without desktop reconnect. These passes strengthen the policy explanation but
 do not establish the cause of the Flame3 failure. No Host configuration or
-package was changed during this investigation. Sleep/wake and
-transfer back to local Mac Client capture remain pending. Earlier Linux Relay
-acceptance does not establish those Mac platform behaviors.
+package was changed during this investigation. Mac sleep/wake then passed,
+including resumed sharing and full pen input. After ending the AVP desktop and
+disabling sharing, local Mac Client USB capture on Flame4 also passed hover,
+taps and dragging without restarting the Mac app. These are targeted physical
+passes on this Mac and Host 1.1.030; the Flame3 failure remains an explicit
+compatibility limitation. Earlier Linux Relay acceptance was not substituted
+for these Mac platform checks.
 
 ## Product journey
 
