@@ -1,5 +1,15 @@
 # Native Mac display matching — requirement correction
 
+## October 7 resolution
+
+The operator referred to the earlier virtual-display primary and creation-order
+work. That behavior is already covered by the existing Host contract; a new
+Host extension is unnecessary for this slice. The previous answer conflated
+this request with arbitrary pixel-exact logical dimensions. Build 19 implements
+the bounded arrangement/primary scope below with the selected qualified modes.
+Exact arbitrary dimensions remain outside this implementation, not a dependency
+for restoring the earlier accepted workflow.
+
 ## Required behavior
 
 The remote virtual desktop must follow the local Mac display arrangement:
@@ -44,8 +54,12 @@ Source anchors in the earlier Client series are
 `app/backend/outputtopology.cpp` (`resolveClientDisplayLayout`,
 `clientPrimaryIndex`), `app/streaming/session.cpp`
 (`configurePlankHostLayout`) and `app/backend/nvhttp.cpp`.
-The current native launch builder omits `plankPrimaryOutput` and the current
-topology model does not retain `layout.startup_kind` for that capability gate.
+Before build 19 the native launch builder omitted `plankPrimaryOutput` and the
+topology model did not retain `layout.startup_kind` for that capability gate.
+Build 19 retains the startup policy and sends the hint through a tested shared
+query builder. The retry path verifies primary state and `x11:DP-0` on the
+requested spatial side, in addition to both mode sizes. The Host's existing
+worker/supervisor code handles connector assignment and MetaMode creation order.
 
 The pinned root's `protocol/output-topology.md` permits `single` and
 `dual-horizontal` virtual layouts, qualified resolutions, and optional
@@ -88,5 +102,6 @@ This requires a reviewed Host contract extension in addition to Client work:
    any deployment.
 
 No additional Host implementation, build, installation or network changes are
-authorized by this audit. The operator has been asked to choose the scope.
-Do not stage another role-only build as a complete geometry fix.
+part of this slice. The prior scope question is superseded by the operator's
+clarification to reuse the earlier virtual-primary behavior. Do not stage
+another role-only build as a complete arrangement fix.

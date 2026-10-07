@@ -73,7 +73,9 @@ struct PlankMacBrowser: View {
     private func start(_ host: HostBookmark) {
         guard !relay.sharing else { return }
         client.setTabletActive(true)
-        client.startSession(displaySize: host.spatialDisplaySize, frameRate: host.streamFrameRate, videoBitrateKbps: host.videoBitrateKbps, secondDisplaySize: host.secondDisplaySize)
+        client.startSession(displaySize: host.spatialDisplaySize, frameRate: host.streamFrameRate,
+            videoBitrateKbps: host.videoBitrateKbps, secondDisplaySize: host.secondDisplaySize,
+            localDisplayLayout: host.secondDisplaySize == nil ? nil : PlankMacDisplayPriority.snapshot())
         store.markConnected(host); openWindow(id: "desktop")
     }
 }
@@ -103,7 +105,7 @@ struct PlankMacBookmarkEditor: View {
                     Picker("Right display", selection: Binding(get: { host.secondDisplaySize ?? .standard }, set: { host.secondDisplaySize = $0 })) {
                         ForEach(SpatialDisplaySize.allCases) { Text($0.title).tag($0) }
                     }
-                    Text("Each display opens in its own window. Move either window to a Mac display using Session Controls.").font(.caption).foregroundStyle(.secondary)
+                    Text("Resolutions follow the Mac's left/right display order. A compatible Host also follows its primary display and connector order.").font(.caption).foregroundStyle(.secondary)
                     if !PlankTopology.validCanvas(first: host.spatialDisplaySize, second: host.secondDisplaySize) {
                         Text("The combined width must be 8192 pixels or less.").foregroundStyle(.orange)
                     }

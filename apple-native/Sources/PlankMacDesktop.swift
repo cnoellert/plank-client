@@ -64,6 +64,10 @@ struct PlankMacDesktop: View {
                topology.macPresentationOutputs.indices.contains(outputIndex) {
                 let output = topology.macPresentationOutputs[outputIndex]
                 Text("\(output.primary ? "Primary" : "Secondary") display · \(output.width) × \(output.height)").font(.caption)
+                if let layout = client.sessionLocalDisplayLayout, let side = layout.primarySpatialIndex,
+                   !topology.orderedOutputs[side].primary {
+                    Text("This Host has not matched the Mac's primary display.").font(.caption).foregroundStyle(.secondary)
+                }
                 Menu("Move to Mac display") {
                     ForEach(Array(screens.enumerated()), id: \.offset) { index, screen in
                         Button("\(index == 0 ? "Primary" : "Secondary"): \(screen.localizedName)") {
@@ -104,7 +108,8 @@ struct PlankMacDesktop: View {
         }
         guard placedGeneration != topology.generation, let window = desktopWindow,
               !window.styleMask.contains(.fullScreen) else { return }
-        guard let screen = PlankMacDisplayPriority.screen(outputIndex: outputIndex),
+        guard let screen = PlankMacDisplayPriority.screen(outputIndex: outputIndex, topology: topology,
+                  layout: client.sessionLocalDisplayLayout),
               topology.macPresentationOutputs.indices.contains(outputIndex) else { return }
         place(window, on: screen)
         placedGeneration = topology.generation

@@ -44,6 +44,60 @@ import Foundation
         check(priority.targetID(outputIndex: 1, displays: [], primary: 34) == nil, "no displays defers assignment")
         check(priority.targetID(outputIndex: 2, displays: displays, primary: 34) == nil, "unknown window role rejected")
         check(priority.id(priority.screens().first!) == CGMainDisplayID(), "production adapter uses system primary")
+        let local = PlankLocalDisplayLayout(displays: [
+            .init(id: 34, bounds: .init(x: 0, y: 0, width: 2560, height: 1440), primary: true),
+            .init(id: 12, bounds: .init(x: -2056, y: 111, width: 2056, height: 1329), primary: false)])
+        check(local.primarySpatialIndex == 1, "current mixed-scale Mac has right primary; local points do not become remote modes")
+        check(local.ordered.map(\.id) == [12, 34], "spatial snapshot independent of Mac enumeration")
+        check(real.localDisplayID(outputIndex: 0, layout: local) == 12, "left Host crop stays left even if Host primary disagrees with Mac")
+        check(rightPrimary.localDisplayID(outputIndex: 0, layout: local) == 34, "right Host primary maps to right Mac display")
+        check(rightPrimary.localDisplayID(outputIndex: 1, layout: local) == 12, "left Host secondary maps to left Mac display")
+        check(rightPrimary.localDisplayID(outputIndex: 2, layout: local) == nil, "invalid role cannot map to a display")
+        let localReversed = PlankLocalDisplayLayout(displays: Array(local.displays.reversed()))
+        check(localReversed.primarySpatialIndex == 1 && localReversed.ordered == local.ordered, "primary side independent of enumeration and focus")
+        for records in [Array(local.displays.prefix(1)), local.displays + [local.displays[0]],
+            local.displays.map { .init(id: $0.id, bounds: $0.bounds, primary: true) },
+            local.displays.map { .init(id: $0.id, bounds: $0.bounds, primary: false) },
+            [.init(id: 12, bounds: .init(x: 0, y: 1440, width: 2560, height: 1440), primary: false), local.displays[0]],
+            [.init(id: 12, bounds: .init(x: 0, y: 0, width: 2560, height: 1440), primary: false), local.displays[0]]] {
+            let ambiguous = PlankLocalDisplayLayout(displays: records)
+            check(ambiguous.primarySpatialIndex == nil && ambiguous.displayID(spatialIndex: 0) == nil, "missing/extra/stacked/mirrored displays omit ambiguous hint")
+        }
+        let primaryPath = URL(fileURLWithPath: CommandLine.arguments[1]).deletingLastPathComponent().appendingPathComponent("output-topology-v13-virtual-primary.json")
+        let primaryData = try Data(contentsOf: primaryPath)
+        let virtual = try PlankTopologyDecoder.decode(primaryData)
+        check(virtual.supportsVirtualPrimary && virtual.layout.startupKind == "single", "existing Host capability and virtual startup parsed")
+        let negotiated = virtual.requesting(.wuxga, second: .standard, primaryOutput: local.primarySpatialIndex)
+        check(negotiated.requestedPrimaryOutput == 1 && negotiated.outputs == virtual.outputs, "verified right-primary topology retains source rectangles")
+        check(negotiated.launchLayoutQuery == [.init(name: "plankVirtualMode1", value: "1920x1200"),
+            .init(name: "plankVirtualMode2", value: "2560x1440"), .init(name: "plankPrimaryOutput", value: "1")], "production launch sends spatial mode order and negotiated primary side")
+        check(virtual.matches(.wuxga, second: .standard, primaryOutput: 1), "retry verifies both modes, primary and DP-0 side")
+        check(!virtual.matches(.wuxga, second: .standard, primaryOutput: 0), "wrong primary side cannot finish retry")
+        let renegotiated = virtual.requesting(.wuxga, second: .standard, primaryOutput: negotiated.requestedPrimaryOutput)
+        check(renegotiated.launchLayoutQuery == negotiated.launchLayoutQuery, "retry retains primary-side negotiation")
+        check(virtual.requesting(.standard, second: .wuxga, primaryOutput: 1).outputs.isEmpty, "different spatial modes require Host transition")
+        check(virtual.requesting(.standard, primaryOutput: 1).requestedPrimaryOutput == nil, "single-display path unchanged")
+        check(virtual.requesting(.wuxga, second: .standard, primaryOutput: 2).requestedPrimaryOutput == nil, "out-of-range index omitted")
+        check(real.requesting(.ultraHD, second: .portrait1280, primaryOutput: 1).requestedPrimaryOutput == nil, "old or physical-startup Host gets no optional hint")
+        var primaryObject = try JSONSerialization.jsonObject(with: primaryData) as! [String: Any]
+        var virtualLayout = primaryObject["layout"] as! [String: Any]
+        virtualLayout["startup_kind"] = "physical"; primaryObject["layout"] = virtualLayout
+        let physical = try PlankTopologyDecoder.decode(JSONSerialization.data(withJSONObject: primaryObject))
+        check(physical.requesting(.wuxga, second: .standard, primaryOutput: 1).requestedPrimaryOutput == nil, "advertised capability does not authorize physical-startup connector reordering")
+        virtualLayout.removeValue(forKey: "startup_kind"); primaryObject["layout"] = virtualLayout
+        let unknown = try PlankTopologyDecoder.decode(JSONSerialization.data(withJSONObject: primaryObject))
+        check(!unknown.supportsVirtualPrimary, "unknown startup kind cannot authorize optional binding")
+        primaryObject = try JSONSerialization.jsonObject(with: primaryData) as! [String: Any]
+        primaryObject["feature_flags"] = virtual.featureFlags & ~0x2000000
+        let oldHost = try PlankTopologyDecoder.decode(JSONSerialization.data(withJSONObject: primaryObject))
+        check(oldHost.requesting(.wuxga, second: .standard, primaryOutput: 1).launchLayoutQuery.count == 2, "unnegotiated hint never sent to old Host")
+        var wrongConnector = virtual
+        wrongConnector.outputs = virtual.outputs.map { .init(id: $0.primary ? "x11:DP-2" : "x11:DP-0", name: $0.name,
+            x: $0.x, y: $0.y, width: $0.width, height: $0.height, primary: $0.primary, sourceRect: $0.sourceRect) }
+        check(!wrongConnector.matches(.wuxga, second: .standard, primaryOutput: 1), "primary flag alone cannot substitute for first connector on intended side")
+        check(wrongConnector.requesting(.wuxga, second: .standard, primaryOutput: 1).outputs.isEmpty, "wrong connector mapping needs transition instead of silent local crop swap")
+        let virtualPrimary = PlankMacDisplayGeometry(frameWidth: 4480, frameHeight: 1440, topology: negotiated, outputIndex: 0)!
+        check(virtualPrimary.remote(.zero, in: CGRect(x: 0, y: 0, width: 2560, height: 1440), dragging: false)! == (1920, 0), "right-primary input retains authentic composite offset")
         let single = real.requesting(.standard)
         check(single.displayMode == "scaled-span" && single.outputs.isEmpty && single.desktopWidth == 2560,
               "layout replacement never invents source identities")

@@ -126,6 +126,7 @@ final class PlankCoreClient: ObservableObject {
     @Published private(set) var isClosingSession = false
     @Published private(set) var frameDimensions: PlankFrameDimensions?
     @Published private(set) var sessionTopology: PlankTopology?
+    @Published private(set) var sessionLocalDisplayLayout: PlankLocalDisplayLayout?
     @Published private(set) var videoDiagnosticsEnabled = false
     @Published private(set) var videoDiagnosticText = "Video starting…"
     @Published private(set) var audioDiagnosticText = "Audio starting…"
@@ -365,7 +366,9 @@ final class PlankCoreClient: ObservableObject {
         }
     }
 
-    func startSession(displaySize: SpatialDisplaySize, frameRate: Int, videoBitrateKbps: Int, secondDisplaySize: SpatialDisplaySize? = nil) {
+    func startSession(displaySize: SpatialDisplaySize, frameRate: Int, videoBitrateKbps: Int,
+                      secondDisplaySize: SpatialDisplaySize? = nil,
+                      localDisplayLayout: PlankLocalDisplayLayout? = nil) {
         guard !isClosingSession else { return }
         guard let httpClient,
               let identity = lastIdentity,
@@ -381,6 +384,7 @@ final class PlankCoreClient: ObservableObject {
         }
         connectedHost.secondDisplaySize = secondDisplaySize
         sessionTopology = nil
+        sessionLocalDisplayLayout = nil
         latestFrame = nil; frameDimensions = nil
         videoSurfaces.frame(nil); videoSurfaces.cursor(nil); videoSurfaces.shape(nil)
         connectedHost.spatialDisplaySize = displaySize
@@ -445,6 +449,7 @@ final class PlankCoreClient: ObservableObject {
                 identity: identity,
                 authentication: authentication,
                 connectedHost: connectedHost,
+                localDisplayLayout: localDisplayLayout,
                 inputQueue: sessionInputQueue,
                 generation: generation
             )
@@ -465,6 +470,7 @@ final class PlankCoreClient: ObservableObject {
         identity: PlankHostIdentity,
         authentication: PlankAuthentication,
         connectedHost: HostBookmark,
+        localDisplayLayout: PlankLocalDisplayLayout?,
         inputQueue: PlankInputQueue,
         generation: UUID
     ) async {
@@ -538,7 +544,14 @@ final class PlankCoreClient: ObservableObject {
             }) ?? applications.first else {
                 throw PlankHTTPError.invalidResponse("The Host has no Desktop application.")
             }
-            let requestedTopology = hostTopology.requesting(connectedHost.spatialDisplaySize, second: connectedHost.secondDisplaySize)
+            let requestedTopology = hostTopology.requesting(connectedHost.spatialDisplaySize,
+                second: connectedHost.secondDisplaySize, primaryOutput: localDisplayLayout?.primarySpatialIndex)
+            if let localDisplayLayout, connectedHost.secondDisplaySize != nil {
+                NSLog("PLANK display request: localPrimarySide=%@ negotiatedPrimarySide=%@ modes=%@",
+                    localDisplayLayout.primarySpatialIndex.map(String.init) ?? "unmapped",
+                    requestedTopology.requestedPrimaryOutput.map(String.init) ?? "not supported",
+                    requestedTopology.layout.virtualModes.joined(separator: ","))
+            }
             let (activeHTTPClient, activeAuthentication, topology, launch) = try await launchDesktop(
                 httpClient: httpClient,
                 authentication: readyAuthentication,
@@ -551,6 +564,7 @@ final class PlankCoreClient: ObservableObject {
             if self.streamGeneration == generation {
                 self.httpClient = activeHTTPClient
                 self.lastAuthentication = activeAuthentication
+                self.sessionLocalDisplayLayout = localDisplayLayout
                 self.sessionTopology = topology
             }
             // Once launch has reserved the Host, enter the transport even if
@@ -716,6 +730,7 @@ final class PlankCoreClient: ObservableObject {
             tabletWaitTimeoutID = UUID()
 #endif
             sessionTopology = nil
+            sessionLocalDisplayLayout = nil
             latestFrame = nil; frameDimensions = nil
             videoSurfaces.frame(nil); videoSurfaces.cursor(nil); videoSurfaces.shape(nil)
             phase = .failed(Self.message(for: error))
@@ -818,10 +833,12 @@ final class PlankCoreClient: ObservableObject {
                 }
 
                 let currentTopology = try await client.fetchTopology()
-                guard currentTopology.matches(connectedHost.spatialDisplaySize, second: connectedHost.secondDisplaySize) else {
+                guard currentTopology.matches(connectedHost.spatialDisplaySize, second: connectedHost.secondDisplaySize,
+                    primaryOutput: requestedTopology.requestedPrimaryOutput) else {
                     continue
                 }
-                let verifiedRequest = currentTopology.requesting(connectedHost.spatialDisplaySize, second: connectedHost.secondDisplaySize)
+                let verifiedRequest = currentTopology.requesting(connectedHost.spatialDisplaySize, second: connectedHost.secondDisplaySize,
+                    primaryOutput: requestedTopology.requestedPrimaryOutput)
                 let launch = try await client.launchDesktop(
                     topology: verifiedRequest,
                     applicationID: applicationID,
@@ -912,6 +929,7 @@ final class PlankCoreClient: ObservableObject {
         remoteCursorShape = nil
         frameDimensions = nil
         sessionTopology = nil
+        sessionLocalDisplayLayout = nil
         videoDiagnosticText = "Video starting…"
         audioDiagnosticText = "Audio starting…"
         liveBitrateController = nil
@@ -1126,6 +1144,7 @@ final class PlankCoreClient: ObservableObject {
         remoteCursorShape = nil
         frameDimensions = nil
         sessionTopology = nil
+        sessionLocalDisplayLayout = nil
         videoDiagnosticText = "Video starting…"
         audioDiagnosticText = "Audio starting…"
         liveBitrateController = nil

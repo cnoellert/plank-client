@@ -84,11 +84,20 @@ close the connection or deactivate a focused first window.
 
 Session Controls shows the output identity/primary role and offers **Move to
 Mac display**. Leave fullscreen before moving a window to another display.
-The primary Host output opens on the Mac's system primary display; the second
-opens on its secondary display, including when the Mac primary is on the right.
-Window roles follow the Host primary flag rather than the left/right crop order.
-Changing focus does not change that assignment. Display configuration changes
-reassign windowed surfaces; fullscreen surfaces defer placement until exit.
+For two horizontally arranged Mac displays, the Client snapshots their logical
+positions and system primary once per connection. It sends the existing
+`plankPrimaryOutput` left/right hint only when the authenticated Host advertises
+`0x2000000` and a virtual startup. Layout retries verify both selected modes,
+the primary side and `DP-0` placement, preserving the earlier desktop Client's
+Flame connector-order behavior. No new Host contract is introduced.
+
+The windows associate Host outputs with Mac displays in spatial left/right
+order, retaining their original composite crops and input offsets. Window
+lifetime roles follow the accepted Host primary flag. Changing focus does not
+change that assignment. Selected resolutions remain the bookmark resolutions;
+they are not replaced with Retina logical sizes or backing dimensions.
+Unmapped arrangements and old/physical-startup Hosts receive no primary hint.
+Display removal keeps windows reachable; fullscreen placement waits for exit.
 With one remaining Mac display, both windows stay available on that display.
 The first window can reopen the second. Disconnect closes both, waiting for
 AppKit fullscreen exit before disposal. Screen removal uses AppKit's normal
@@ -101,7 +110,8 @@ mapping on either side, display removal fallback and window focus.
 Fullscreen close/transition tests use an AppKit window double; they do
 not establish physical Space disposal or multi-monitor Wacom acceptance.
 The fixture `Tests/Fixtures/output-topology-v13.json` is from the accepted root
-`e532a5e`, `tests/protocol/output-topology-v13.json`.
+`e532a5e`, `tests/protocol/output-topology-v13.json`; the right-primary fixture
+is `tests/protocol/output-topology-v13-virtual-primary.json` from the same pin.
 
 Targeted acceptance: start single, change to two 2560 × 1440 outputs at 60 fps,
 move one window to another Mac display, and check mouse edges plus pen pressure,

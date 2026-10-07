@@ -189,6 +189,7 @@ struct PlankTopology: Equatable, Sendable {
     struct Layout: Equatable, Sendable {
         let kind: String
         let virtualModes: [String]
+        var startupKind: String? = nil
     }
 
     let schemaVersion: Int
@@ -200,6 +201,7 @@ struct PlankTopology: Equatable, Sendable {
     var desktopX = 0
     var desktopY = 0
     var outputs: [Output] = []
+    var requestedPrimaryOutput: Int? = nil
 
     struct Rect: Equatable, Sendable {
         let x, y, width, height: Int
@@ -220,19 +222,32 @@ struct PlankTopology: Equatable, Sendable {
     var splitPresentation: Bool { layout.kind == "dual-horizontal" }
     var displayMode: String { splitPresentation ? "separate-displays" : "scaled-span" }
 
-    func requesting(_ displaySize: SpatialDisplaySize, second: SpatialDisplaySize? = nil) -> PlankTopology {
+    var supportsVirtualPrimary: Bool { featureFlags & 0x2000000 != 0 && layout.startupKind == "single" }
+    var launchLayoutQuery: [URLQueryItem] {
+        var query = layout.virtualModes.prefix(2).enumerated().map { URLQueryItem(name: "plankVirtualMode\($0.offset + 1)", value: $0.element) }
+        if let primary = requestedPrimaryOutput, supportsVirtualPrimary,
+           primary >= 0, primary < (splitPresentation ? 2 : 1) {
+            query.append(.init(name: "plankPrimaryOutput", value: String(primary)))
+        }
+        return query
+    }
+    func requesting(_ displaySize: SpatialDisplaySize, second: SpatialDisplaySize? = nil,
+                    primaryOutput: Int? = nil) -> PlankTopology {
         let first = displaySize.pixelSize
         let other = second?.pixelSize
-        let matches = matches(displaySize, second: second)
+        let primary = supportsVirtualPrimary && second != nil && (primaryOutput == 0 || primaryOutput == 1) ? primaryOutput : nil
+        let matches = matches(displaySize, second: second, primaryOutput: primary)
         return PlankTopology(schemaVersion: schemaVersion, featureFlags: featureFlags,
             generation: generation, desktopWidth: first.width + (other?.width ?? 0),
             desktopHeight: max(first.height, other?.height ?? 0),
             layout: .init(kind: second == nil ? "single" : "dual-horizontal",
-                          virtualModes: [displaySize.virtualMode] + (second.map { [$0.virtualMode] } ?? [])),
+                          virtualModes: [displaySize.virtualMode] + (second.map { [$0.virtualMode] } ?? []),
+                          startupKind: layout.startupKind),
             desktopX: matches ? desktopX : 0, desktopY: matches ? desktopY : 0,
-            outputs: matches ? outputs : [])
+            outputs: matches ? outputs : [], requestedPrimaryOutput: primary)
     }
-    func matches(_ displaySize: SpatialDisplaySize, second: SpatialDisplaySize? = nil) -> Bool {
+    func matches(_ displaySize: SpatialDisplaySize, second: SpatialDisplaySize? = nil,
+                 primaryOutput: Int? = nil) -> Bool {
         let other = second?.pixelSize
         if let second {
             guard orderedOutputs.count == 2,
@@ -240,6 +255,11 @@ struct PlankTopology: Equatable, Sendable {
                   orderedOutputs[0].height == displaySize.pixelSize.height,
                   orderedOutputs[1].width == second.pixelSize.width,
                   orderedOutputs[1].height == second.pixelSize.height else { return false }
+        }
+        if let primaryOutput {
+            guard supportsVirtualPrimary, orderedOutputs.indices.contains(primaryOutput),
+                  orderedOutputs[primaryOutput].primary,
+                  orderedOutputs[primaryOutput].id == "x11:DP-0" else { return false }
         }
         return layout.kind == (second == nil ? "single" : "dual-horizontal") &&
             layout.virtualModes == [displaySize.virtualMode] + (second.map { [$0.virtualMode] } ?? []) &&
@@ -251,6 +271,34 @@ struct PlankTopology: Equatable, Sendable {
         first.pixelSize.width + (second?.pixelSize.width ?? 0) <= 8192
     }
 
+}
+
+/// Local logical bounds are queried once per connection. They determine
+/// spatial output association and primary-side negotiation, never video crops
+/// or transformations of raw Wacom reports. AppKit bounds use y upwards.
+struct PlankLocalDisplayLayout: Equatable, Sendable {
+    struct Display: Equatable, Sendable {
+        let id: UInt32
+        let bounds: PlankTopology.Rect
+        let primary: Bool
+    }
+    let displays: [Display]
+    var ordered: [Display] { displays.sorted { ($0.bounds.x, $0.bounds.y, $0.id) < ($1.bounds.x, $1.bounds.y, $1.id) } }
+    var primarySpatialIndex: Int? {
+        guard displays.count == 2, Set(displays.map(\.id)).count == 2,
+              displays.allSatisfy({ $0.bounds.width > 0 && $0.bounds.height > 0 &&
+                $0.bounds.width <= 16384 && $0.bounds.height <= 16384 &&
+                abs(Double($0.bounds.x)) <= 1_000_000 && abs(Double($0.bounds.y)) <= 1_000_000 }),
+              displays.filter(\.primary).count == 1 else { return nil }
+        let left = ordered[0].bounds, right = ordered[1].bounds
+        guard left.x + left.width <= right.x,
+              left.y < right.y + right.height, right.y < left.y + left.height else { return nil }
+        return ordered.firstIndex { $0.primary }
+    }
+    func displayID(spatialIndex: Int) -> UInt32? {
+        guard primarySpatialIndex != nil, ordered.indices.contains(spatialIndex) else { return nil }
+        return ordered[spatialIndex].id
+    }
 }
 
 struct PlankLaunchCredentials: Equatable, Sendable {

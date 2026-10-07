@@ -105,6 +105,15 @@ Host output is on the right. Focus does not change priority. A Mac display
 configuration change reassigns windowed surfaces; fullscreen placement waits
 until exit. Live placement/fullscreen and Wacom acceptance remain pending.
 
+The operator clarified that the Host virtual desktop must follow the Mac's
+spatial arrangement and primary/connector creation order, as the earlier
+desktop Client did. Build 18's role-only placement was insufficient. Build 19
+ports the existing negotiated `plankPrimaryOutput` behavior, retains the
+connection's local display snapshot, verifies mode/primary/DP-0 binding during
+layout retry, and maps Host crops to local displays in spatial order. This
+uses the existing qualified resolutions and Host contract. Host builds and
+network settings are unchanged. See [the geometry correction](native-macos-display-matching.md).
+
 ## P3: Webcam feasibility
 
 At inspected root upstream commit `e92060b`, `protocol/camera.md` describes an

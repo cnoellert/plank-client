@@ -50,7 +50,8 @@ enum PlankTopologyDecoder {
                   outputs.filter({ $0.primary }).count == 1 else { throw Invalid() }
         }
         return PlankTopology(schemaVersion: version, featureFlags: flags, generation: generation,
-            desktopWidth: width, desktopHeight: height, layout: .init(kind: kind, virtualModes: modes),
+            desktopWidth: width, desktopHeight: height,
+            layout: .init(kind: kind, virtualModes: modes, startupKind: layout["startup_kind"] as? String),
             desktopX: desktop["x"] as? Int ?? 0, desktopY: desktop["y"] as? Int ?? 0, outputs: outputs)
     }
 }

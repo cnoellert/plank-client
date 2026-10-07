@@ -327,9 +327,7 @@ final class PlankHTTPClient: @unchecked Sendable {
             .init(name: "plankHostLayout", value: topology.layout.kind),
             .init(name: "plankTopologyGeneration", value: topology.generation),
         ]
-        for (index, mode) in topology.layout.virtualModes.prefix(2).enumerated() {
-            query.append(.init(name: "plankVirtualMode\(index + 1)", value: mode))
-        }
+        query.append(contentsOf: topology.launchLayoutQuery)
 
         let data = try await authorizedRequest(path: "launch", query: query, timeout: 120)
         let parserDelegate = ServerInfoParser()

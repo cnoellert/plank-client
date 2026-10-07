@@ -8,6 +8,11 @@ extension PlankTopology {
         let spatial = orderedOutputs
         return spatial.filter(\.primary) + spatial.filter { !$0.primary }
     }
+    func localDisplayID(outputIndex: Int, layout: PlankLocalDisplayLayout) -> UInt32? {
+        guard macPresentationOutputs.indices.contains(outputIndex),
+              let spatialIndex = orderedOutputs.firstIndex(where: { $0.id == macPresentationOutputs[outputIndex].id }) else { return nil }
+        return layout.displayID(spatialIndex: spatialIndex)
+    }
 }
 
 enum PlankMacDisplayPriority {
@@ -37,11 +42,24 @@ enum PlankMacDisplayPriority {
         let displays = current.compactMap { screen in id(screen).map { Display(id: $0, frame: screen.frame) } }
         return orderedIDs(displays, primary: CGMainDisplayID()).compactMap { target in current.first { id($0) == target } }
     }
-    @MainActor static func screen(outputIndex: Int) -> NSScreen? {
+    @MainActor static func snapshot() -> PlankLocalDisplayLayout {
+        let primary = CGMainDisplayID()
+        return .init(displays: NSScreen.screens.compactMap { screen in
+            guard let displayID = id(screen) else { return nil }
+            let bounds = screen.frame
+            return .init(id: displayID, bounds: .init(x: Int(bounds.minX), y: Int(bounds.minY),
+                width: Int(bounds.width), height: Int(bounds.height)), primary: displayID == primary)
+        })
+    }
+    @MainActor static func screen(outputIndex: Int, topology: PlankTopology, layout: PlankLocalDisplayLayout?) -> NSScreen? {
         let current = NSScreen.screens
-        let displays = current.compactMap { screen in id(screen).map { Display(id: $0, frame: screen.frame) } }
-        guard let target = targetID(outputIndex: outputIndex, displays: displays, primary: CGMainDisplayID()) else { return nil }
-        return current.first { id($0) == target }
+        if let layout, let target = topology.localDisplayID(outputIndex: outputIndex, layout: layout),
+           let screen = current.first(where: { id($0) == target }) { return screen }
+        // When a mapped display is unplugged, keep both windows reachable.
+        // Unmapped/manual arrangements retain role-based window placement.
+        let ordered = screens()
+        guard !ordered.isEmpty else { return nil }
+        return ordered[min(outputIndex, ordered.count - 1)]
     }
 }
 
