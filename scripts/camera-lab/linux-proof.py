@@ -42,6 +42,9 @@ def main():
         caps = lambda: json.loads(run(str(probe), "caps", device))
         assert caps() == {"capture": False, "output": True}, caps()
         report["tests"]["offBeforeProducer"] = True
+        assert json.loads(run(str(probe), "claim", device))["claimAccepted"]
+        assert caps() == {"capture": False, "output": True}, caps()
+        report["tests"]["freeProducerPositiveControl"] = True
 
         # Actual synthetic Mac VideoToolbox output, copied as a bounded test fixture.
         # This crosses platforms through a fixture, NOT an authenticated PLANK lane.

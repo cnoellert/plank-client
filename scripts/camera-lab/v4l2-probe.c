@@ -30,8 +30,12 @@ int main(int argc, char **argv) {
         fmt.fmt.pix.field = V4L2_FIELD_NONE;
         int status = ioctl(fd, VIDIOC_S_FMT, &fmt);
         int error = errno;
-        printf("{\"secondProducerRejected\":%s,\"errno\":%d}\n",
-            status < 0 && error == EBUSY ? "true" : "false", status < 0 ? error : 0);
+        /* exclusive_caps removes OUTPUT while owned; S_FMT then returns EINVAL.
+         * The harness first proves the same format can be claimed while free. */
+        int rejected = status < 0 && (error == EBUSY ||
+            (error == EINVAL && !(flags & V4L2_CAP_VIDEO_OUTPUT)));
+        printf("{\"claimAccepted\":%s,\"secondProducerRejected\":%s,\"errno\":%d}\n",
+            status == 0 ? "true" : "false", rejected ? "true" : "false", status < 0 ? error : 0);
     }
     close(fd); return 0;
 }
