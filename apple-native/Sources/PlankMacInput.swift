@@ -51,6 +51,9 @@ final class PlankMacInputView: NSView {
     private var windowPresentation: PlankMacWindowPresentation?
     private var cursorMonitor: Any?
     private var lastMouseMovement: NSEvent?
+    private var wheelForwarded = 0
+    private var wheelVertical = 0, wheelHorizontal = 0
+    private var wheelLogTime = 0.0
     private var canvas: CGRect { geometry?.canvas(in: bounds) ?? .zero }
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
@@ -94,6 +97,10 @@ final class PlankMacInputView: NSView {
                 .rightMouseDown, .otherMouseDown, .scrollWheel]) { [weak self] event in
                 if event.type == .mouseMoved { self?.forwardMouseMovement(event) }
                 self?.updatePointerAppearance(for: event)
+                // Eligible wheel events are consumed once here even if Space
+                // changes left the responder chain on local chrome. Controls,
+                // letterboxes and other windows continue through AppKit.
+                if event.type == .scrollWheel, self?.forwardScroll(event) == true { return nil }
                 return event
             }
             window.acceptsMouseMovedEvents = true; window.makeFirstResponder(self)
@@ -248,15 +255,21 @@ final class PlankMacInputView: NSView {
     override func rightMouseUp(with event: NSEvent) { up(3) }
     override func otherMouseDown(with event: NSEvent) { if let button = PlankMacKeys.mouseButton(event.buttonNumber) { down(event, button: button) } }
     override func otherMouseUp(with event: NSEvent) { if let button = PlankMacKeys.mouseButton(event.buttonNumber) { up(button) } }
-    override func scrollWheel(with event: NSEvent) {
-        // A wheel event is targeted at the canvas under the pointer, including
-        // the other session window. Move the Host pointer there first without
-        // changing keyboard focus or recapturing the tablet.
-        guard ownsDesktopPoint(event.locationInWindow), pointer(event, requireKeyWindow: false) else { return }
-        let (vertical, horizontal) = scrollAccumulator.take(vertical: event.scrollingDeltaY,
-            horizontal: event.scrollingDeltaX, precise: event.hasPreciseScrollingDeltas)
+    private func forwardScroll(_ event: NSEvent) -> Bool {
+        guard event.window === window, ownsDesktopPoint(event.locationInWindow),
+              pointer(event, requireKeyWindow: false) else { return false }
+        let (vertical, horizontal) = scrollAccumulator.take(event: event)
         if vertical != 0 || horizontal != 0 { client.scroll(vertical: vertical, horizontal: horizontal) }
+        wheelForwarded += 1; wheelVertical += Int(vertical); wheelHorizontal += Int(horizontal)
+        let now = ProcessInfo.processInfo.systemUptime
+        if now - wheelLogTime >= 1 {
+            NSLog("PLANK Mac wheel: output=%d events=%d vertical=%d horizontal=%d precise=%d",
+                outputIndex, wheelForwarded, wheelVertical, wheelHorizontal, event.hasPreciseScrollingDeltas ? 1 : 0)
+            wheelLogTime = now; wheelForwarded = 0; wheelVertical = 0; wheelHorizontal = 0
+        }
+        return true
     }
+    override func scrollWheel(with event: NSEvent) { _ = forwardScroll(event) }
     override func keyDown(with event: NSEvent) {
         guard !localControlsPresented else { super.keyDown(with: event); return }
         guard !PlankMacKeys.staysLocal(event), let key = PlankMacKeys.table[event.keyCode] else { super.keyDown(with: event); return }

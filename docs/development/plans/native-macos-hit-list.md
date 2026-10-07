@@ -205,3 +205,12 @@ green-button transition focus grace, and temporary Space surface reparenting. Re
 uses an independent button, defers until popover dismissal and activates an existing
 secondary instead of reopening it; it never requests fullscreen. Physical acceptance
 is still required. No Host, Relay, transport, network or raw HID worker changes.
+
+### October 7 wheel follow-up
+
+Build 22 is reported as working better for the transition changes. Wheel input
+is not accepted. Build 23 corrects native event conversion against the established
+Cocoa/SDL Mac path and routes eligible wheel events once from the local monitor.
+It retains display activation in Session Controls even while the second window
+exists. Physical wheel type and smoothness remain to be verified; no Host/Relay,
+raw HID worker or shared Vision source changes are included.

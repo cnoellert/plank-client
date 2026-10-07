@@ -252,3 +252,26 @@ Focused checks cover pen/mouse presentation across output and size changes,
 individual transition notifications and bounded grace, existing/missing secondary
 window requests preserving presentation, and temporary reparent versus teardown.
 They substitute Space animation and cannot qualify physical Wacom tip behavior.
+
+## Build 23 wheel candidate
+
+The operator reports build 22 improves cursor/window behavior. The secondary
+window remained reachable through macOS's Window menu; its reopen action had
+been hidden while the window existed. Wheel behavior is reported as barely
+working, so that feature is not accepted.
+
+Build 23 keeps **Show second display** available to bring an existing window
+forward, or **Reopen second display** when missing. Neither issues fullscreen.
+Canvas wheel events are routed once through the local event monitor, independent
+of a stale first responder; other windows, controls and letterboxes keep native
+AppKit handling. The original event is consumed only after eligible forwarding.
+
+Wheel conversion follows the established Mac Client's Cocoa/SDL path: use
+NSEvent's line-equivalent delta values, round conventional sub-tick events away
+from zero, use 120 protocol units per detent, and cap acceleration at one detent
+per axis per event. Precise devices preserve fractions; the natural-scroll
+preference is already applied by AppKit, and horizontal direction follows Cocoa.
+Gesture start/cancellation, completed momentum and input release clear stale
+fractions. Bounded per-second wheel counters identify forwarding without logging
+pointer coordinates or event contents. Synthetic, unposted AppKit line/pixel
+fixtures verify the production converter; physical wheel acceptance is pending.

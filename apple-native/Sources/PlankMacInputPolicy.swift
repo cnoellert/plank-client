@@ -66,12 +66,30 @@ struct PlankMacScrollAccumulator {
     private var verticalRemainder = 0.0
     private var horizontalRemainder = 0.0
     mutating func reset() { verticalRemainder = 0; horizontalRemainder = 0 }
+    mutating func take(event: NSEvent) -> (Int16, Int16) {
+        if event.phase.contains(.began) { reset() }
+        // AppKit has already applied the user's natural scrolling preference.
+        // The horizontal sign matches Cocoa_HandleMouseWheel in the Mac client.
+        let result = take(vertical: event.deltaY, horizontal: -event.deltaX,
+            precise: event.hasPreciseScrollingDeltas)
+        if event.phase.contains(.cancelled) || event.momentumPhase.contains(.ended) { reset() }
+        return result
+    }
     mutating func take(vertical: Double, horizontal: Double, precise: Bool) -> (Int16, Int16) {
         guard vertical.isFinite, horizontal.isFinite else { reset(); return (0, 0) }
         if !precise { reset() }
-        let factor = precise ? 1.0 : 120.0
-        return (Self.axis(vertical * factor, remainder: &verticalRemainder),
-                Self.axis(horizontal * factor, remainder: &horizontalRemainder))
+        // NSEvent.deltaX/Y use the same line-equivalent values as the
+        // established Mac client's Cocoa/SDL input path, not scrollingDelta's
+        // precise pixel/point values. One protocol detent is 120 units.
+        // Conventional mice must produce a tick even for a fractional event;
+        // precise devices keep fractions. Match the Mac acceleration cap of
+        // one detent per event so accelerated input cannot jump many pages.
+        func units(_ delta: Double) -> Double {
+            let lines = precise ? delta : delta.rounded(.awayFromZero)
+            return min(max(lines, -1), 1) * 120
+        }
+        return (Self.axis(units(vertical), remainder: &verticalRemainder),
+                Self.axis(units(horizontal), remainder: &horizontalRemainder))
     }
     private static func axis(_ delta: Double, remainder: inout Double) -> Int16 {
         let total = delta + remainder

@@ -81,8 +81,8 @@ struct PlankMacDesktop: View {
                         }
                     }
                 }.disabled(desktopWindow?.styleMask.contains(.fullScreen) == true)
-                if outputIndex == 0, !secondDisplayOpen {
-                    Button("Reopen second display") {
+                if outputIndex == 0 {
+                    Button(secondDisplayOpen ? "Show second display" : "Reopen second display") {
                         controls = false
                         DispatchQueue.main.async {
                             PlankMacSessionWindows.showSecondDisplay(client: client, excluding: desktopWindow) {
