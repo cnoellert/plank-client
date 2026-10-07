@@ -13,10 +13,18 @@ identities were unchanged when build 16 was opened.
 
 The test used the Mac's shared Wi-Fi network after the venue LAN would not permit
 the tested AVP-to-Mac path. This does not qualify other network paths or wireless
-Wacom capture. Mac Relay background operation, reconnect, USB disappearance and
-return, sleep/wake and transfer back to local Mac Client capture remain separate
-physical checks. Earlier Linux Relay acceptance does not establish those Mac
-platform behaviors.
+Wacom capture. Mac Relay background operation passed, and the user reported two
+successful same-bookmark desktop reconnects on build 16. USB disappearance and
+return failed on Flame3: hover returned, but tip taps and dragging required a
+desktop reconnect. The initial full-recovery report is superseded by that
+correction. Read-only inspection after the reconnect found Host 1.1.024 and
+Pressure Recalibration = 1 on the PLANK UHID stylus. This is a suspected
+workstation initialization confound, not proof of the failure cause. Flame4
+has the previously accepted Host 1.1.030 pressure policy; a comparison there
+requires verification of the active stylus policy before USB hotplug. No Host
+configuration or package was changed during this investigation. Sleep/wake and
+transfer back to local Mac Client capture remain pending. Earlier Linux Relay
+acceptance does not establish those Mac platform behaviors.
 
 ## Product journey
 
