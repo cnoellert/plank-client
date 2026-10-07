@@ -25,7 +25,7 @@ positions, or redefine the Host's authenticated source rectangles locally.
 Video crops and mouse coordinates must consume the returned Host topology;
 Wacom remains one session-owned, byte-preserving raw-HID path.
 
-## Read-only observation on Portofino
+## Read-only observation on the development Mac
 
 The October 6 query used `NSScreen.screens`, `CGMainDisplayID()` and
 `CGDisplayCopyDisplayMode()` with no display or network mutations.
