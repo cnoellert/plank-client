@@ -224,3 +224,16 @@ by source comparison but not yet confirmed by a correlated live trace. Existing
 mouse movement still targets either desktop; controls and inactive-app input
 stay local. Physical scrolling on both outputs and through fullscreen changes
 requires acceptance. No further Host or tablet changes are included.
+
+### October 7 accepted wheel checkpoint
+
+Signed Mac build 24 (runtime `5db90ff`) passed targeted operator acceptance for
+wheel scrolling in both desktop windows through fullscreen/windowed changes.
+Live Host observation also confirms balanced middle-button press/release and
+released final state. Application-specific middle-button gestures and a live
+correlation of GTK device switching are not claimed. Preserve this checkpoint
+alongside the earlier accepted placement and session-wide controls.
+
+Proceed with P3 webcam feasibility before implementation. This does not close
+the remaining Wacom startup/interruption or general Mac release gates, and
+does not authorize a new Host package or installation.

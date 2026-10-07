@@ -293,3 +293,18 @@ single delivery through the event monitor. Local controls, inactive apps and
 letterboxes remain excluded. Host policy, tablet capture and pointer movement
 are unchanged. Qualify stationary scrolling in both desktop windows, then
 movement between them and fullscreen/windowed transitions.
+
+### Build 24 targeted acceptance
+
+The operator reports substantially improved wheel behavior, then accepts
+scrolling across both desktop windows and fullscreen/windowed transitions.
+A separate Host-side capture confirms balanced middle-button press/release
+delivery and a released final state. This accepts the wheel correction and
+middle-button transport; application-specific middle-button gestures were not
+separately reported. The precise GTK device-switch mechanism remains a source
+inference rather than a correlated live trace. Earlier accepted display
+placement and session-window behavior remain the comparison checkpoint.
+
+Full Mac release qualification, including repeated Wacom startup and interruption
+coverage, remains open. Signed build 24 is a development pilot, not a notarized
+replacement for the desktop Client.
