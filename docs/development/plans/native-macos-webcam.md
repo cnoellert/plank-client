@@ -97,8 +97,29 @@ running kernel, reboot, or change Wacom configuration to make this work.
 
 ## Delivery and gates
 
+### Component result — October 7, 2026
+
+Gate 1 passed at source `5f6f63a` in
+[disposable Linux run 37686776150](https://github.com/cnoellert/plank-client/actions/runs/37686776150).
+The local Mac hardware encoder produced all 90 synthetic frames and the requested
+frame-45 keyframe. An independent decoder recovered all 45 remaining frames when
+starting at that keyframe. Linux decoded the same fixture, and its independent
+V4L2 reader received exact reference frames. Chromium 140 received the real
+virtual device at 1280 × 720 / 30 fps, with the expected dark/bright image fields.
+
+All ten Linux checks passed: free-producer positive control, producer exclusion,
+image decoding/delivery, capture unavailable before/after production, stalled
+image replacement within three seconds, and recovery without reopening Chromium.
+The separate module/device cleanup step also passed. This is generated media
+copied between platforms, not physical capture or an authenticated PLANK stream.
+The Ubuntu kernel was `6.17.0-1022-azure`; Rocky and artist application acceptance
+remain open. No production Host or accepted Mac runtime was changed.
+
+### Gate status
+
 1. Mac hardware encoder + independent decode; Linux actual-device read from
    FFmpeg and Chromium; producer exclusion, stalls, recovery, off and cleanup.
+   Complete for the synthetic component lab described above.
 2. Root capability/metadata review and conformance fixtures. Isolated transport
    integration must preserve current desktop/pen tests and leave old peers usable.
 3. Host receiver/package candidate and Mac explicit capture UI. Stage a rollback

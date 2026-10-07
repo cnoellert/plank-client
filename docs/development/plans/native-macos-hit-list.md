@@ -247,3 +247,9 @@ decoder and a disposable Linux virtual camera/browser. It starts no physical
 capture, links into neither product, and changes no working transport or Wacom
 path. Component results do not establish authenticated transport, a Rocky Host
 installation or the artist's actual receiving application.
+
+The synthetic component gate passed: Mac hardware encoding and independent
+keyframe recovery, Linux exact-pixel V4L2 delivery, Chromium 720p/30 delivery,
+producer exclusion, stall recovery, off and module cleanup. Evidence and the
+remaining integration gates are recorded in the webcam plan. The accepted
+build 24 remains unchanged.
