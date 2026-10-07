@@ -33,6 +33,10 @@ final class PlankMacMetalView: NSView {
 @MainActor final class FullScreenWindowDouble: NSWindow {
     var exitRequests = 0
     var simulatedFullScreen = false
+    var simulatedVisible = false
+    var frontRequests = 0
+    override var isVisible: Bool { simulatedVisible }
+    override func makeKeyAndOrderFront(_ sender: Any?) { frontRequests += 1 }
     override var styleMask: NSWindow.StyleMask {
         get { simulatedFullScreen ? super.styleMask.union(.fullScreen) : super.styleMask }
         set { super.styleMask = newValue.subtracting(.fullScreen); simulatedFullScreen = newValue.contains(.fullScreen) }
@@ -50,6 +54,9 @@ final class PlankMacMetalView: NSView {
         window.delegate = original
         let presentation = PlankMacWindowPresentation(window: window)
         check(window.delegate === presentation, "desktop delegate installed")
+        var presentationChanges = 0
+        presentation.changed = { presentationChanges += 1 }
+        check(!presentation.preservesFocus, "stable window has no transition focus override")
         let green = window.standardWindowButton(.zoomButton)!
         check(green.target === presentation && green.action == #selector(PlankMacWindowPresentation.toggleDesktopFullScreen(_:)),
             "green button has reversible desktop fullscreen action")
@@ -59,11 +66,15 @@ final class PlankMacMetalView: NSView {
             "unrelated action validation remains available")
         let transition = Notification(name: NSWindow.willEnterFullScreenNotification, object: window)
         presentation.windowWillEnterFullScreen(transition)
+        check(presentation.preservesFocus && presentationChanges == 1, "individual green entry starts focus grace and notifies session")
         check(presentation.validateUserInterfaceItem(fullscreenItem), "will-enter callback cannot latch exit action off")
         presentation.windowDidEnterFullScreen(Notification(name: NSWindow.didEnterFullScreenNotification, object: window))
         check(presentation.validateUserInterfaceItem(fullscreenItem), "completed fullscreen enables exit action")
+        check(!presentation.preservesFocus && presentationChanges == 2, "entry completion ends grace and refreshes cursor/focus")
         presentation.windowWillExitFullScreen(Notification(name: NSWindow.willExitFullScreenNotification, object: window))
+        check(presentation.preservesFocus, "individual green exit retains already-owned capture")
         presentation.windowDidFailToExitFullScreen(window)
+        check(!presentation.preservesFocus && presentationChanges == 4, "failed exit clears focus grace and notifies session")
         check(presentation.validateUserInterfaceItem(fullscreenItem), "failed transition cannot leave fullscreen action disabled")
         window.styleMask.remove(.resizable)
         green.isEnabled = false
@@ -251,6 +262,31 @@ final class PlankMacMetalView: NSView {
         check(!PlankMacSessionFocus.active(appActive: true, windows: [], presentationInProgress: false, previouslyActive: true),
             "finished transition cannot retain tablet after real focus loss")
 
+        let reopenClient = PlankCoreClient(), primaryID = UUID(), secondaryID = UUID()
+        let primaryWindow = makeWindow(), otherWindow = makeWindow()
+        primaryWindow.simulatedVisible = true; otherWindow.simulatedVisible = true
+        primaryWindow.simulatedFullScreen = true; otherWindow.simulatedFullScreen = false
+        PlankMacSessionWindows.attach(client: reopenClient, surface: primaryID, window: primaryWindow)
+        PlankMacSessionWindows.attach(client: reopenClient, surface: secondaryID, window: otherWindow)
+        var reopenCalls = 0
+        PlankMacSessionWindows.showSecondDisplay(client: reopenClient, excluding: primaryWindow) { reopenCalls += 1 }
+        check(reopenCalls == 0 && otherWindow.frontRequests == 1, "existing second display is activated, never reopened")
+        check(primaryWindow.simulatedFullScreen && !otherWindow.simulatedFullScreen && primaryWindow.exitRequests == 0 && otherWindow.exitRequests == 0,
+            "show second display preserves both window presentation modes")
+        PlankMacSessionWindows.attach(client: reopenClient, surface: secondaryID, window: nil)
+        PlankMacSessionWindows.showSecondDisplay(client: reopenClient, excluding: primaryWindow) { reopenCalls += 1 }
+        check(reopenCalls == 1 && primaryWindow.exitRequests == 0, "closed second display reopens without toggling main fullscreen")
+        PlankMacSessionWindows.attach(client: reopenClient, surface: primaryID, window: nil)
+        let stalledTransition = makeWindow()
+        let shortGrace = PlankMacWindowPresentation(window: stalledTransition, focusGraceSeconds: 0.01)
+        var graceChanges = 0
+        shortGrace.changed = { graceChanges += 1 }
+        shortGrace.windowWillEnterFullScreen(Notification(name: NSWindow.willEnterFullScreenNotification, object: stalledTransition))
+        check(shortGrace.preservesFocus, "pending individual transition retains capture initially")
+        RunLoop.main.run(until: Date().addingTimeInterval(0.04))
+        check(!shortGrace.preservesFocus && graceChanges == 2, "unacknowledged individual transition releases focus override on bounded deadline")
+        shortGrace.windowDidFailToEnterFullScreen(stalledTransition)
+
         // Full-screen toolbars overlap content without leaving its bounds.
         // Exercise the actual input view beneath a real native control.
         let root = NSView(frame: CGRect(x: 0, y: 0, width: 640, height: 360))
@@ -280,7 +316,19 @@ final class PlankMacMetalView: NSView {
         check(view.ownsDesktopPoint(center), "desktop routing resumes after toolbar retracts")
         view.setLocalControlsPresented(true)
         check(!view.ownsDesktopPoint(center), "popover remains local even over video")
+        view.setLocalControlsPresented(false)
+        let movingPresentation = window.delegate as! PlankMacWindowPresentation
+        movingPresentation.windowWillExitFullScreen(Notification(name: NSWindow.willExitFullScreenNotification, object: window))
+        view.removeFromSuperview()
+        check(PlankMacSessionWindows.owns(client: client, window: window),
+            "temporary Space reparent preserves old session membership")
+        root.addSubview(view)
+        check(PlankMacSessionWindows.owns(client: client, window: window),
+            "Space reparent rebinds surface to its desktop")
         view.detachWindowPresentation()
+        PlankMacSessionWindows.attach(client: client, surface: view.surfaceID, window: nil)
+        check(!PlankMacSessionWindows.owns(client: client, window: window),
+            "real surface teardown still removes session membership")
 
         let region = PlankMacLocalPointerView(frame: NSRect(x: 0, y: 0, width: 40, height: 24))
         check(region.hitTest(NSPoint(x: 20, y: 12)) == nil, "native pointer region never intercepts buttons")

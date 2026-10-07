@@ -7,15 +7,22 @@ import AppKit
     private var afterFullScreenExit: (() -> Void)?
     private var requestingExit = false
     private var enteringFullScreen = false
+    var changed: (() -> Void)?
+    private var transitionStartedAt: TimeInterval?
+    private let focusGraceSeconds: TimeInterval
+    init(window: NSWindow, focusGraceSeconds: TimeInterval = 30) {
+        self.window = window; self.focusGraceSeconds = focusGraceSeconds
+        super.init()
+        install()
+    }
+    var preservesFocus: Bool {
+        guard isTransitioning, let transitionStartedAt else { return false }
+        return ProcessInfo.processInfo.systemUptime - transitionStartedAt < focusGraceSeconds
+    }
     // Objective-C may probe optional delegate selectors outside the UI actor.
     // This weak reference is only changed by install/remove on the main actor.
     nonisolated(unsafe) private weak var previous: (any NSWindowDelegate)?
 
-    init(window: NSWindow) {
-        self.window = window
-        super.init()
-        install()
-    }
     func install() {
         guard let window else { return }
         if window.delegate !== self {
@@ -40,7 +47,10 @@ import AppKit
         return super.forwardingTarget(for: selector)
     }
     @objc func toggleDesktopFullScreen(_ sender: Any?) {
-        if let window { PlankMacDesktopWindow.toggle(window, sender: sender) }
+        if let window {
+            NSLog("PLANK Mac fullscreen action: green window=%ld", window.windowNumber)
+            PlankMacDesktopWindow.toggle(window, sender: sender)
+        }
         else { NSLog("PLANK Mac fullscreen: green action has no desktop window") }
     }
     /// Do not dispose a secondary window while it owns a fullscreen Space.
@@ -63,11 +73,22 @@ import AppKit
     }
     func windowWillEnterFullScreen(_ notification: Notification) {
         enteringFullScreen = true
+        beginFocusTransition()
         previous?.windowWillEnterFullScreen?(notification)
     }
     func windowWillExitFullScreen(_ notification: Notification) {
         requestingExit = true
+        beginFocusTransition()
         previous?.windowWillExitFullScreen?(notification)
+    }
+    private func beginFocusTransition() {
+        let started = ProcessInfo.processInfo.systemUptime
+        transitionStartedAt = started; changed?()
+        DispatchQueue.main.asyncAfter(deadline: .now() + focusGraceSeconds) { [weak self] in
+            guard let self, transitionStartedAt == started, isTransitioning else { return }
+            NSLog("PLANK Mac fullscreen focus: grace expired; normal focus policy resumes")
+            changed?()
+        }
     }
     private func repairFullScreenButton() {
         // AppKit/SwiftUI can revalidate controls after the did-change callback.
@@ -79,6 +100,7 @@ import AppKit
     }
     func windowDidEnterFullScreen(_ notification: Notification) {
         enteringFullScreen = false
+        transitionStartedAt = nil; changed?()
         NSLog("PLANK Mac fullscreen: entered")
         previous?.windowDidEnterFullScreen?(notification)
         repairFullScreenButton()
@@ -89,11 +111,13 @@ import AppKit
         previous?.windowDidExitFullScreen?(notification)
         repairFullScreenButton()
         requestingExit = false
+        transitionStartedAt = nil; changed?()
         let close = afterFullScreenExit; afterFullScreenExit = nil
         close?()
     }
     func windowDidFailToEnterFullScreen(_ window: NSWindow) {
         enteringFullScreen = false
+        transitionStartedAt = nil; changed?()
         previous?.windowDidFailToEnterFullScreen?(window); repairFullScreenButton()
         if let close = afterFullScreenExit { afterFullScreenExit = nil; closeWhenWindowed(close) }
         NotificationCenter.default.post(name: Self.transitionFailed, object: window)
@@ -101,6 +125,7 @@ import AppKit
     func windowDidFailToExitFullScreen(_ window: NSWindow) {
         previous?.windowDidFailToExitFullScreen?(window); repairFullScreenButton()
         requestingExit = false
+        transitionStartedAt = nil; changed?()
         // Keep the window reachable if AppKit refuses the exit; do not leave
         // a detached Space. The operator can retry its normal exit control.
         NSLog("PLANK Mac fullscreen: disposal deferred because exit failed")

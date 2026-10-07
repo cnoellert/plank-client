@@ -187,3 +187,21 @@ is a narrow fullscreen-control revalidation and pointer-targeted scroll candidat
 It retains fractional precise scroll movement and the existing legacy wheel
 scale. Independent green-button and both-output wheel behavior need live
 acceptance; prior Wacom startup failures remain separately unresolved.
+
+### October 7 build 22 transition candidate
+
+Build 21 feedback accepts the window buttons provisionally; wheel testing has not
+been performed. Wacom hovered without tip clicks on the first recorded connection,
+although Host 1.1.024 acknowledged attachment and the Client sender had no sampled
+backlog. Reconnect included capture releases and reattachments; this does not
+establish their cause or prove the earlier Host pressure-policy defect recurred.
+The operator additionally reports duplicate parked/moving cursors after fullscreen
+exit, quicker tablet acquisition fullscreen, and Show second display entering both
+windows into fullscreen.
+
+Build 22 addresses concrete Client focus/presentation paths: non-key canvas mouse
+hover, parked native cursor suppression while the pen is on either output, individual
+green-button transition focus grace, and temporary Space surface reparenting. Reopen
+uses an independent button, defers until popover dismissal and activates an existing
+secondary instead of reopening it; it never requests fullscreen. Physical acceptance
+is still required. No Host, Relay, transport, network or raw HID worker changes.

@@ -82,3 +82,16 @@ struct PlankMacScrollAccumulator {
         return Int16(min(max(whole, Double(Int16.min)), Double(Int16.max)))
     }
 }
+
+// Cursor visibility follows the pointed-at canvas, not its keyboard focus or
+// the output containing the Host cursor. A pen can move on the other output
+// while the physical mouse remains parked here.
+enum PlankMacPointerPresentation {
+    enum Mode { case local, mouse, hidden }
+    static func mode(appActive: Bool, onCanvas: Bool, mouseOwns: Bool,
+                     mouseArtwork: Bool, currentHostPosition: Bool, overlayOwns: Bool) -> Mode {
+        guard appActive, onCanvas else { return .local }
+        if mouseOwns { return mouseArtwork ? .mouse : .hidden }
+        return currentHostPosition || overlayOwns ? .hidden : .local
+    }
+}

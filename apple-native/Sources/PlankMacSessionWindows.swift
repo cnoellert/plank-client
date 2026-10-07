@@ -25,6 +25,9 @@ import AppKit
         else { session.windows.removeValue(forKey: surface) }
         refresh(client: client)
     }
+    static func isPresenting(client: PlankCoreClient) -> Bool {
+        sessions[ObjectIdentifier(client)]?.presentation.busy == true
+    }
     static func isClosing(client: PlankCoreClient) -> Bool {
         sessions[ObjectIdentifier(client)]?.closing == true
     }
@@ -51,6 +54,19 @@ import AppKit
         guard let window, let session = sessions[ObjectIdentifier(client)] else { return false }
         return session.windows.values.contains { $0.window === window }
     }
+    static func otherWindow(client: PlankCoreClient, excluding window: NSWindow?) -> NSWindow? {
+        guard let window, let session = sessions[ObjectIdentifier(client)] else { return nil }
+        return session.windows.values.compactMap(\.window).first { $0 !== window && $0.isVisible }
+    }
+    static func showSecondDisplay(client: PlankCoreClient, excluding window: NSWindow?, open: () -> Void) {
+        if let existing = otherWindow(client: client, excluding: window) {
+            NSLog("PLANK Mac second display: activate existing; fullscreen unchanged")
+            existing.makeKeyAndOrderFront(nil)
+        } else {
+            NSLog("PLANK Mac second display: reopen; fullscreen unchanged")
+            open()
+        }
+    }
     static func remotePointer(client: PlankCoreClient, screenPoint: CGPoint) -> (Int, Int, Int, Int)? {
         guard let session = sessions[ObjectIdentifier(client)] else { return nil }
         for entry in session.windows.values {
@@ -67,11 +83,20 @@ import AppKit
             // Spaces can briefly leave neither desktop key/main. Retain an
             // already-owned tablet for this bounded operation, never across
             // app deactivation or disconnect.
+            let moving = session.presentation.busy || session.windows.values.contains {
+                ($0.window?.delegate as? PlankMacWindowPresentation)?.preservesFocus == true
+            }
+            let transitionOwnsFocus = moving && (NSApp.keyWindow == nil || owns(client: client, window: NSApp.keyWindow))
             let active = !session.closing && PlankMacSessionFocus.active(appActive: NSApp.isActive,
                 windows: session.windows.values.map {
                     .init(key: $0.window?.isKeyWindow == true, main: $0.window?.isMainWindow == true)
-                }, presentationInProgress: session.presentation.busy && NSApp.keyWindow == nil, previouslyActive: session.active == true)
-            if session.active != active { session.active = active; client.setTabletActive(active) }
+                }, presentationInProgress: transitionOwnsFocus, previouslyActive: session.active == true)
+            if session.active != active {
+                NSLog("PLANK Mac tablet focus: active=%d app=%d key=%ld transition=%d closing=%d",
+                    active ? 1 : 0, NSApp.isActive ? 1 : 0, NSApp.keyWindow?.windowNumber ?? -1,
+                    transitionOwnsFocus ? 1 : 0, session.closing ? 1 : 0)
+                session.active = active; client.setTabletActive(active)
+            }
             if session.windows.isEmpty && !session.presentation.busy { sessions.removeValue(forKey: id) }
         }
     }

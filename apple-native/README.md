@@ -218,3 +218,37 @@ the existing 120-unit scale. Controls, letterboxing and inactive-app input remai
 excluded. Release clears fractional state, and saturation cannot replay a long
 scroll tail. Focused checks cover fractional/sign/axis handling, legacy scale,
 reset, saturation and invalid deltas, plus native green-button revalidation.
+
+## Build 22 Space-transition input candidate
+
+Build 21's operator reports that the window buttons work, but leaving fullscreen
+can strand a mouse pointer while the pen draws a separate moving cursor. Returning
+to fullscreen restores normal behavior; windowed Wacom acquisition is slower.
+The first recorded connection also hovered without tip clicks despite a successful
+Host attachment acknowledgement. That tip failure is not yet localized. Wheel
+acceptance remains pending; the build-21 wheel implementation is retained.
+
+Build 22 routes mouse hover to the actual unobscured desktop canvas while PLANK
+is active, including a non-key window, without moving keyboard focus. Real clicks
+focus their desktop; local controls and other apps retain normal input. The pen
+hides the parked native cursor even when its Host cursor occupies the other
+output. Background desktop surfaces no longer restore that cursor over the
+pointed-at window. Tracking and the responder are refreshed after Space changes.
+
+Individual green-button transitions now participate in tablet focus preservation,
+as toolbar transitions already do. This cannot acquire an inactive tablet, bypass
+app deactivation or disconnect, or outlast a 30-second grace. Temporary surface
+reparenting preserves session membership; genuine dismantling still removes it.
+Raw HID capture, report ordering, Host policy and the network are unchanged.
+
+The primary Session Controls offer **Reopen second display** only when its other
+window is absent. Existing windows are activated without a duplicate open request;
+reopen dismisses the popover before opening the scene, and popover buttons use an
+explicit independent style. No fullscreen command is issued on this path. The
+previous unexpected fullscreen side effect needs physical acceptance; action-origin
+and tablet-focus logs now distinguish reopen, toolbar, green-button and focus events.
+
+Focused checks cover pen/mouse presentation across output and size changes,
+individual transition notifications and bounded grace, existing/missing secondary
+window requests preserving presentation, and temporary reparent versus teardown.
+They substitute Space animation and cannot qualify physical Wacom tip behavior.

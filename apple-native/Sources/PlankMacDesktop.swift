@@ -6,6 +6,7 @@ struct PlankMacDesktop: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow
     @State private var controls = false
+    @State private var secondDisplayOpen = false
     @AppStorage(PlankAudioPreferences.volumeKey) private var volume = Double(PlankAudioPreferences.volume())
     @AppStorage(PlankAudioPreferences.mutedKey) private var muted = PlankAudioPreferences.muted()
     @State private var desktopWindow: NSWindow?
@@ -26,6 +27,7 @@ struct PlankMacDesktop: View {
         }.frame(minWidth: 640, maxWidth: .infinity, minHeight: 360, maxHeight: .infinity)
         .toolbar {
             ToolbarItem { Button {
+                NSLog("PLANK Mac fullscreen action: toolbar")
                 PlankMacSessionWindows.toggleFullScreen(client: client)
             } label: { Label("Full Screen", systemImage: "arrow.up.left.and.arrow.down.right") }
                 .onHover { if $0 { NSCursor.arrow.set() } }
@@ -79,7 +81,16 @@ struct PlankMacDesktop: View {
                         }
                     }
                 }.disabled(desktopWindow?.styleMask.contains(.fullScreen) == true)
-                if outputIndex == 0 { Button("Show second display") { openWindow(id: "desktop-secondary") } }
+                if outputIndex == 0, !secondDisplayOpen {
+                    Button("Reopen second display") {
+                        controls = false
+                        DispatchQueue.main.async {
+                            PlankMacSessionWindows.showSecondDisplay(client: client, excluding: desktopWindow) {
+                                openWindow(id: "desktop-secondary")
+                            }
+                        }
+                    }.buttonStyle(.borderless)
+                }
             }
             HStack { Button { muted.toggle(); applyAudio() } label: { Image(systemName: muted ? "speaker.slash" : "speaker.wave.2") }; PlankMacSlider(value: $volume, range: 0...1, label: "Audio volume").frame(height: 24).onChange(of: volume) { _,_ in applyAudio() } }.accessibilityLabel("Audio volume")
             if let status = client.liveBitrate {
@@ -94,8 +105,13 @@ struct PlankMacDesktop: View {
             Text(client.tabletPreflightSummary).font(.caption)
             Text("Tablet: \(PlankMacTabletSource.saved.title)").font(.caption).foregroundStyle(.secondary)
         }.padding(20).frame(width: 340)
+            .buttonStyle(.borderless)
             .background(PlankMacLocalPointerRegion())
-            .onAppear { screens = PlankMacDisplayPriority.screens(); NSCursor.arrow.set() }
+            .onAppear {
+                screens = PlankMacDisplayPriority.screens()
+                secondDisplayOpen = PlankMacSessionWindows.otherWindow(client: client, excluding: desktopWindow) != nil
+                NSCursor.arrow.set()
+            }
     }
     private func synchronizeWindows() {
         placeOnAssignedDisplay()
