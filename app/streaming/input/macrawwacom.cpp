@@ -2,8 +2,14 @@
 #include "macrawwacomasync.h"
 #include "macrawwacomlogic.h"
 #include "linuxrawwacom.h" // shared device-family policy; no Linux dependencies
+#if defined(PLANK_NATIVE_MAC_WACOM)
+#define SDL_LOG_CATEGORY_APPLICATION 0
+#define SDL_LogWarn(category, ...) do { std::fprintf(stderr, "PLANK Wacom: "); std::fprintf(stderr, __VA_ARGS__); std::fputc('\n', stderr); } while (0)
+#define SDL_LogInfo SDL_LogWarn
+#else
 #include <Limelight.h>
 #include <SDL3/SDL.h>
+#endif
 #include <IOKit/hid/IOHIDManager.h>
 #include <IOKit/hid/IOHIDKeys.h>
 #include <IOKit/hidsystem/IOHIDLib.h>
@@ -127,8 +133,8 @@ class MacRawWacomInput::Impl : public std::enable_shared_from_this<Impl>
         std::function<void()> callback;
     };
 public:
-    explicit Impl(std::function<void()> activity)
-        : activity(std::make_shared<ActivityGuard>(std::move(activity)))
+    explicit Impl(std::function<void()> activity, SendFrame sender)
+        : activity(std::make_shared<ActivityGuard>(std::move(activity))), sender(std::move(sender))
     {}
     void start()
     {
@@ -196,6 +202,7 @@ private:
         }
     };
     std::shared_ptr<ActivityGuard> activity;
+    SendFrame sender;
     std::shared_ptr<MacWacomAsyncResults> reportResults = std::make_shared<MacWacomAsyncResults>();
     MacWacomLifecycle lifecycle;
     std::atomic<bool> stopping{false}, shutdownRequested{false}, overflow{false};
@@ -228,7 +235,12 @@ private:
         std::vector<unsigned char> frame(sizeof(h) + size);
         std::memcpy(frame.data(), &h, sizeof(h));
         if (size) std::memcpy(frame.data() + sizeof(h), payload, size);
+        if (sender) return sender(frame.data(), frame.size());
+#if defined(PLANK_NATIVE_MAC_WACOM)
+        return false; // Native capture requires a live session sender.
+#else
         return LiSendRawHidEvent(frame.data(), static_cast<unsigned>(frame.size())) == 0;
+#endif
     }
     static void input(void* context, IOReturn result, void*, IOHIDReportType,
                       std::uint32_t reportId, unsigned char* bytes, CFIndex size)
@@ -527,8 +539,8 @@ private:
     }
 };
 
-MacRawWacomInput::MacRawWacomInput(std::function<void()> activity)
-    : m_Impl(std::make_shared<Impl>(std::move(activity))) { m_Impl->start(); }
+MacRawWacomInput::MacRawWacomInput(std::function<void()> activity, SendFrame sender)
+    : m_Impl(std::make_shared<Impl>(std::move(activity), std::move(sender))) { m_Impl->start(); }
 MacRawWacomInput::~MacRawWacomInput() { m_Impl->shutdown(); }
 void MacRawWacomInput::setActive(bool active) { m_Impl->setActive(active); }
 void MacRawWacomInput::beginReconnect() { m_Impl->beginReconnect(); }

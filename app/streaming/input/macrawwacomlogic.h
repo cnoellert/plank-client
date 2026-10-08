@@ -1,6 +1,15 @@
 #pragma once
 #include <plank.h>
+#if defined(PLANK_NATIVE_MAC_WACOM)
+// The native Apple Silicon target shares the wire helpers without Qt.
+template<typename T> inline T qToLittleEndian(T value) {
+    static_assert(__BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__);
+    return value;
+}
+template<typename T> inline T qFromLittleEndian(T value) { return qToLittleEndian(value); }
+#else
 #include <QtEndian>
+#endif
 #include <cstdint>
 #include <cstring>
 
