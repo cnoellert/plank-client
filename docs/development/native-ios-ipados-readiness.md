@@ -238,8 +238,10 @@ independent identity/bookmarks, manual workstation entry/login, one fit desktop,
 finger/pointer, physical wheel, hardware keyboard and session controls. It
 compiles the existing shared session, video, audio and authenticated Relay
 codecs from their original source paths. No transport dependency pin is moved.
-The only shared source adaptation guards the Vision spatial-audio API to
-visionOS; no session/trust/precision/audio-clock implementation is replaced.
+Shared source adaptations guard the Vision spatial-audio API to visionOS and
+omit unsupported presentation-timing callbacks in the iOS simulator. Device
+rendering and the session/trust/precision/audio-clock implementations remain
+unchanged.
 
 Pencil is excluded from mouse emulation. Registered Relay enrollment/selection
 and iOS Wacom acceptance are next; compiled receiver code is not drawing
