@@ -12,6 +12,7 @@
 <key>LSMinimumSystemVersion</key><string>$(MACOSX_DEPLOYMENT_TARGET)</string>
 <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
 <key>NSHighResolutionCapable</key><true/>
+<key>NSCameraUsageDescription</key><string>Share the camera you choose with your connected PLANK workstation.</string>
 <key>NSBluetoothAlwaysUsageDescription</key><string>Connect to your approved drawing Relay.</string>
 <key>NSLocalNetworkUsageDescription</key><string>Connect to your PLANK workstation and approved drawing Relay, or share a USB tablet with an approved headset.</string>
 <key>NSBonjourServices</key><array><string>_nvstream._tcp</string><string>_plank-tablet._tcp</string><string>_plank-avp-relay._tcp</string></array>

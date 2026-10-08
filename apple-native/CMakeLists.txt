@@ -4,6 +4,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "15.0" CACHE STRING "Minimum macOS version")
 project(PlankMac LANGUAGES Swift C CXX)
 set(PLANK_APPLE_BUILD_NUMBER "24" CACHE STRING "Native Apple pilot build")
+option(PLANK_MAC_CAMERA_SOURCE "Compile the isolated camera source candidate (no product session integration)" OFF)
 set(PLANK_TRANSPORT_DIR "" CACHE PATH "Pinned plank-transport source")
 set(PLANK_FFMPEG_DIR "" CACHE PATH "Target-built FFmpeg prefix")
 set(PLANK_OPUS_DIR "" CACHE PATH "Pinned libopus 1.6.1 prefix")
@@ -47,6 +48,16 @@ add_executable(PlankMac MACOSX_BUNDLE
     ../app/streaming/input/macrawwacom.cpp
     Sources/PlankMacAudioOutput.swift
     ${VISION}/PrivacyInfo.xcprivacy)
+if(PLANK_MAC_CAMERA_SOURCE)
+    if(NOT EXISTS "${PLANK_TRANSPORT_DIR}/include/plank_transport_camera_encoded.h")
+        message(FATAL_ERROR "Camera source candidate requires the separately reviewed PCAM v2 transport")
+    endif()
+    target_sources(PlankMac PRIVATE Sources/PlankMacCameraAdmission.swift Sources/PlankMacCameraBitstream.swift
+        Sources/PlankMacCameraEncoder.swift Sources/PlankMacCameraCapture.swift)
+    target_compile_definitions(PlankMac PRIVATE PLANK_MAC_CAMERA_SOURCE=1)
+    target_compile_options(PlankMac PRIVATE "$<$<COMPILE_LANGUAGE:Swift>:-DPLANK_MAC_CAMERA_SOURCE>")
+    target_link_libraries(PlankMac PRIVATE "-framework AVFoundation")
+endif()
 set_source_files_properties(${VISION}/PrivacyInfo.xcprivacy PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 set(mac_icon "${CMAKE_CURRENT_BINARY_DIR}/branding/PlankMac.icns")
 execute_process(COMMAND xcrun --sdk macosx swift
