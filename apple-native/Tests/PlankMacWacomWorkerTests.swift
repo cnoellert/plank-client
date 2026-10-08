@@ -43,6 +43,7 @@ enum PlankHostFeature { static let tabletRelayRequired: UInt32 = 0x24 }
                 }
             }
         }
+        old.hostFeatures(PlankHostFeature.tabletRelayRequired, active: true)
         if initialTimeout {
             check(policy.expireAvailabilityGrace() == .continueWithoutTablet, "initial availability expiry opts out")
         } else {
@@ -57,7 +58,7 @@ enum PlankHostFeature { static let tabletRelayRequired: UInt32 = 0x24 }
         old.setActive(false); old.setActive(true)
         old.hostFeatures(PlankHostFeature.tabletRelayRequired, active: true)
         await old.close()
-        check(plank_mac_test_worker_activations() == 0, "focus/Host callbacks cannot reactivate retired capture")
+        check(plank_mac_test_worker_activations() == 1, "focus/Host callbacks cannot reactivate retired capture")
         check(records.value == [13], "release drains once through live sender before teardown")
         check(!send(frame(1)), "late callback after opt-out destruction refused")
         input.stop(); await sender.value
