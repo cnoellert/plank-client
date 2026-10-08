@@ -165,6 +165,7 @@ struct PlankIPadCanvas: UIViewRepresentable {
     }()
     private lazy var keyboardControls: UIView = {
         let container = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 124))
+        container.autoresizingMask = [.flexibleWidth]
         container.backgroundColor = .secondarySystemBackground
         let title = UILabel()
         title.text = "Typing preview"
@@ -202,7 +203,8 @@ struct PlankIPadCanvas: UIViewRepresentable {
     func updateTypingPreview(_ text: String) {
         previewText.text = text.isEmpty ? "Type into the remote desktop…" : text
         previewText.textColor = text.isEmpty ? .secondaryLabel : .label
-        if !text.isEmpty {
+        if text.isEmpty { previewText.setContentOffset(.zero, animated: false) }
+        else {
             previewText.layoutIfNeeded()
             previewText.scrollRangeToVisible(NSRange(location: (text as NSString).length, length: 0))
         }
