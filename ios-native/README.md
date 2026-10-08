@@ -103,6 +103,14 @@ uinput wheel input resets GTK's scrolling baseline. Hover and contact still
 position the pointer; scroll admission and unit conversion are unchanged.
 Application scrolling acceptance remains pending.
 
+Build 7 produced occasional small scrolling, which the user reported was still
+mostly ignored. Build 8 suppresses stationary mouse-hover positions as another
+possible source of XTEST/uinput alternation. It compares exact remote pixels,
+without smoothing, and preserves contact/button positioning. Pen handoff, focus
+and geometry changes reset the comparison. Scroll diagnostics include pointer
+move and stationary-suppression counts; callback counts do not prove the cause
+or application acceptance. Wheel scale is unchanged pending this targeted check.
+
 No raw Wacom driver or direct Bluetooth Wacom support is claimed. PTH-660
 produced no visible probe input over USB or Bluetooth on the test iPad. The
 registered Mac/Linux Relay route is the planned first Wacom path; its codecs

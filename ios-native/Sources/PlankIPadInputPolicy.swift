@@ -38,6 +38,23 @@ struct PlankIPadViewport {
     }
 }
 
+/// Stationary UIKit hover callbacks must not switch Linux's active pointer
+/// source from uinput scrolling back to XTEST motion. The next position after
+/// a pen/focus change is always sent, even if it matches an earlier position.
+struct PlankIPadPointerMotion {
+    private struct Position: Equatable {
+        let x: Int, y: Int, width: Int, height: Int
+    }
+    private var last: Position?
+    mutating func shouldSend(x: Int, y: Int, width: Int, height: Int, force: Bool = false) -> Bool {
+        let next = Position(x: x, y: y, width: width, height: height)
+        guard force || next != last else { return false }
+        last = next
+        return true
+    }
+    mutating func reset() { last = nil }
+}
+
 struct PlankIPadHeldInput {
     private(set) var buttons = Set<UInt8>()
     private(set) var keys: [UInt16: UInt8] = [:]

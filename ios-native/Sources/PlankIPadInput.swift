@@ -14,15 +14,22 @@ import GameController
         }
     }
     private var held = PlankIPadHeldInput()
+    private var pointerMotion = PlankIPadPointerMotion()
+    private(set) var pointerMoves = 0, stationaryPointerCallbacks = 0
     private var pencil = PlankIPadPencilPolicy()
     var pencilTouching: Bool { pencil.touching }
     var hasHeldButtons: Bool { !held.buttons.isEmpty }
     init(client: PlankCoreClient) { self.client = client }
-    func pointer(_ point: CGPoint, viewport: PlankIPadViewport, dragging: Bool) -> Bool {
+    func pointer(_ point: CGPoint, viewport: PlankIPadViewport, dragging: Bool,
+                 suppressStationary: Bool = false) -> Bool {
         guard !pencil.touching else { return false }
         retirePencil()
         guard enabled, let pixel = viewport.map(point, held: dragging) else { return false }
-        client.movePointer(x: pixel.x, y: pixel.y, width: viewport.width, height: viewport.height)
+        if pointerMotion.shouldSend(x: pixel.x, y: pixel.y, width: viewport.width,
+                                    height: viewport.height, force: !suppressStationary) {
+            client.movePointer(x: pixel.x, y: pixel.y, width: viewport.width, height: viewport.height)
+            pointerMoves += 1
+        } else { stationaryPointerCallbacks += 1 }
         return true
     }
     @discardableResult
@@ -33,13 +40,17 @@ import GameController
               let packet = pencil.sample(phase, point: point, viewport: viewport, timestamp: timestamp,
                   force: force, maximumForce: maximumForce, altitude: altitude, azimuth: azimuth,
                   distance: distance) else { return false }
+        pointerMotion.reset()
         client.sendPen(packet)
         return true
     }
     func retirePencil() {
-        for packet in pencil.retire() { client.sendPen(packet) }
+        let packets = pencil.retire()
+        if !packets.isEmpty { pointerMotion.reset() }
+        for packet in packets { client.sendPen(packet) }
     }
     func preparePencilContact() {
+        pointerMotion.reset()
         retirePencil()
         for number in held.releaseButtons() { client.setMouseButton(number: number, pressed: false) }
         surface?.clearPointerContact()
@@ -53,6 +64,7 @@ import GameController
         client.sendKey(code: code, pressed: pressed, modifiers: modifiers)
     }
     func release() {
+        pointerMotion.reset()
         retirePencil()
         let releases = held.release()
         for number in releases.buttons { client.setMouseButton(number: number, pressed: false) }
@@ -234,7 +246,8 @@ struct PlankIPadCanvas: UIViewRepresentable {
     }
     @objc private func hovered(_ gesture: UIHoverGestureRecognizer) {
         guard gesture.state == .began || gesture.state == .changed, let viewport else { return }
-        _ = router.pointer(gesture.location(in: self), viewport: viewport, dragging: activeTouch != nil)
+        _ = router.pointer(gesture.location(in: self), viewport: viewport,
+                           dragging: activeTouch != nil, suppressStationary: true)
     }
     @objc private func pencilHovered(_ gesture: UIHoverGestureRecognizer) {
         guard activeTouch == nil, let viewport else { return }
@@ -274,13 +287,13 @@ struct PlankIPadCanvas: UIViewRepresentable {
         publishWheelDiagnosticsIfDue()
     }
     func publishWheelDiagnostics() {
-        router.updateWheelDiagnostics("Received \(wheelReceived) · sent \(wheelEvents) · blocked \(wheelBlocked)")
+        router.updateWheelDiagnostics("Received \(wheelReceived) · sent \(wheelEvents) · blocked \(wheelBlocked)\nPointer moves \(router.pointerMoves) · stationary ignored \(router.stationaryPointerCallbacks)")
     }
     private func publishWheelDiagnosticsIfDue() {
         let now = ProcessInfo.processInfo.systemUptime
         if now - lastWheelLog >= 1 {
             publishWheelDiagnostics()
-            NSLog("PLANK iPad wheel received=%d forwarded=%d blocked=%d vertical=%d horizontal=%d", wheelReceived, wheelEvents, wheelBlocked, wheelVertical, wheelHorizontal)
+            NSLog("PLANK iPad wheel received=%d forwarded=%d blocked=%d vertical=%d horizontal=%d pointerMoves=%d stationaryIgnored=%d", wheelReceived, wheelEvents, wheelBlocked, wheelVertical, wheelHorizontal, router.pointerMoves, router.stationaryPointerCallbacks)
             lastWheelLog = now
         }
     }

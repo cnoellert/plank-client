@@ -392,3 +392,22 @@ resets GTK's scroll baseline. Build 7 applies the same correction to the iPad
 handler, leaving real hover/contact positioning, UIKit admission, unit
 conversion and existing Pencil guards intact. No Host or shared transport
 change is required. Device application acceptance remains pending.
+
+### Build 8 stationary mouse-hover suppression
+
+The user reported build 7 mostly ignored wheel input with occasional movement.
+The stationary-mouse wheel test still recorded substantially more native input
+messages than scroll submissions. This is consistent with hover-source
+alternation, but the Host XTEST raw-event and core-motion-history reads did not
+establish its cause. Do not describe those empty captures as proof of absent
+pointer updates.
+
+Build 8 adds exact remote-pixel deduplication for mouse hover only. Actual
+one-pixel movement passes immediately; contacts, button positioning and Pencil
+squeeze still send their position even when unchanged. Pen handoff, release,
+focus and geometry changes invalidate the stored position. Aggregate pointer
+move/stationary-suppression counters accompany the wheel diagnostics for the
+next targeted test. No wheel scale, Host or shared transport change is made.
+Policy checks cover repeated stationary callbacks, one-pixel movement, forced
+contact positioning and position restoration after reset. Device application
+scrolling acceptance remains pending.

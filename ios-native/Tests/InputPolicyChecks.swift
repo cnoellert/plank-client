@@ -23,6 +23,20 @@ import CoreGraphics
         let portrait = PlankIPadViewport(bounds: CGRect(x: 10, y: 20, width: 500, height: 1000), width: 1000, height: 500)!
         precondition(portrait.map(CGPoint(x: 260, y: 520))!.x == 500)
         precondition(portrait.map(CGPoint(x: 260, y: 520))!.y == 250)
+        var pointerMotion = PlankIPadPointerMotion()
+        precondition(pointerMotion.shouldSend(x: 500, y: 250, width: 1920, height: 1080))
+        for _ in 0..<100 {
+            precondition(!pointerMotion.shouldSend(x: 500, y: 250, width: 1920, height: 1080),
+                         "Stationary hover must not interrupt a sequence of wheel events")
+        }
+        precondition(pointerMotion.shouldSend(x: 501, y: 250, width: 1920, height: 1080),
+                     "One-pixel motion must retain its precision")
+        precondition(pointerMotion.shouldSend(x: 501, y: 250, width: 1920, height: 1080, force: true),
+                     "Contact/button positioning must survive a remote cursor warp")
+        precondition(pointerMotion.shouldSend(x: 501, y: 250, width: 2560, height: 1600))
+        pointerMotion.reset()
+        precondition(pointerMotion.shouldSend(x: 501, y: 250, width: 2560, height: 1600),
+                     "Pen handoff or focus reset must restore the mouse's position")
         var held = PlankIPadHeldInput()
         precondition(held.button(1, pressed: true))
         precondition(!held.button(1, pressed: true), "Repeated down must not create two held contacts")
