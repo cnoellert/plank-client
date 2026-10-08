@@ -99,8 +99,10 @@ final class ProbeController: UIViewController {
     @objc private func resetTest() { canvas.reset(); refreshReadings() }
     @objc private func endContact() { canvas.cancelAll(reason: "manual"); refreshReadings() }
     @objc private func shareCounts(_ sender: UIButton) {
+        var report = canvas.report // Preserve evidence before the share sheet's cleanup.
         canvas.cancelAll(reason: "share")
-        guard let data = try? JSONSerialization.data(withJSONObject: canvas.report,
+        report["heldAfterShareCleanup"] = canvas.report["held"]
+        guard let data = try? JSONSerialization.data(withJSONObject: report,
                                                     options: [.prettyPrinted, .sortedKeys]),
               let text = String(data: data, encoding: .utf8) else { return }
         let sheet = UIActivityViewController(activityItems: [text], applicationActivities: nil)
