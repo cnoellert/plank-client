@@ -73,7 +73,7 @@ private final class Counter: @unchecked Sendable {
                         self.activated = true
                         self.status = "Camera test running. It stops after five seconds."
                     case .off: self.finish("Test interrupted.", completed: false)
-                    case let .unavailable(reason): self.finish("Camera unavailable: \(reason).", completed: false)
+                    case let .unavailable(reason): self.finish("Camera unavailable: \(reason)", completed: false)
                     }
                 }
             }
@@ -142,7 +142,7 @@ private final class Counter: @unchecked Sendable {
                     else { Button("Start camera test") { model.start() }.disabled(model.selectedID.isEmpty).buttonStyle(.borderedProminent) }
                 }
                 Divider()
-                Text(model.status)
+                Text(model.status).fixedSize(horizontal: false, vertical: true)
                 if !model.detail.isEmpty { Text(model.detail).font(.callout).foregroundStyle(.secondary) }
                 Text("Images stay in memory. Only frame counts and timing are saved.").font(.caption).foregroundStyle(.secondary)
             }.padding(24).frame(width: 480, alignment: .leading)

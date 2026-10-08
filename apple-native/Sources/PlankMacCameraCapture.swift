@@ -106,7 +106,15 @@ final class PlankMacCameraCapture: NSObject, @unchecked Sendable {
                     throw PlankMacCameraEncoder.Failure.format
                 }
                 videoOutput.alwaysDiscardsLateVideoFrames = true
-                videoOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange]
+                // The session preset/active input mode do not bind the output
+                // buffer size when macOS reconfigures the built-in camera.
+                // AVFoundation supports explicit dimensions for uncompressed
+                // output and performs the same-aspect-ratio downscale itself.
+                videoOutput.videoSettings = [
+                    kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+                    kCVPixelBufferWidthKey as String: 1280,
+                    kCVPixelBufferHeightKey as String: 720
+                ]
                 step = "Starting the hardware encoder"
                 let newEncoder = try PlankMacCameraEncoder(admission: admission, activation: next, submit: submit) { [weak self] in
                     self?.stopIfCurrent(next, reason: .captureFailed)

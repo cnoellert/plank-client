@@ -96,3 +96,7 @@ source failure, not a qualification pass. Test build 2 reports the failing setup
 step or the delivered dimensions, pixel format, color metadata or clock check.
 It retains the strict format policy; diagnostic metadata never includes camera
 identifiers or image contents. Retry requires the operator to press Start again.
+The diagnostic retry identified 1920 × 1080 output despite selection of a 720p
+input mode/preset. Test build 3 requests explicit 1280 × 720 output dimensions
+through AVFoundation's uncompressed `videoSettings`, retaining strict validation
+of delivered size, limited-range NV12 and BT.709. Its physical retry is pending.
