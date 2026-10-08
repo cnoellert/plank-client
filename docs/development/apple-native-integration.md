@@ -44,6 +44,37 @@ tested native compiler 1.96 remain explicitly distinct in the build recipe.
 
 ## Present scope and acceptance
 
+### Import build evidence
+
+At source `7d90a49a5d59e61be693154ef9c49025b6dcb79c`, the complete public recipe
+passed fresh source preparation, dependency compilation and unsigned Vision
+device compilation with the integration common-C pin. Xcode/SDK 27.0, Rust
+1.96.0, CMake 4.3.3 and Ninja 1.13.2 were used. The same recipe also compiled
+the separate Mac build-24 publication `04675c95c9486e8f22d7587348d705bb44aeb1a4`
+with fresh Mac dependencies; that pilot is not imported here.
+
+Seven build-input failure tests and the existing pure Wacom/input/focus,
+decoder recovery, approval-route, audio-format/level and raw-frame tests passed.
+The production raw-HID session bridge passed 126 checks using deterministic
+native sender stubs, and the production control bridge passed its event and
+bitrate framing checks. Existing app/submodule trees matched the integration
+base exactly; native runtime files matched the original Vision publication.
+These are compile/component results, with no new app installation or device test.
+
+To reproduce the bridge checks after preparing the inputs, from Client root:
+
+```sh
+for suite in PlankRawHidSessionBridgeTests PlankControlBridgeTests; do
+  xcrun --sdk macosx clang -DPLANK_NATIVE_TRANSPORT=1 \
+    -I "$PLANK_NATIVE_WORK/git/root/protocol/plank-transport/include" \
+    "visionos-native/Tests/$suite.c" visionos-native/Bridge/PlankRawHidFrame.c \
+    -Wl,-dead_strip,-undefined,dynamic_lookup -o "$PLANK_NATIVE_WORK/$suite"
+  "$PLANK_NATIVE_WORK/$suite"
+done
+```
+
+### Device scope
+
 The imported negotiation requests Linux-oriented HEVC, ten-bit 4:4:4 identity
 (`codec=1`, `ten_bit=true`, `chroma=1`, `negotiated_format=0x0800`) and stereo
 Opus with five-millisecond packets. This is not the complete maintained

@@ -65,7 +65,7 @@ symlink substitutions and `.orig`/`.rej` residue stop the build.
 ## Requirements
 
 Use an Apple Silicon Mac with full Xcode 27 or newer selected, Python 3.12 or
-newer, CMake 3.30 or newer, Ninja, Git, curl, make and rustup. This native build
+newer, CMake 3.30 or newer, Ninja, Git, curl, patch, make and rustup. This native build
 does not require Qt, SDL, OpenSSL, a private builder, or signing credentials.
 
 Install the explicit Rust toolchain and desired targets once:
