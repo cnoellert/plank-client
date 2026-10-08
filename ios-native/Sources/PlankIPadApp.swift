@@ -27,6 +27,7 @@ struct PlankIPadRoot: View {
     @State private var username = ""
     @State private var password = ""
     @AppStorage("plank.ipad.showSessionToolbar") private var showToolbar = true
+    @AppStorage("plank.ipad.keyboardFunctionKeyMode") private var keyboardMode = KeyboardFunctionKeyMode.pc.rawValue
     private var host: HostBookmark? { store.hosts.first { $0.id == selectedID } }
     private var hideBars: Bool { client.hasActiveDesktopSession && !showToolbar }
     private var busy: Bool {
@@ -38,7 +39,7 @@ struct PlankIPadRoot: View {
                 if client.hasActiveDesktopSession {
                     VStack(spacing: 0) {
                         if client.frameDimensions == nil { ProgressView("Starting desktop…").padding() }
-                        PlankIPadCanvas(client: client, router: router)
+                        PlankIPadCanvas(client: client, router: router, functionKeyMode: KeyboardFunctionKeyMode(rawValue: keyboardMode) ?? .pc)
                             .overlay(alignment: .topLeading) {
                                 if client.videoDiagnosticsEnabled {
                                     VStack(alignment: .leading, spacing: 2) {
@@ -253,6 +254,7 @@ struct PlankIPadControls: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage(PlankAudioPreferences.volumeKey) private var volume = 1.0
     @AppStorage(PlankAudioPreferences.mutedKey) private var muted = false
+    @AppStorage("plank.ipad.keyboardFunctionKeyMode") private var keyboardMode = KeyboardFunctionKeyMode.pc.rawValue
     @State private var bitrate = Double(StreamBitrate.defaultKbps)
     var body: some View {
         NavigationStack {
@@ -261,9 +263,20 @@ struct PlankIPadControls: View {
                     Toggle("Mute", isOn: $muted)
                     Slider(value: $volume, in: 0...1) { Text("Volume") }
                 }
+                Section("Physical Keyboard") {
+                    Picker("Keyboard type", selection: $keyboardMode) {
+                        ForEach(KeyboardFunctionKeyMode.allCases) { mode in
+                            Text(mode.title).tag(mode.rawValue)
+                        }
+                    }
+                    Text(keyboardMode == KeyboardFunctionKeyMode.appleExtended.rawValue ?
+                         "Apple F13 through F24 are sent as function keys." :
+                         "The top-right PC keys act as Print Screen, Scroll Lock and Pause.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
                 Section("Apple Pencil") {
                     Text(client.acceptsNormalizedPen ? "Pencil drawing available" : "Pencil drawing unavailable on this connection")
-                    Text("Pressure and tilt come from your Pencil. USB-C Pencil has no pressure sensitivity. Rotate or open controls to end a stroke; lift and start again.")
+                    Text("Pressure and tilt come from your Pencil. USB-C Pencil has no pressure sensitivity. Rotate or open controls to end a stroke; lift and start again. Squeeze Pencil Pro while hovering to right-click.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section("Video") {

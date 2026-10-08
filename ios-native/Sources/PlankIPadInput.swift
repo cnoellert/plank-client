@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import GameController
 
 @MainActor final class PlankIPadInputRouter: ObservableObject {
     weak var surface: PlankIPadInputView?
@@ -13,6 +14,7 @@ import UIKit
     private var held = PlankIPadHeldInput()
     private var pencil = PlankIPadPencilPolicy()
     var pencilTouching: Bool { pencil.touching }
+    var hasHeldButtons: Bool { !held.buttons.isEmpty }
     init(client: PlankCoreClient) { self.client = client }
     func pointer(_ point: CGPoint, viewport: PlankIPadViewport, dragging: Bool) -> Bool {
         guard !pencil.touching else { return false }
@@ -35,6 +37,11 @@ import UIKit
     func retirePencil() {
         for packet in pencil.retire() { client.sendPen(packet) }
     }
+    func preparePencilContact() {
+        retirePencil()
+        for number in held.releaseButtons() { client.setMouseButton(number: number, pressed: false) }
+        surface?.clearPointerContact()
+    }
     func button(_ number: UInt8, pressed: Bool) {
         guard (!pressed || enabled), held.button(number, pressed: pressed) else { return }
         client.setMouseButton(number: number, pressed: pressed)
@@ -55,16 +62,18 @@ import UIKit
 struct PlankIPadCanvas: UIViewRepresentable {
     let client: PlankCoreClient
     let router: PlankIPadInputRouter
+    let functionKeyMode: KeyboardFunctionKeyMode
     func makeUIView(context: Context) -> PlankIPadInputView {
         PlankIPadInputView(client: client, router: router)
     }
     func updateUIView(_ view: PlankIPadInputView, context: Context) {
+        view.functionKeyMode = functionKeyMode
         view.updateDimensions(client.frameDimensions)
     }
     static func dismantleUIView(_ view: PlankIPadInputView, coordinator: ()) { view.stop() }
 }
 
-@MainActor final class PlankIPadInputView: UIView {
+@MainActor final class PlankIPadInputView: UIView, UIPencilInteractionDelegate {
     private let client: PlankCoreClient
     private let router: PlankIPadInputRouter
     private let video = PlankIPadVideoView(frame: .zero)
@@ -75,6 +84,13 @@ struct PlankIPadCanvas: UIViewRepresentable {
     private var wheel = PlankIPadWheel()
     private var previousBounds = CGRect.zero
     private var registered = false
+    private var keyboardInput: GCKeyboardInput?
+    private var keyboardPolicy = PlankIPadKeyboardPolicy()
+    private var squeezePolicy = PlankIPadSqueezePolicy()
+    var functionKeyMode: KeyboardFunctionKeyMode = .pc {
+        didSet { if oldValue != functionKeyMode { router.release() } }
+    }
+
     override var canBecomeFirstResponder: Bool { true }
     private var viewport: PlankIPadViewport? {
         guard let dimensions else { return nil }
@@ -99,6 +115,7 @@ struct PlankIPadCanvas: UIViewRepresentable {
         scroll.allowedTouchTypes = []
         scroll.cancelsTouchesInView = false
         addGestureRecognizer(scroll)
+        addInteraction(UIPencilInteraction(delegate: self))
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     override func didMoveToWindow() {
@@ -107,6 +124,11 @@ struct PlankIPadCanvas: UIViewRepresentable {
         guard !registered else { return }
         router.surface = self
         registered = true
+        NotificationCenter.default.addObserver(self, selector: #selector(keyboardChanged),
+            name: .GCKeyboardDidConnect, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(keyboardChanged),
+            name: .GCKeyboardDidDisconnect, object: nil)
+        attachKeyboard()
         client.registerVideoSurface(id: surfaceID,
             frame: { [weak self] frame in
                 self?.updateDimensions(frame.map { .init(width: $0.width, height: $0.height) })
@@ -124,13 +146,69 @@ struct PlankIPadCanvas: UIViewRepresentable {
         if previousBounds != bounds { router.release(); previousBounds = bounds }
         video.frame = bounds
     }
-    func clearContact() { activeTouch = nil; pointerButtons.removeAll(); wheel.reset() }
+    func clearContact() {
+        clearPointerContact(); keyboardPolicy.reset()
+    }
+    func clearPointerContact() { activeTouch = nil; pointerButtons.removeAll(); wheel.reset() }
+    @objc private func keyboardChanged() {
+        router.release()
+        attachKeyboard()
+    }
+    private func attachKeyboard() {
+        keyboardInput?.keyChangedHandler = nil
+        keyboardInput = GCKeyboard.coalesced?.keyboardInput
+        GCKeyboard.coalesced?.handlerQueue = .main
+        keyboardInput?.keyChangedHandler = { [weak self] source, _, code, pressed in
+            // GCDevice delivers on the main queue selected above, so key edges
+            // remain ordered with pointer/pen events and focus changes.
+            MainActor.assumeIsolated {
+                guard let self, self.router.enabled, self.isFirstResponder,
+                      let input = self.keyboardInput, input === source else { return }
+                var modifiers: UInt8 = 0
+                for (left, right, mask) in [(0xE1, 0xE5, UInt8(1)), (0xE0, 0xE4, 2),
+                                           (0xE2, 0xE6, 4), (0xE3, 0xE7, 8)] {
+                    if input.button(forKeyCode: GCKeyCode(rawValue: left))?.isPressed == true ||
+                       input.button(forKeyCode: GCKeyCode(rawValue: right))?.isPressed == true { modifiers |= mask }
+                }
+                self.hardwareKey(Int(code.rawValue), pressed: pressed, modifiers: modifiers)
+            }
+        }
+    }
+    private func hardwareKey(_ usage: Int, pressed: Bool, modifiers: UInt8) {
+        guard let event = keyboardPolicy.event(usage: usage, pressed: pressed,
+            modifiers: modifiers, mode: functionKeyMode) else { return }
+        router.key(event.code, pressed: event.pressed, modifiers: event.modifiers)
+    }
+    // Prevent Space from activating local SwiftUI controls while the remote
+    // canvas owns keyboard focus. The raw handler supplies real down/up edges.
+    override var keyCommands: [UIKeyCommand]? {
+        guard keyboardInput != nil, router.enabled else { return super.keyCommands }
+        let command = UIKeyCommand(input: " ", modifierFlags: [], action: #selector(reservedSpace))
+        command.wantsPriorityOverSystemBehavior = true
+        return [command]
+    }
+    @objc private func reservedSpace() {}
+    func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveSqueeze squeeze: UIPencilInteraction.Squeeze) {
+        guard let viewport else { return }
+        let position = squeeze.hoverPose?.location
+        guard squeezePolicy.click(ended: squeeze.phase == .ended, timestamp: squeeze.timestamp,
+            enabled: router.enabled, touching: router.pencilTouching,
+            heldButtons: router.hasHeldButtons,
+            hasPosition: position.flatMap { viewport.map($0) } != nil), let position else { return }
+        guard router.pointer(position, viewport: viewport, dragging: false) else { return }
+        router.button(3, pressed: true)
+        router.button(3, pressed: false)
+    }
+
     func resumeKeyboard() {
         guard window != nil, !isFirstResponder else { return }
         becomeFirstResponder()
     }
     func stop() {
         router.release()
+        NotificationCenter.default.removeObserver(self)
+        keyboardInput?.keyChangedHandler = nil
+        keyboardInput = nil
         if registered { client.unregisterVideoSurface(id: surfaceID); registered = false }
         if router.surface === self { router.surface = nil }
     }
@@ -170,8 +248,9 @@ struct PlankIPadCanvas: UIViewRepresentable {
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         if let touch = touches.first(where: { $0.type == .pencil }), let viewport {
             guard viewport.normalized(touch.location(in: self)) != nil else { return }
-            // Clear pointer/key ownership before a real pen contact starts.
-            router.release()
+            // Retire pointer ownership without releasing held shortcuts such as
+            // Space + pen drag. Keys keep their real hardware up edge.
+            router.preparePencilContact()
             if sendPencil(touch, phase: .down, viewport: viewport) { activeTouch = touch }
             if !isFirstResponder { becomeFirstResponder() }
             return
@@ -242,19 +321,34 @@ struct PlankIPadCanvas: UIViewRepresentable {
     }
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
         guard router.enabled else { super.pressesBegan(presses, with: event); return }
+        // A connected raw keyboard is the sole owner of mapped keys. UIKit is
+        // retained for keyboards unavailable through GCKeyboard and text only.
         for press in presses {
             guard let key = press.key else { continue }
-            if let code = plankIPadVirtualKey(for: key.keyCode, functionKeyMode: .appleExtended) {
-                router.key(code, pressed: true, modifiers: plankIPadModifiers(for: key.modifierFlags))
+            if plankIPadVirtualKey(for: Int(key.keyCode.rawValue), functionKeyMode: functionKeyMode) != nil {
+                if keyboardInput == nil {
+                    hardwareKey(Int(key.keyCode.rawValue), pressed: true, modifiers: plankIPadModifiers(for: key.modifierFlags))
+                }
             } else if !key.characters.isEmpty { client.sendText(key.characters) }
         }
     }
     override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        guard keyboardInput == nil else { return }
         for press in presses {
-            guard let key = press.key,
-                  let code = plankIPadVirtualKey(for: key.keyCode, functionKeyMode: .appleExtended) else { continue }
-            router.key(code, pressed: false, modifiers: plankIPadModifiers(for: key.modifierFlags))
+            guard let key = press.key else { continue }
+            hardwareKey(Int(key.keyCode.rawValue), pressed: false, modifiers: plankIPadModifiers(for: key.modifierFlags))
         }
     }
-    override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) { router.release() }
+    override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        if keyboardInput == nil { router.release() }
+    }
+}
+
+private func plankIPadModifiers(for flags: UIKeyModifierFlags) -> UInt8 {
+    var modifiers: UInt8 = 0
+    if flags.contains(.shift) { modifiers |= 1 }
+    if flags.contains(.control) { modifiers |= 2 }
+    if flags.contains(.alternate) { modifiers |= 4 }
+    if flags.contains(.command) { modifiers |= 8 }
+    return modifiers
 }

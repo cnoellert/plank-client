@@ -48,6 +48,11 @@ struct PlankIPadHeldInput {
         if pressed { keys[code] = modifiers; return true }
         return keys.removeValue(forKey: code) != nil
     }
+    mutating func releaseButtons() -> [UInt8] {
+        let result = buttons.sorted()
+        buttons.removeAll()
+        return result
+    }
     mutating func release() -> (buttons: [UInt8], keys: [(UInt16, UInt8)]) {
         let result = (buttons.sorted(), keys.sorted { $0.key < $1.key }.map { ($0.key, $0.value) })
         buttons.removeAll(); keys.removeAll()
@@ -68,4 +73,40 @@ struct PlankIPadWheel {
         return (Int16(dy), Int16(dx))
     }
     mutating func reset() { x = 0; y = 0 }
+}
+
+/// Keep the original mapping until release, and balance aliases such as left
+/// and right Shift. A mode change/focus loss retires this ledger explicitly.
+struct PlankIPadKeyboardPolicy {
+    struct Event: Equatable {
+        let code: UInt16
+        let pressed: Bool
+        let modifiers: UInt8
+    }
+    private var held: [Int: UInt16] = [:]
+    mutating func event(usage: Int, pressed: Bool, modifiers: UInt8,
+                        mode: KeyboardFunctionKeyMode) -> Event? {
+        if pressed {
+            guard held[usage] == nil,
+                  let code = plankIPadVirtualKey(for: usage, functionKeyMode: mode) else { return nil }
+            let alreadyHeld = held.values.contains(code)
+            held[usage] = code
+            return alreadyHeld ? nil : Event(code: code, pressed: true, modifiers: modifiers)
+        }
+        guard let code = held.removeValue(forKey: usage), !held.values.contains(code) else { return nil }
+        return Event(code: code, pressed: false, modifiers: modifiers)
+    }
+    mutating func reset() { held.removeAll() }
+}
+
+/// A squeeze is a discrete right-click, never a held mouse button. Only one
+/// ended callback per timestamp is eligible; cancellation/changes do not click.
+struct PlankIPadSqueezePolicy {
+    private var lastTimestamp = -Double.infinity
+    mutating func click(ended: Bool, timestamp: Double, enabled: Bool,
+                        touching: Bool, heldButtons: Bool, hasPosition: Bool) -> Bool {
+        guard ended, timestamp.isFinite, timestamp > lastTimestamp else { return false }
+        lastTimestamp = timestamp
+        return enabled && !touching && !heldButtons && hasPosition
+    }
 }

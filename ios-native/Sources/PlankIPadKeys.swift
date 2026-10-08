@@ -1,20 +1,10 @@
-import UIKit
+import Foundation
 
-// Existing UIKit HID-to-Windows mapping from the Vision keyboard adapter.
-func plankIPadModifiers(for flags: UIKeyModifierFlags) -> UInt8 {
-    var modifiers: UInt8 = 0
-    if flags.contains(.shift) { modifiers |= 0x01 }
-    if flags.contains(.control) { modifiers |= 0x02 }
-    if flags.contains(.alternate) { modifiers |= 0x04 }
-    if flags.contains(.command) { modifiers |= 0x08 }
-    return modifiers
-}
-
+// Same HID-to-Windows mapping as the Vision keyboard adapter.
 func plankIPadVirtualKey(
-    for usage: UIKeyboardHIDUsage,
+    for key: Int,
     functionKeyMode: KeyboardFunctionKeyMode
 ) -> UInt16? {
-    let key = Int(usage.rawValue)
     if functionKeyMode == .pc {
         switch key {
         // visionOS reports these three top-right keys from a Windows keyboard

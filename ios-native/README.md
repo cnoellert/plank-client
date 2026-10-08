@@ -41,7 +41,7 @@ pen support (`0x01`), and a selected raw Relay disables this pen path. Actual
 coalesced contact samples carry subpixel coordinates, force divided by UIKit's
 reported maximum, and altitude/azimuth converted to Host tilt direction. Hover
 uses UIKit's normalized distance. Predicted samples and late estimated-property
-updates are not sent; squeeze, double-tap, eraser and barrel roll are not mapped.
+updates are not sent. Build 3 does not map squeeze, double-tap, eraser or barrel roll.
 USB-C Pencil does not provide pressure sensitivity; an unknown/zero force range
 sends zero pressure rather than inventing a measurement.
 
@@ -57,6 +57,26 @@ resolved when the user turned off Flame Tablet Margins. Use zero Tablet Margins
 for this Pencil path; do not compensate the iPad coordinate mapping globally.
 Remote tilt and rotation/interruption recovery remain unqualified; compilation
 and wire tests do not qualify them.
+
+Build 4 adds persistent **Windows / PC Keyboard** and **Apple Extended Keyboard**
+choices in Session Controls. F1–F12 are literal function keys in either mode;
+PC maps F13–F15 to Print Screen/Scroll Lock/Pause, and Apple keeps F13–F24
+literal. Hardware key edges use GCKeyboard while connected, with UIKit as the
+fallback. Space receives a priority local command while the remote canvas has
+focus, preventing local control activation; its actual down/up still come from
+the hardware adapter. A Pencil contact preserves held keyboard shortcuts.
+Focus loss, opening controls, keyboard removal and mapping changes retire held
+keys. iPadOS-reserved shortcuts and keyboard media actions are not remapped;
+use the keyboard's Fn key if it emits media actions instead of F-keys.
+
+Pencil Pro squeeze sends one right mouse click (wire button 3) on gesture end,
+at the supplied hover location. Lift the tip before squeezing. It does nothing
+while drawing, another mouse button is held, local controls are open, or the
+Pencil is outside hover range/the video area. This avoids ending an artist's
+stroke or releasing a physical mouse button. Double-tap and barrel roll remain
+unmapped. Apple Pencil system shortcuts can consume squeeze before the app
+receives it. Build 4 device keyboard/squeeze acceptance remains pending.
+
 No raw Wacom driver or direct Bluetooth Wacom support is claimed. PTH-660
 produced no visible probe input over USB or Bluetooth on the test iPad. The
 registered Mac/Linux Relay route is the planned first Wacom path; its codecs
@@ -90,6 +110,7 @@ python3 scripts/apple-native/build.py build --platform ios-device \
   --work "$PLANK_IPAD_WORK" --client "$PLANK_CLIENT_SOURCE"
 xcrun swiftc -Onone visionos-native/Sources/Models/HostBookmark.swift \
   ios-native/Sources/PlankIPadDisplayOptions.swift \
+  ios-native/Sources/PlankIPadKeys.swift \
   ios-native/Sources/PlankIPadInputPolicy.swift \
   ios-native/Tests/InputPolicyChecks.swift -o "$PLANK_IPAD_CHECKS"
 "$PLANK_IPAD_CHECKS"
@@ -103,6 +124,8 @@ probe acceptance as a remote desktop pass.
 
 ```sh
 xcrun swiftc -Onone visionos-native/Sources/Services/PlankInputQueue.swift \
+  visionos-native/Sources/Models/HostBookmark.swift \
+  ios-native/Sources/PlankIPadKeys.swift \
   ios-native/Sources/PlankIPadInputPolicy.swift \
   ios-native/Sources/PlankIPadPencilPolicy.swift \
   ios-native/Tests/PencilPolicyChecks.swift -o "$PLANK_PENCIL_CHECKS"

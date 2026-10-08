@@ -325,3 +325,26 @@ change or Host package deployment. Keep Tablet Margins at zero for the Pencil
 path. Remote tilt, rotation recovery and interruption/held-state cleanup are not
 inferred from this pass. Do not repeat the accepted pressure/navigation/alignment
 checks as prerequisites.
+
+
+## Hardware keyboard and squeeze candidate — October 8
+
+The user reported missing function keys and Space in build 3, qualifying the
+previous general keyboard pass. Build 4 adds the same Apple/PC function-key
+semantics as Vision, persisted in Session Controls, and uses the connected
+GCKeyboard's actual key edges. UIKit remains a fallback rather than a second
+owner. Mapping aliases retain their original down identity until release; two
+Shift keys cannot release each other prematurely. Space is reserved locally
+while the canvas owns focus. Starting a Pencil stroke now retires pointer
+buttons without releasing held keyboard shortcuts. Local controls, keyboard
+removal, focus and mapping changes still release held keys. No media-key or
+system-shortcut interception is claimed.
+
+Pencil Pro squeeze sends one balanced right mouse click at its hover location
+on gesture end. It is suppressed during tip contact, held pointer buttons,
+closed admission or missing/outside hover position. This uses mouse button 3,
+not a fabricated Pencil barrel button. Squeeze delivery requires supported
+hardware and an iPadOS squeeze preference that delivers the gesture to apps.
+Double-tap is unchanged. Focused keyboard mapping/alias/release and squeeze
+admission checks plus device compilation pass; live keyboard/squeeze acceptance
+is pending. Shared shutdown receipt/Host cleanup remains upstream-owned.
