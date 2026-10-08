@@ -5,9 +5,11 @@ import GameController
 @MainActor final class PlankIPadInputRouter: ObservableObject {
     weak var surface: PlankIPadInputView?
     let client: PlankCoreClient
+    @Published private(set) var wheelDiagnostics = "Received 0 · sent 0 · blocked 0"
+    func updateWheelDiagnostics(_ value: String) { wheelDiagnostics = value }
     var enabled = false {
         didSet {
-            if !enabled { release() }
+            if !enabled { surface?.publishWheelDiagnostics(); release() }
             else if !oldValue { surface?.resumeKeyboard() }
         }
     }
@@ -84,6 +86,7 @@ struct PlankIPadCanvas: UIViewRepresentable {
     private var wheel = PlankIPadWheel()
     private var discreteScroll: UIPanGestureRecognizer?
     private var wheelEvents = 0
+    private var wheelReceived = 0, wheelBlocked = 0
     private var wheelVertical = 0, wheelHorizontal = 0
     private var lastWheelLog = 0.0
     private var previousBounds = CGRect.zero
@@ -119,7 +122,11 @@ struct PlankIPadCanvas: UIViewRepresentable {
         for mask in [UIScrollTypeMask.discrete, .continuous] {
             let scroll = UIPanGestureRecognizer(target: self, action: #selector(scrolled(_:)))
             scroll.allowedScrollTypesMask = mask
-            scroll.allowedTouchTypes = []
+            // UIKit wheel input uses the indirect-pointer type. An empty
+            // allowedTouchTypes list filters it out. Zero touch count keeps
+            // finger/Pencil/button drags out of this scroll-only recognizer.
+            scroll.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)]
+            scroll.maximumNumberOfTouches = 0
             scroll.cancelsTouchesInView = false
             if mask == .discrete { discreteScroll = scroll }
             addGestureRecognizer(scroll)
@@ -242,11 +249,14 @@ struct PlankIPadCanvas: UIViewRepresentable {
         } else { router.retirePencil() }
     }
     @objc private func scrolled(_ gesture: UIPanGestureRecognizer) {
+        wheelReceived += 1
         guard gesture.state == .began || gesture.state == .changed || gesture.state == .ended else {
+            wheelBlocked += 1; publishWheelDiagnosticsIfDue()
             gesture.setTranslation(.zero, in: self); wheel.reset(); return
         }
         guard router.enabled, !router.pencilTouching, let viewport,
               viewport.map(gesture.location(in: self)) != nil else {
+            wheelBlocked += 1; publishWheelDiagnosticsIfDue()
             gesture.setTranslation(.zero, in: self); wheel.reset(); return
         }
         let delta = gesture.translation(in: self)
@@ -254,13 +264,20 @@ struct PlankIPadCanvas: UIViewRepresentable {
         if gesture.state == .began { wheel.reset() }
         let value = wheel.add(x: Double(delta.x), y: Double(delta.y),
             source: gesture === discreteScroll ? .discrete : .continuous)
-        guard value.vertical != 0 || value.horizontal != 0 else { return }
+        guard value.vertical != 0 || value.horizontal != 0 else { publishWheelDiagnosticsIfDue(); return }
         _ = router.pointer(gesture.location(in: self), viewport: viewport, dragging: activeTouch != nil)
         client.scroll(vertical: value.vertical, horizontal: value.horizontal)
         wheelEvents += 1; wheelVertical += Int(value.vertical); wheelHorizontal += Int(value.horizontal)
+        publishWheelDiagnosticsIfDue()
+    }
+    func publishWheelDiagnostics() {
+        router.updateWheelDiagnostics("Received \(wheelReceived) · sent \(wheelEvents) · blocked \(wheelBlocked)")
+    }
+    private func publishWheelDiagnosticsIfDue() {
         let now = ProcessInfo.processInfo.systemUptime
         if now - lastWheelLog >= 1 {
-            NSLog("PLANK iPad wheel forwarded=%d vertical=%d horizontal=%d", wheelEvents, wheelVertical, wheelHorizontal)
+            publishWheelDiagnostics()
+            NSLog("PLANK iPad wheel received=%d forwarded=%d blocked=%d vertical=%d horizontal=%d", wheelReceived, wheelEvents, wheelBlocked, wheelVertical, wheelHorizontal)
             lastWheelLog = now
         }
     }

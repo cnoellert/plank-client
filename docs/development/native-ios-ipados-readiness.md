@@ -363,3 +363,17 @@ device build are required; user wheel speed/direction acceptance is pending.
 
 Build 4 F-key forwarding was accepted with Fn held on the user's separate
 Bluetooth Magic Keyboard. Space with Pencil drag and squeeze remain pending.
+
+### Build 6 wheel event admission
+
+The user reported build 5 not working. Its launch process exited normally and
+the app was reopened as a new process; the old console contains no test data,
+so absence of console counts does not prove absence of callbacks. Comparison
+with the maintained Moonlight iOS UIKit adapter identified an empty allowed
+touch-type list in PLANK's scroll recognizers. Build 6 explicitly allows
+indirect-pointer input and sets maximumNumberOfTouches to zero, admitting wheel
+events while excluding contact drags. Both discrete and continuous masks retain
+the build 5 unit conversion. Received/submitted/blocked aggregate counts appear
+under Session Controls when Show statistics is enabled, independently of the
+launch console. Runtime acceptance is pending. Reference: [Moonlight iOS
+StreamView](https://github.com/moonlight-stream/moonlight-ios/blob/master/Limelight/Input/StreamView.m).

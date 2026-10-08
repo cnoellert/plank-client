@@ -108,7 +108,7 @@ struct PlankIPadRoot: View {
         .statusBarHidden(hideBars)
         .sheet(isPresented: $add) { PlankIPadBookmarkEditor(store: store, client: client, host: .init(name: "", address: "", spatialDisplaySize: PlankIPadDisplayOptions.defaultSize), isNew: true) }
         .sheet(item: $editing) { host in PlankIPadBookmarkEditor(store: store, client: client, host: host, isNew: false) }
-        .sheet(isPresented: $controls) { PlankIPadControls(client: client) }
+        .sheet(isPresented: $controls) { PlankIPadControls(client: client, router: router) }
         .sheet(isPresented: $textEntry) { PlankIPadTextEntry(client: client) }
         .onAppear { selectedID = store.hosts.first?.id; updateAdmission() }
         .onChange(of: store.hosts) { _, hosts in if selectedID == nil { selectedID = hosts.first?.id } }
@@ -251,6 +251,7 @@ struct PlankIPadBookmarkEditor: View {
 
 struct PlankIPadControls: View {
     @ObservedObject var client: PlankCoreClient
+    @ObservedObject var router: PlankIPadInputRouter
     @Environment(\.dismiss) private var dismiss
     @AppStorage(PlankAudioPreferences.volumeKey) private var volume = 1.0
     @AppStorage(PlankAudioPreferences.mutedKey) private var muted = false
@@ -286,6 +287,13 @@ struct PlankIPadControls: View {
                         client.chooseLiveBitrate(Int(bitrate), final: !editing)
                     }) { Text("Bitrate") }.disabled(client.liveBitrate?.supported != true)
                     Toggle("Show statistics", isOn: Binding(get: { client.videoDiagnosticsEnabled }, set: { client.setVideoDiagnosticsEnabled($0) }))
+                }
+                if client.videoDiagnosticsEnabled {
+                    Section("Scroll diagnostics") {
+                        Text(router.wheelDiagnostics).monospacedDigit()
+                        Text("Counts since this canvas opened. Sent means submitted by PLANK; it does not confirm workstation receipt.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    }
                 }
             }.navigationTitle("Session Controls").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }

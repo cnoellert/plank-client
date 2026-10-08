@@ -88,6 +88,12 @@ local controls, letterboxes and active Pencil strokes do not send scroll input.
 Focus/geometry changes clear fractional motion. Bounded aggregate console counts
 record locally submitted scroll events/units, not Host acknowledgment. Physical
 wheel speed/direction and continuous-device behavior require device acceptance.
+The user reported build 5 did not scroll. Build 6 corrects recognizer admission:
+indirect-pointer input is allowed explicitly, with zero touches so contact drags
+cannot become scrolling. Session Controls → Show statistics reveals received,
+submitted and blocked scroll counts. They remain available after reopening the
+controls, even when a launch console has ended. This is a diagnostic correction,
+not a device acceptance claim.
 
 No raw Wacom driver or direct Bluetooth Wacom support is claimed. PTH-660
 produced no visible probe input over USB or Bluetooth on the test iPad. The
