@@ -1,5 +1,16 @@
 import Foundation
 
+/// Existing type-7 normalized pen. Orientation is tilt direction, not barrel roll.
+struct PlankNormalizedPen: Sendable, Equatable {
+    enum Phase: UInt8, Sendable { case hover = 0, down = 1, up = 2, move = 3, cancel = 4, leave = 6 }
+    var phase: Phase
+    var x: Float
+    var y: Float
+    var pressureOrDistance: Float
+    var tilt: UInt8
+    var rotation: UInt16
+}
+
 enum PlankInputEvent: Sendable {
     case pointer(x: UInt16, y: UInt16, maximumX: UInt16, maximumY: UInt16)
     case button(number: UInt8, pressed: Bool)
@@ -7,6 +18,7 @@ enum PlankInputEvent: Sendable {
     case key(code: UInt16, pressed: Bool, modifiers: UInt8)
     case text(Data)
     case rawHid(Data)
+    case pen(PlankNormalizedPen)
 }
 
 final class PlankInputQueue: @unchecked Sendable {

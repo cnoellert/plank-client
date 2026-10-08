@@ -88,8 +88,11 @@ The pinned parent's
 [input header](https://github.com/cnoellert/plank/blob/6c6865562713d265a657dec613f55169ccb379b2/protocol/plank-transport/include/plank_transport_input.h)
 already defines `PLANK_TRANSPORT_INPUT_PEN` (type 7), a 32-byte payload and
 `plank_transport_input_encode_pen`. It includes event/tool/buttons, coordinates,
-pressure-or-distance, tilt and rotation. The native Swift input queue and C
-bridge currently have no Pencil/normalized-pen sender.
+pressure-or-distance, tilt and rotation. iPad pilot build 3 adds an additive
+normalized-pen event to the shared queue and C bridge, using this canonical
+encoder and the existing input sender. It requires the negotiated Host feature
+`0x01`; a selected raw Relay excludes Pencil. No dependency or Host change is
+part of this adapter.
 
 The same parent's Host gitlink is `5829bf7c335440a8b25c3330643eacb4d914f00a`.
 Its [input parser](https://github.com/instinctual/plank-host-linux/blob/5829bf7c335440a8b25c3330643eacb4d914f00a/src/input.cpp)
@@ -210,8 +213,8 @@ or a moving system cursor.
    foundation acceptance, with its own viewport and lifecycle checks.
 
 The current hardware is iPad Air 11-inch (M4), iPadOS 26.5, with Wacom Intuos
-Pro PTH-660. Pencil hardware is pending. Its model selects pressure/hover
-capabilities; it does not block finger/mouse Client work.
+Pro PTH-660. Pencil hardware is now available. The precise Pencil model is
+still unrecorded; pressure/hover support must not be inferred for other models.
 
 ## Standalone probe checkpoint
 
@@ -222,8 +225,11 @@ diagnostics. It makes no remote input or raw-Wacom capture claim. Device and
 simulator unsigned compilation and the focused terminal/order/cancellation
 checks passed on October 8. Development build 1 was signed, installed and
 launched after profile/device membership verification. The user reports finger
-and mouse working. Wheel, lifecycle cancellation and Pencil are not separately
-accepted. Pencil testing is pending hardware.
+and mouse working. On October 8, device screenshots show Pencil contact and
+hover. The user reports force responding. Rotation deliberately cancelled one
+contact: 26 downs, 25 ups, one cancellation and zero held contacts. Fresh strokes
+after rotation and background cancellation remain unqualified. These are local
+probe observations, not remote drawing acceptance.
 
 The connected test device reports iPad Air 11-inch (M4), iPadOS 26.5. This
 meets the documented M-series condition for a later USBDriverKit feasibility
@@ -244,7 +250,7 @@ omit unsupported presentation-timing callbacks in the iOS simulator. Device
 rendering and the session/trust/precision/audio-clock implementations remain
 unchanged.
 
-Pencil is excluded from mouse emulation. Registered Relay enrollment/selection
+Pencil remains separate from mouse emulation. Registered Relay enrollment/selection
 and iOS Wacom acceptance are next; compiled receiver code is not drawing
 qualification. iPhone and multiple displays are outside this first target.
 The initial pilot deployment target is iPadOS 26, separate from the input
@@ -283,3 +289,27 @@ Focused fit/edge, held-button/key release and fractional-wheel checks pass.
 Unsigned device and simulator compilation, protected signing and remote
 desktop acceptance must be recorded independently. The shared issue-9 gates
 remain open, including unexpected-stop release forwarding and persistent trust.
+
+## Remote Pencil candidate — October 8
+
+Build 3 forwards ordered actual/coalesced samples through type 7. The adapter
+uses the presentation viewport without pixel quantization, rejects letterboxing
+for new contacts, clamps held contacts at the desktop edge, normalizes measured
+force, and converts altitude/azimuth to tilt direction. Hover distance is the
+UIKit normalized value. Unknown orientation is sent as unknown; zero/unknown
+force range sends zero pressure. No predicted or late estimated samples are
+replayed. Barrel roll, squeeze and double-tap are not implemented.
+
+Focused checks cover subpixel mapping, force limits, all four Host tilt axes,
+same-timestamp up, duplicate/stale moves, cancel/leave idempotence, new contact
+after cancellation, queue transition order, canonical big-endian type-7 bytes,
+invalid payload refusal and sender failure propagation. Local admission closes
+on sheets, focus, size/rotation and source changes. The shared stop path can
+still discard queued releases: disconnect/background Host cleanup is an upstream
+qualification gate, not a claimed release guarantee.
+
+Next acceptance is remote hover/tap/drag, varied-pressure strokes and tilt in a
+compatible drawing app, plus rotation ending the old stroke and allowing a fresh
+one after lift. Finger/mouse/keyboard and playback acceptance already recorded
+must not be repeated as prerequisites. This candidate is separate from the
+shipping Mac/Vision targets and adds no Host package deployment.

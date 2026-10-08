@@ -23,12 +23,16 @@ struct PlankIPadViewport {
                       width: fitWidth, height: fitHeight)
         self.width = width; self.height = height
     }
-    func map(_ point: CGPoint, held: Bool = false) -> (x: Int, y: Int)? {
+    func normalized(_ point: CGPoint, held: Bool = false) -> (x: CGFloat, y: CGFloat)? {
         guard point.x.isFinite, point.y.isFinite,
               held || (point.x >= rect.minX && point.x <= rect.maxX &&
                        point.y >= rect.minY && point.y <= rect.maxY) else { return nil }
         let x = min(max((point.x - rect.minX) / rect.width, 0), 1)
         let y = min(max((point.y - rect.minY) / rect.height, 0), 1)
+        return (x, y)
+    }
+    func map(_ point: CGPoint, held: Bool = false) -> (x: Int, y: Int)? {
+        guard let (x, y) = normalized(point, held: held) else { return nil }
         return (Int((x * CGFloat(width - 1)).rounded()),
                 Int((y * CGFloat(height - 1)).rounded()))
     }

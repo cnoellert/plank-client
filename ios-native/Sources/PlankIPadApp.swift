@@ -261,6 +261,11 @@ struct PlankIPadControls: View {
                     Toggle("Mute", isOn: $muted)
                     Slider(value: $volume, in: 0...1) { Text("Volume") }
                 }
+                Section("Apple Pencil") {
+                    Text(client.acceptsNormalizedPen ? "Pencil drawing available" : "Pencil drawing unavailable on this connection")
+                    Text("Pressure and tilt come from your Pencil. USB-C Pencil has no pressure sensitivity. Rotate or open controls to end a stroke; lift and start again.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
                 Section("Video") {
                     Text("Bitrate · \(Int(bitrate / 1000)) Mbps")
                     Slider(value: $bitrate, in: Double(StreamBitrate.minimumKbps)...Double(StreamBitrate.maximumKbps),

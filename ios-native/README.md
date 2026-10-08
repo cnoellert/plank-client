@@ -35,8 +35,24 @@ virtual EDID modes for headless workstations. Do not blindly send arbitrary
 sizes or stretch/crop the image to claim native fit. No Host deployment is
 included in this pilot change.
 
-Pencil samples are deliberately excluded from mouse emulation. The separate
-input probe remains the pressure/tilt/contact test until Pencil hardware arrives.
+Build 3 adds Apple Pencil through the existing normalized pen protocol (type 7),
+separate from mouse emulation and raw Wacom identity. The Host must advertise
+pen support (`0x01`), and a selected raw Relay disables this pen path. Actual
+coalesced contact samples carry subpixel coordinates, force divided by UIKit's
+reported maximum, and altitude/azimuth converted to Host tilt direction. Hover
+uses UIKit's normalized distance. Predicted samples and late estimated-property
+updates are not sent; squeeze, double-tap, eraser and barrel roll are not mapped.
+USB-C Pencil does not provide pressure sensitivity; an unknown/zero force range
+sends zero pressure rather than inventing a measurement.
+
+Rotation, canvas dimension changes, control sheets, focus loss and local source
+handoff request cancel/proximity leave. Lift and start a fresh stroke after a
+geometry change. Terminal up is accepted even at the last move's timestamp;
+stale moves cannot restart a cancelled contact. Finger/pointer movement cannot
+interrupt an active Pencil stroke. Settings show negotiated Pencil availability.
+The local probe has observed contact, hover and rotation cancellation, and the
+user reports force responding. Remote drawing and pressure/tilt remain pending
+on the installed candidate; compilation and wire tests do not qualify them.
 No raw Wacom driver or direct Bluetooth Wacom support is claimed. PTH-660
 produced no visible probe input over USB or Bluetooth on the test iPad. The
 registered Mac/Linux Relay route is the planned first Wacom path; its codecs
@@ -78,3 +94,22 @@ xcrun swiftc -Onone visionos-native/Sources/Models/HostBookmark.swift \
 Signing, profile/device membership checks, installation and runtime acceptance
 are separate. Do not treat successful compilation or standalone finger/mouse
 probe acceptance as a remote desktop pass.
+
+## Pencil checks
+
+```sh
+xcrun swiftc -Onone visionos-native/Sources/Services/PlankInputQueue.swift \
+  ios-native/Sources/PlankIPadInputPolicy.swift \
+  ios-native/Sources/PlankIPadPencilPolicy.swift \
+  ios-native/Tests/PencilPolicyChecks.swift -o "$PLANK_PENCIL_CHECKS"
+"$PLANK_PENCIL_CHECKS"
+xcrun clang -O1 -DPLANK_NATIVE_TRANSPORT=1 -I "$PLANK_TRANSPORT_DIR/include" \
+  visionos-native/Tests/PlankPenBridgeTests.c \
+  visionos-native/Bridge/PlankRawHidFrame.c \
+  -Wl,-dead_strip,-undefined,dynamic_lookup -o "$PLANK_PEN_WIRE_CHECKS"
+"$PLANK_PEN_WIRE_CHECKS"
+```
+
+Orientation follows Apple's [azimuth definition](https://developer.apple.com/documentation/uikit/uitouch/azimuthangle(in:))
+and the existing Host virtual-pen convention, with four cardinal-direction
+fixtures. Host observation of tilt is still required.

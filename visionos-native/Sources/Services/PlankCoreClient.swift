@@ -169,6 +169,7 @@ final class PlankCoreClient: ObservableObject {
     private let tabletControlReceiver = PlankTabletControlReceiver()
     private let videoDiagnostics = PlankVideoDiagnosticsGate()
     private var liveBitrateController: PlankLiveBitrate?
+    @Published private(set) var hostSupportsNormalizedPen = false
     private var hostSupportsTabletRelay = false
 #if PLANK_TABLET_RELAY
     private var tabletBridge: PlankRelaySessionBridge?
@@ -407,6 +408,7 @@ final class PlankCoreClient: ObservableObject {
         inputQueue = PlankInputQueue()
         remoteCursor = nil
         remoteCursorShape = nil
+        hostSupportsNormalizedPen = false
         hostSupportsTabletRelay = false
 #if PLANK_TABLET_RELAY
         tabletRelayStatus = "Waiting for Host tablet support…"
@@ -684,6 +686,7 @@ final class PlankCoreClient: ObservableObject {
 #endif
                 Task { @MainActor [weak self] in
                     guard let self, self.streamGeneration == generation else { return }
+                    self.hostSupportsNormalizedPen = flags & PlankHostFeature.normalizedPen != 0
                     self.hostSupportsTabletRelay =
                         flags & PlankHostFeature.tabletRelayRequired ==
                         PlankHostFeature.tabletRelayRequired
@@ -923,6 +926,7 @@ final class PlankCoreClient: ObservableObject {
         tabletWaitTimeoutID = UUID()
 #endif
         tabletControlReceiver.set(nil)
+        hostSupportsNormalizedPen = false
         hostSupportsTabletRelay = false
         streamGeneration = UUID()
         let closingGeneration = streamGeneration
@@ -1000,6 +1004,21 @@ final class PlankCoreClient: ObservableObject {
             maximumX: UInt16(maximumX),
             maximumY: UInt16(maximumY)
         ))
+    }
+
+    var acceptsNormalizedPen: Bool {
+        guard hostSupportsNormalizedPen else { return false }
+#if PLANK_TABLET_RELAY
+        // A selected raw Relay owns the Host tablet backend. Never alternate
+        // that backend with normalized Pencil reports.
+        guard PlankRelayKeys.relayRegistry().selection == .off else { return false }
+#endif
+        return true
+    }
+
+    func sendPen(_ pen: PlankNormalizedPen) {
+        guard acceptsNormalizedPen else { return }
+        inputQueue.append(.pen(pen))
     }
 
     func setLeftButton(pressed: Bool) {
@@ -1131,6 +1150,7 @@ final class PlankCoreClient: ObservableObject {
         tabletWaitTimeoutID = UUID()
 #endif
         tabletControlReceiver.set(nil)
+        hostSupportsNormalizedPen = false
         hostSupportsTabletRelay = false
         streamGeneration = UUID()
         let closingGeneration = streamGeneration

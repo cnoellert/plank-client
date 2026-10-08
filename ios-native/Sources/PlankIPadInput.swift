@@ -11,11 +11,29 @@ import UIKit
         }
     }
     private var held = PlankIPadHeldInput()
+    private var pencil = PlankIPadPencilPolicy()
+    var pencilTouching: Bool { pencil.touching }
     init(client: PlankCoreClient) { self.client = client }
     func pointer(_ point: CGPoint, viewport: PlankIPadViewport, dragging: Bool) -> Bool {
+        guard !pencil.touching else { return false }
+        retirePencil()
         guard enabled, let pixel = viewport.map(point, held: dragging) else { return false }
         client.movePointer(x: pixel.x, y: pixel.y, width: viewport.width, height: viewport.height)
         return true
+    }
+    @discardableResult
+    func pen(_ phase: PlankNormalizedPen.Phase, point: CGPoint, viewport: PlankIPadViewport,
+             timestamp: Double, force: Double, maximumForce: Double,
+             altitude: Double, azimuth: Double, distance: Double = 0) -> Bool {
+        guard enabled, client.acceptsNormalizedPen,
+              let packet = pencil.sample(phase, point: point, viewport: viewport, timestamp: timestamp,
+                  force: force, maximumForce: maximumForce, altitude: altitude, azimuth: azimuth,
+                  distance: distance) else { return false }
+        client.sendPen(packet)
+        return true
+    }
+    func retirePencil() {
+        for packet in pencil.retire() { client.sendPen(packet) }
     }
     func button(_ number: UInt8, pressed: Bool) {
         guard (!pressed || enabled), held.button(number, pressed: pressed) else { return }
@@ -26,6 +44,7 @@ import UIKit
         client.sendKey(code: code, pressed: pressed, modifiers: modifiers)
     }
     func release() {
+        retirePencil()
         let releases = held.release()
         for number in releases.buttons { client.setMouseButton(number: number, pressed: false) }
         for (code, modifiers) in releases.keys { client.sendKey(code: code, pressed: false, modifiers: modifiers) }
@@ -71,6 +90,10 @@ struct PlankIPadCanvas: UIViewRepresentable {
         hover.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)]
         hover.cancelsTouchesInView = false
         addGestureRecognizer(hover)
+        let pencilHover = UIHoverGestureRecognizer(target: self, action: #selector(pencilHovered(_:)))
+        pencilHover.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
+        pencilHover.cancelsTouchesInView = false
+        addGestureRecognizer(pencilHover)
         let scroll = UIPanGestureRecognizer(target: self, action: #selector(scrolled(_:)))
         scroll.allowedScrollTypesMask = .all
         scroll.allowedTouchTypes = []
@@ -119,8 +142,20 @@ struct PlankIPadCanvas: UIViewRepresentable {
         guard gesture.state == .began || gesture.state == .changed, let viewport else { return }
         _ = router.pointer(gesture.location(in: self), viewport: viewport, dragging: activeTouch != nil)
     }
+    @objc private func pencilHovered(_ gesture: UIHoverGestureRecognizer) {
+        guard activeTouch == nil, let viewport else { return }
+        if gesture.state == .began || gesture.state == .changed {
+            guard viewport.normalized(gesture.location(in: self)) != nil else {
+                router.retirePencil(); return
+            }
+            _ = router.pen(.hover, point: gesture.location(in: self), viewport: viewport,
+                timestamp: ProcessInfo.processInfo.systemUptime, force: 0, maximumForce: 0,
+                altitude: Double(gesture.altitudeAngle), azimuth: Double(gesture.azimuthAngle(in: self)),
+                distance: Double(gesture.zOffset))
+        } else { router.retirePencil() }
+    }
     @objc private func scrolled(_ gesture: UIPanGestureRecognizer) {
-        guard router.enabled, let viewport,
+        guard router.enabled, !router.pencilTouching, let viewport,
               viewport.map(gesture.location(in: self)) != nil else {
             gesture.setTranslation(.zero, in: self); wheel.reset(); return
         }
@@ -133,6 +168,14 @@ struct PlankIPadCanvas: UIViewRepresentable {
         if gesture.state == .cancelled || gesture.state == .failed { wheel.reset() }
     }
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if let touch = touches.first(where: { $0.type == .pencil }), let viewport {
+            guard viewport.normalized(touch.location(in: self)) != nil else { return }
+            // Clear pointer/key ownership before a real pen contact starts.
+            router.release()
+            if sendPencil(touch, phase: .down, viewport: viewport) { activeTouch = touch }
+            if !isFirstResponder { becomeFirstResponder() }
+            return
+        }
         guard activeTouch == nil, let viewport,
               let touch = touches.first(where: { $0.type == .direct || $0.type == .indirectPointer }),
               router.pointer(touch.location(in: self), viewport: viewport, dragging: false) else { return }
@@ -144,6 +187,15 @@ struct PlankIPadCanvas: UIViewRepresentable {
     }
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = activeTouch, touches.contains(touch), let viewport else { return }
+        if touch.type == .pencil {
+            // Coalesced actual samples retain acquisition order. Timestamp policy
+            // excludes duplicated final samples; predicted/late estimates stay local.
+            for sample in (event?.coalescedTouches(for: touch) ?? [touch]).sorted(by: { $0.timestamp < $1.timestamp }) {
+                _ = sendPencil(sample, phase: .move, viewport: viewport)
+            }
+            _ = sendPencil(touch, phase: .move, viewport: viewport)
+            return
+        }
         _ = router.pointer(touch.location(in: self), viewport: viewport, dragging: true)
         if touch.type == .indirectPointer, let event, !event.buttonMask.isEmpty {
             updatePointerButtons(event.buttonMask.rawValue, fallbackPrimary: false)
@@ -151,6 +203,17 @@ struct PlankIPadCanvas: UIViewRepresentable {
     }
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = activeTouch, touches.contains(touch) else { return }
+        if touch.type == .pencil {
+            if let viewport {
+                for sample in (event?.coalescedTouches(for: touch) ?? []).sorted(by: { $0.timestamp < $1.timestamp }) {
+                    _ = sendPencil(sample, phase: .move, viewport: viewport)
+                }
+                _ = sendPencil(touch, phase: .up, viewport: viewport)
+            }
+            router.retirePencil()
+            activeTouch = nil
+            return
+        }
         if let viewport { _ = router.pointer(touch.location(in: self), viewport: viewport, dragging: true) }
         if touch.type == .indirectPointer { updatePointerButtons(0, fallbackPrimary: false) }
         else { router.button(1, pressed: false) }
@@ -159,6 +222,13 @@ struct PlankIPadCanvas: UIViewRepresentable {
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = activeTouch, touches.contains(touch) else { return }
         router.release()
+    }
+    @discardableResult
+    private func sendPencil(_ touch: UITouch, phase: PlankNormalizedPen.Phase,
+                            viewport: PlankIPadViewport) -> Bool {
+        router.pen(phase, point: touch.location(in: self), viewport: viewport, timestamp: touch.timestamp,
+            force: Double(touch.force), maximumForce: Double(touch.maximumPossibleForce),
+            altitude: Double(touch.altitudeAngle), azimuth: Double(touch.azimuthAngle(in: self)))
     }
     private func updatePointerButtons(_ mask: Int, fallbackPrimary: Bool) {
         let raw = mask == 0 && fallbackPrimary ? 1 : mask
