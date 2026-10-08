@@ -164,6 +164,14 @@ struct PlankIPadBookmarkEditor: View {
         !host.address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         (UInt16(port) ?? 0) > 0
     }
+    private var proposedHost: HostBookmark {
+        var edited = host
+        edited.name = edited.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        edited.address = edited.address.trimmingCharacters(in: .whitespacesAndNewlines)
+        edited.port = UInt16(port) ?? host.port
+        edited.secondDisplaySize = nil
+        return edited
+    }
     var body: some View {
         NavigationStack {
             Form {
@@ -184,7 +192,7 @@ struct PlankIPadBookmarkEditor: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() }.disabled(saving) }
                 ToolbarItem(placement: .confirmationAction) { Button("Save") {
-                    if client.requiresSessionCloseForBookmark(host) { confirm = true } else { save() }
+                    if client.requiresSessionCloseForBookmark(proposedHost) { confirm = true } else { save() }
                 }.disabled(!valid || saving) }
             }
             .disabled(saving).interactiveDismissDisabled(saving)
@@ -196,11 +204,8 @@ struct PlankIPadBookmarkEditor: View {
         }
     }
     private func save() {
-        guard valid, !saving, let port = UInt16(port) else { return }
-        var edited = host
-        edited.name = edited.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        edited.address = edited.address.trimmingCharacters(in: .whitespacesAndNewlines)
-        edited.port = port; edited.secondDisplaySize = nil
+        guard valid, !saving else { return }
+        let edited = proposedHost
         saving = true
         Task {
             await client.closeSessionForBookmarkChange(edited)

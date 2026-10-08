@@ -1,6 +1,7 @@
 # Native iOS and iPadOS readiness
 
-Audit date: 2026-10-08. Status: implementation plan, not device qualification.
+Audit date: 2026-10-08. Status: input probe partially accepted; single-display
+iPad Client development candidate in progress, not production qualification.
 
 ## Recommended order
 
@@ -207,9 +208,9 @@ or a moving system cursor.
 6. **iPhone adaptation:** touch/mouse/keyboard and Relay reception after iPad
    foundation acceptance, with its own viewport and lifecycle checks.
 
-The next hardware-dependent choice is the test iPad/Pencil combination and
-external Wacom model. It selects available capabilities and the direct USB
-probe; it does not block the source/API audit or shared port planning.
+The current hardware is iPad Air 11-inch (M4), iPadOS 26.5, with Wacom Intuos
+Pro PTH-660. Pencil hardware is pending. Its model selects pressure/hover
+capabilities; it does not block finger/mouse Client work.
 
 ## Standalone probe checkpoint
 
@@ -218,10 +219,35 @@ separate UIKit app with contact accounting, actual/coalesced Pencil samples,
 force/orientation readings, optional hover, pointer/wheel and keyboard
 diagnostics. It makes no remote input or raw-Wacom capture claim. Device and
 simulator unsigned compilation and the focused terminal/order/cancellation
-checks passed on October 8. Physical input acceptance has not run.
+checks passed on October 8. Development build 1 was signed, installed and
+launched after profile/device membership verification. The user reports finger
+and mouse working. Wheel, lifecycle cancellation and Pencil are not separately
+accepted. Pencil testing is pending hardware.
 
 The connected test device reports iPad Air 11-inch (M4), iPadOS 26.5. This
 meets the documented M-series condition for a later USBDriverKit feasibility
-investigation. At inspection, Developer Mode was disabled; development
-installation and signing/provisioning remain separate from unsigned build
-evidence. Pencil and external Wacom model selection remains pending.
+investigation. The user enabled Developer Mode. PTH-660 produced no dot or
+other visible probe input over both USB and Bluetooth. This is a failed
+system-input probe, not a test of raw report capture, which the app does not
+implement. Direct Wacom support remains a separate research gate.
+
+## Single-display Client checkpoint
+
+The [separate iPad pilot](../../ios-native/README.md) adds an iPad-only target,
+independent identity/bookmarks, manual workstation entry/login, one fit desktop,
+finger/pointer, physical wheel, hardware keyboard and session controls. It
+compiles the existing shared session, video, audio and authenticated Relay
+codecs from their original source paths. No transport dependency pin is moved.
+The only shared source adaptation guards the Vision spatial-audio API to
+visionOS; no session/trust/precision/audio-clock implementation is replaced.
+
+Pencil is excluded from mouse emulation. Registered Relay enrollment/selection
+and iOS Wacom acceptance are next; compiled receiver code is not drawing
+qualification. iPhone and multiple displays are outside this first target.
+The initial pilot deployment target is iPadOS 26, separate from the input
+probe's iPadOS 18 target and from any final supported OS matrix.
+
+Focused fit/edge, held-button/key release and fractional-wheel checks pass.
+Unsigned device and simulator compilation, protected signing and remote
+desktop acceptance must be recorded independently. The shared issue-9 gates
+remain open, including unexpected-stop release forwarding and persistent trust.

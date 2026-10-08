@@ -4,7 +4,12 @@ import UIKit
 @MainActor final class PlankIPadInputRouter: ObservableObject {
     weak var surface: PlankIPadInputView?
     let client: PlankCoreClient
-    var enabled = false { didSet { if !enabled { release() } } }
+    var enabled = false {
+        didSet {
+            if !enabled { release() }
+            else if !oldValue { surface?.resumeKeyboard() }
+        }
+    }
     private var held = PlankIPadHeldInput()
     init(client: PlankCoreClient) { self.client = client }
     func pointer(_ point: CGPoint, viewport: PlankIPadViewport, dragging: Bool) -> Bool {
@@ -97,6 +102,10 @@ struct PlankIPadCanvas: UIViewRepresentable {
         video.frame = bounds
     }
     func clearContact() { activeTouch = nil; pointerButtons.removeAll(); wheel.reset() }
+    func resumeKeyboard() {
+        guard window != nil, !isFirstResponder else { return }
+        becomeFirstResponder()
+    }
     func stop() {
         router.release()
         if registered { client.unregisterVideoSurface(id: surfaceID); registered = false }

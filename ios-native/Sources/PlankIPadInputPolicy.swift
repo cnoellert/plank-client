@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 /// One fit transform owns both presentation and remote coordinates. Black
 /// margins reject new contacts; an existing drag clamps to the video edge.
@@ -11,10 +12,15 @@ struct PlankIPadViewport {
               bounds.width.isFinite, bounds.height.isFinite,
               bounds.width > 0, bounds.height > 0, width > 1, height > 1,
               width <= 65536, height <= 65536 else { return nil }
-        let scale = min(bounds.width / CGFloat(width), bounds.height / CGFloat(height))
-        rect = CGRect(x: bounds.midX - CGFloat(width) * scale / 2,
-                      y: bounds.midY - CGFloat(height) * scale / 2,
-                      width: CGFloat(width) * scale, height: CGFloat(height) * scale)
+        let aspect = CGFloat(width) / CGFloat(height)
+        let fitWidth: CGFloat, fitHeight: CGFloat
+        if bounds.width / bounds.height > aspect {
+            fitHeight = bounds.height; fitWidth = fitHeight * aspect
+        } else {
+            fitWidth = bounds.width; fitHeight = fitWidth / aspect
+        }
+        rect = CGRect(x: bounds.midX - fitWidth / 2, y: bounds.midY - fitHeight / 2,
+                      width: fitWidth, height: fitHeight)
         self.width = width; self.height = height
     }
     func map(_ point: CGPoint, held: Bool = false) -> (x: Int, y: Int)? {
