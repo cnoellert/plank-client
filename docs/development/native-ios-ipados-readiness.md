@@ -463,3 +463,23 @@ text. It remains memory-only, with no typed-text diagnostics or persistence.
 The existing immediate wire submission and hardware key ownership are unchanged.
 Focused bounded-preview and Unicode deletion checks pass. Device compile/signing
 and user preview/layout acceptance remain separate gates.
+
+## Build 11 compact native typing controls — October 8
+
+User accepted the preview, requested smaller Apple styling, and reported that
+only the custom preview/Esc/Tab were visible with Bluetooth attached. The system
+chooser route documented by Apple was not available in this surface; it is not
+an application-qualified workaround. Build 11 reduces the preview to one row
+using semantic Body typography/Dynamic Type and native input-assistant groups.
+
+A standard UITextField is now the software responder, returning false from
+committed-change delegates after live forwarding and never retaining an editable
+remote document. Hardware presses continue through the existing mapped edge
+owner. Controlled responder transfer does not cancel the keyboard request;
+controls/focus loss/hide/disconnect still retire it. Read-only focus/window/
+hardware diagnostics contain no characters. This provides UIKit's normal text
+input path, without private keyboard-forcing APIs. Bluetooth chooser/appearance,
+compact preview and absence of duplicate hardware characters require targeted
+device acceptance. Existing wheel, Pencil and Fn-held F-key acceptance carries
+forward. Impeccable product context is recorded in PRODUCT.md; the native app
+uses existing Apple semantic colors/components, not a new web theme.

@@ -150,6 +150,22 @@ Text stays in memory, is not logged/saved, and is sent live just as in build 9.
 Focused checks cover grapheme deletion, CRLF, bounded length and clearing; device
 preview/layout acceptance is pending.
 
+The user accepted build 10's preview behavior, requested a smaller native style,
+and reported that with Bluetooth connected only PLANK's accessory/keys appeared;
+the system Show Keyboard chooser was not available. The prior Apple-guide route
+therefore remains unqualified in this custom-input application.
+
+Build 11 uses one compact preview row with the system Body font and Dynamic Type,
+removing the separate heading and bespoke toolbar. Esc/Tab/Hide use native iPad
+input-assistant groups. A standard UITextField owns software typing so UIKit
+can provide its native hardware-keyboard shortcuts/chooser. It is an invisible
+responder, stores no editable remote document, and forwards committed characters
+live. Physical key edges retain the existing owner; switching responders retires
+held input once without silently hiding the keyboard request. Aggregate focus/
+hardware/window state can be logged, never typed text. Full native keyboard
+presentation with Bluetooth attached is a device acceptance gate, not a claimed
+public forcing API or proven fix. Preview is still a bounded software-text echo.
+
 No raw Wacom driver or direct Bluetooth Wacom support is claimed. PTH-660
 produced no visible probe input over USB or Bluetooth on the test iPad. The
 registered Mac/Linux Relay route is the planned first Wacom path; its codecs

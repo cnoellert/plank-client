@@ -135,6 +135,9 @@ struct PlankIPadCanvas: UIViewRepresentable {
     private var previousBounds = CGRect.zero
     private var registered = false
     private var keyboardInput: GCKeyboardInput?
+    private var transferringKeyboardFocus = false
+    private lazy var keyboardEntry = PlankIPadKeyboardEntry(router: router, surface: self)
+    private var ownsKeyboardFocus: Bool { isFirstResponder || keyboardEntry.isFirstResponder }
     private var keyboardPolicy = PlankIPadKeyboardPolicy()
     private var squeezePolicy = PlankIPadSqueezePolicy()
     var functionKeyMode: KeyboardFunctionKeyMode = .pc {
@@ -152,65 +155,51 @@ struct PlankIPadCanvas: UIViewRepresentable {
     var smartDashesType: UITextSmartDashesType = .no
     var smartInsertDeleteType: UITextSmartInsertDeleteType = .no
     private let hiddenKeyboard = UIView(frame: .zero)
-    private lazy var previewText: UITextView = {
-        let view = UITextView()
-        view.font = .monospacedSystemFont(ofSize: 24, weight: .regular)
-        view.backgroundColor = .clear
-        view.isEditable = false; view.isSelectable = false
-        view.isUserInteractionEnabled = false
-        view.textContainerInset = .zero
-        view.textContainer.lineFragmentPadding = 0
+    private lazy var previewText: UILabel = {
+        let view = UILabel()
+        view.font = .preferredFont(forTextStyle: .body)
+        view.adjustsFontForContentSizeCategory = true
+        view.numberOfLines = 1
+        view.lineBreakMode = .byTruncatingHead
         view.accessibilityLabel = "Typing preview"
         return view
     }()
     private lazy var keyboardControls: UIView = {
-        let container = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 124))
+        let container = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: previewHeight))
         container.autoresizingMask = [.flexibleWidth]
         container.backgroundColor = .secondarySystemBackground
-        let title = UILabel()
-        title.text = "Typing preview"
-        title.font = .preferredFont(forTextStyle: .caption1)
-        title.textColor = .secondaryLabel
-
-        let bar = UIToolbar(frame: CGRect(x: 0, y: 0, width: 320, height: 44))
-        bar.items = [
-            UIBarButtonItem(title: "Esc", style: .plain, target: self, action: #selector(softwareEscape)),
-            UIBarButtonItem(title: "Tab", style: .plain, target: self, action: #selector(softwareTab)),
-            UIBarButtonItem(systemItem: .flexibleSpace),
-            UIBarButtonItem(title: "Hide Keyboard", style: .done, target: self, action: #selector(hideSoftwareKeyboard))
-        ]
-        for view in [title, previewText, bar] {
-            view.translatesAutoresizingMaskIntoConstraints = false
-            container.addSubview(view)
-        }
+        previewText.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(previewText)
         NSLayoutConstraint.activate([
-            title.topAnchor.constraint(equalTo: container.topAnchor, constant: 6),
-            title.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
-            title.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
-            title.heightAnchor.constraint(equalToConstant: 18),
-            previewText.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 4),
-            previewText.leadingAnchor.constraint(equalTo: title.leadingAnchor),
-            previewText.trailingAnchor.constraint(equalTo: title.trailingAnchor),
-            previewText.heightAnchor.constraint(equalToConstant: 52),
-            bar.topAnchor.constraint(equalTo: previewText.bottomAnchor),
-            bar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            bar.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            bar.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            bar.heightAnchor.constraint(equalToConstant: 44)
+            previewText.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
+            previewText.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
+            previewText.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
+            previewText.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -8)
         ])
         return container
     }()
-    func updateTypingPreview(_ text: String) {
-        previewText.text = text.isEmpty ? "Type into the remote desktop…" : text
-        previewText.textColor = text.isEmpty ? .secondaryLabel : .label
-        if text.isEmpty { previewText.setContentOffset(.zero, animated: false) }
-        else {
-            previewText.layoutIfNeeded()
-            previewText.scrollRangeToVisible(NSRange(location: (text as NSString).length, length: 0))
+    private var previewHeight: CGFloat { max(44, UIFont.preferredFont(forTextStyle: .body).lineHeight + 16) }
+    private func configureKeyboardAssistant() {
+        let item = keyboardEntry.inputAssistantItem
+        item.allowsHidingShortcuts = !router.softwareKeyboardPresented
+        guard router.softwareKeyboardPresented else {
+            item.leadingBarButtonGroups = []; item.trailingBarButtonGroups = []
+            return
         }
+        let escape = UIBarButtonItem(title: "Esc", style: .plain, target: self, action: #selector(softwareEscape))
+        let tab = UIBarButtonItem(title: "Tab", style: .plain, target: self, action: #selector(softwareTab))
+        item.leadingBarButtonGroups = [UIBarButtonItemGroup(barButtonItems: [escape, tab], representativeItem: nil)]
+        let hide = UIBarButtonItem(image: UIImage(systemName: "keyboard.chevron.compact.down"),
+            style: .plain, target: self, action: #selector(hideSoftwareKeyboard))
+        hide.accessibilityLabel = "Hide Keyboard"
+        item.trailingBarButtonGroups = [UIBarButtonItemGroup(barButtonItems: [hide], representativeItem: nil)]
     }
-    override var inputView: UIView? { router.softwareKeyboardPresented ? nil : hiddenKeyboard }
-    override var inputAccessoryView: UIView? { router.softwareKeyboardPresented ? keyboardControls : nil }
+    func updateTypingPreview(_ text: String) {
+        previewText.text = text.isEmpty ? "Type into the remote desktop…" : text.replacingOccurrences(of: "\n", with: " ↵ ").replacingOccurrences(of: "\t", with: " ⇥ ")
+        previewText.textColor = text.isEmpty ? .secondaryLabel : .label
+    }
+    override var inputView: UIView? { hiddenKeyboard }
+
     func insertText(_ text: String) {
         guard isFirstResponder else { return }
         router.softwareText(text)
@@ -224,8 +213,22 @@ struct PlankIPadCanvas: UIViewRepresentable {
     @objc private func hideSoftwareKeyboard() { router.setSoftwareKeyboardPresented(false) }
     func refreshSoftwareKeyboard() {
         guard window != nil else { return }
-        reloadInputViews()
-        if router.enabled { resumeKeyboard() }
+        previewText.font = .preferredFont(forTextStyle: .body)
+        keyboardControls.frame.size.height = previewHeight
+        configureKeyboardAssistant()
+        transferringKeyboardFocus = true
+        defer { transferringKeyboardFocus = false }
+        keyboardEntry.inputAccessoryView = router.softwareKeyboardPresented ? keyboardControls : nil
+        if router.softwareKeyboardPresented {
+            keyboardEntry.becomeFirstResponder()
+            keyboardEntry.reloadInputViews()
+        } else {
+            keyboardEntry.resignFirstResponder()
+            if router.enabled { resumeKeyboard() }
+            reloadInputViews()
+        }
+        // Presentation/focus evidence only; never record typed characters.
+        NSLog("PLANK iPad keyboard requested=%d textResponder=%d keyWindow=%d hardware=%d", router.softwareKeyboardPresented, keyboardEntry.isFirstResponder, window?.isKeyWindow == true, keyboardInput != nil)
     }
     private var viewport: PlankIPadViewport? {
         guard let dimensions else { return nil }
@@ -237,6 +240,13 @@ struct PlankIPadCanvas: UIViewRepresentable {
         backgroundColor = .black
         isMultipleTouchEnabled = true
         addSubview(video)
+        // A normal text responder lets UIKit supply its keyboard chooser with
+        // hardware attached. It stores no document and is not a visible field.
+        keyboardEntry.frame = CGRect(x: 0, y: 0, width: 1, height: 1)
+        addSubview(keyboardEntry)
+        registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { (view: PlankIPadInputView, _: UITraitCollection) in
+            if view.router.softwareKeyboardPresented { view.refreshSoftwareKeyboard() }
+        }
         let hover = UIHoverGestureRecognizer(target: self, action: #selector(hovered(_:)))
         hover.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.indirectPointer.rawValue)]
         hover.cancelsTouchesInView = false
@@ -279,7 +289,7 @@ struct PlankIPadCanvas: UIViewRepresentable {
                 self?.video.display(frame)
             }, cursor: { [weak self] cursor in self?.video.displayCursor(cursor) },
             cursorShape: { [weak self] shape in self?.video.displayCursorShape(shape) })
-        becomeFirstResponder()
+        resumeKeyboard()
     }
     func updateDimensions(_ next: PlankFrameDimensions?) {
         if next != dimensions { router.release() }
@@ -297,6 +307,7 @@ struct PlankIPadCanvas: UIViewRepresentable {
     @objc private func keyboardChanged() {
         router.release()
         attachKeyboard()
+        if router.softwareKeyboardPresented { refreshSoftwareKeyboard() }
     }
     private func attachKeyboard() {
         keyboardInput?.keyChangedHandler = nil
@@ -306,7 +317,7 @@ struct PlankIPadCanvas: UIViewRepresentable {
             // GCDevice delivers on the main queue selected above, so key edges
             // remain ordered with pointer/pen events and focus changes.
             MainActor.assumeIsolated {
-                guard let self, self.router.enabled, self.isFirstResponder,
+                guard let self, self.router.enabled, self.ownsKeyboardFocus,
                       let input = self.keyboardInput, input === source else { return }
                 var modifiers: UInt8 = 0
                 for (left, right, mask) in [(0xE1, 0xE5, UInt8(1)), (0xE0, 0xE4, 2),
@@ -345,8 +356,19 @@ struct PlankIPadCanvas: UIViewRepresentable {
     }
 
     func resumeKeyboard() {
-        guard window != nil, !isFirstResponder else { return }
-        becomeFirstResponder()
+        guard window != nil else { return }
+        if router.softwareKeyboardPresented {
+            if !keyboardEntry.isFirstResponder {
+                transferringKeyboardFocus = true
+                keyboardEntry.becomeFirstResponder()
+                transferringKeyboardFocus = false
+            }
+        } else if !isFirstResponder { becomeFirstResponder() }
+    }
+    func softwareKeyboardResigned() {
+        guard !transferringKeyboardFocus else { return }
+        router.setSoftwareKeyboardPresented(false)
+        router.release()
     }
     func stop() {
         router.setSoftwareKeyboardPresented(false)
@@ -358,8 +380,10 @@ struct PlankIPadCanvas: UIViewRepresentable {
         if router.surface === self { router.surface = nil }
     }
     override func resignFirstResponder() -> Bool {
-        router.setSoftwareKeyboardPresented(false)
-        router.release()
+        if !transferringKeyboardFocus {
+            router.setSoftwareKeyboardPresented(false)
+            router.release()
+        }
         return super.resignFirstResponder()
     }
     @objc private func hovered(_ gesture: UIHoverGestureRecognizer) {
@@ -422,7 +446,7 @@ struct PlankIPadCanvas: UIViewRepresentable {
             // Space + pen drag. Keys keep their real hardware up edge.
             router.preparePencilContact()
             if sendPencil(touch, phase: .down, viewport: viewport) { activeTouch = touch }
-            if !isFirstResponder { becomeFirstResponder() }
+            resumeKeyboard()
             return
         }
         guard activeTouch == nil, let viewport,
@@ -432,7 +456,7 @@ struct PlankIPadCanvas: UIViewRepresentable {
         if touch.type == .indirectPointer {
             updatePointerButtons(event?.buttonMask.rawValue ?? 0, fallbackPrimary: true)
         } else { router.button(1, pressed: true) }
-        if !isFirstResponder { becomeFirstResponder() }
+        resumeKeyboard()
     }
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = activeTouch, touches.contains(touch), let viewport else { return }
@@ -521,4 +545,49 @@ private func plankIPadModifiers(for flags: UIKeyModifierFlags) -> UInt8 {
     if flags.contains(.alternate) { modifiers |= 4 }
     if flags.contains(.command) { modifiers |= 8 }
     return modifiers
+}
+
+
+@MainActor private final class PlankIPadKeyboardEntry: UITextField, UITextFieldDelegate {
+    private let router: PlankIPadInputRouter
+    private weak var surface: PlankIPadInputView?
+    init(router: PlankIPadInputRouter, surface: PlankIPadInputView) {
+        self.router = router; self.surface = surface
+        super.init(frame: .zero)
+        delegate = self
+        textColor = .clear; tintColor = .clear; backgroundColor = .clear
+        borderStyle = .none
+        isAccessibilityElement = false
+        autocorrectionType = .no; autocapitalizationType = .none
+        spellCheckingType = .no; smartQuotesType = .no; smartDashesType = .no
+        smartInsertDeleteType = .no
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    override var hasText: Bool { true }
+    override func caretRect(for position: UITextPosition) -> CGRect { .zero }
+    func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange, replacementString string: String) -> Bool {
+        if string.isEmpty { router.softwareKey(0x08) }
+        else { router.softwareText(string) }
+        return false // Already sent live; never retain a local editable document.
+    }
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        router.softwareKey(0x0D)
+        return false
+    }
+    override func deleteBackward() { router.softwareKey(0x08) }
+    override var keyCommands: [UIKeyCommand]? { surface?.keyCommands }
+    override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        surface?.pressesBegan(presses, with: event)
+    }
+    override func pressesEnded(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        surface?.pressesEnded(presses, with: event)
+    }
+    override func pressesCancelled(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        surface?.pressesCancelled(presses, with: event)
+    }
+    override func resignFirstResponder() -> Bool {
+        let resigned = super.resignFirstResponder()
+        if resigned { surface?.softwareKeyboardResigned() }
+        return resigned
+    }
 }
