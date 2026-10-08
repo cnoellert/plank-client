@@ -166,6 +166,20 @@ hardware/window state can be logged, never typed text. Full native keyboard
 presentation with Bluetooth attached is a device acceptance gate, not a claimed
 public forcing API or proven fix. Preview is still a bounded software-text echo.
 
+
+The user confirmed build 11 can display a floating keyboard with the Bluetooth
+Magic Keyboard connected and expand it to full size using two fingers. This
+qualifies that presentation route, not software/hardware typing coexistence.
+The user then reported the accessory preview drifting after a floating/full-size
+round trip. Build 12 makes the preview an app-owned view constrained to UIKit's
+keyboard layout guide, with `followsUndockedKeyboard` enabled. It follows the
+keyboard's width/position, stays within the canvas, and moves below a floating
+keyboard near the top edge where there is no space above. Esc/Tab/Hide remain
+in the native assistant. Preview hit areas do not forward input to the desktop.
+No keyboard accessory or keyboard-frame notification offsets are retained.
+Mode round trips, floating movement and rotation require device acceptance.
+See [Apple's keyboard layout example](https://developer.apple.com/documentation/uikit/adjusting-your-layout-with-keyboard-layout-guide).
+
 No raw Wacom driver or direct Bluetooth Wacom support is claimed. PTH-660
 produced no visible probe input over USB or Bluetooth on the test iPad. The
 registered Mac/Linux Relay route is the planned first Wacom path; its codecs

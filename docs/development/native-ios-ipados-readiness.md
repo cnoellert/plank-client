@@ -483,3 +483,25 @@ compact preview and absence of duplicate hardware characters require targeted
 device acceptance. Existing wheel, Pencil and Fn-held F-key acceptance carries
 forward. Impeccable product context is recorded in PRODUCT.md; the native app
 uses existing Apple semantic colors/components, not a new web theme.
+
+
+## Build 12 keyboard preview positioning — October 8
+
+Build 11 presentation passed with the Bluetooth Magic Keyboard still connected:
+the floating keyboard expanded to full size. The user reported that minimizing
+and expanding it again moved the text preview away from the keyboard. The
+preview was still a UIKit keyboard accessory with its own frame/autoresizing.
+
+Build 12 removes that accessory and places the read-only preview in the canvas's
+Auto Layout hierarchy. The public keyboard layout guide follows undocked/floating
+keyboards; its width/center and tracking constraints place the preview above the
+keyboard, or below when close to the top. Required canvas bounds prevent it from
+leaving the app when floating near an edge. Semantic typography/Dynamic Type and
+native Esc/Tab/Hide remain. Preview areas reject remote contact, hover, squeeze
+and scroll initiation. Live text/mapping/preview policy and hardware ownership
+are unchanged. No private API, manual screen-space offset or extra Host change.
+
+[Apple keyboard layout sample](https://developer.apple.com/documentation/uikit/adjusting-your-layout-with-keyboard-layout-guide)
+is the implementation reference. Compilation does not qualify floating/full-size
+round trips, movement, rotation or keyboard typing coexistence; these remain the
+targeted device gates. Accepted wheel/Pencil tests need not be repeated.

@@ -165,8 +165,9 @@ struct PlankIPadCanvas: UIViewRepresentable {
         return view
     }()
     private lazy var keyboardControls: UIView = {
-        let container = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: previewHeight))
-        container.autoresizingMask = [.flexibleWidth]
+        let container = UIControl()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.isHidden = true
         container.backgroundColor = .secondarySystemBackground
         previewText.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(previewText)
@@ -178,6 +179,7 @@ struct PlankIPadCanvas: UIViewRepresentable {
         ])
         return container
     }()
+    private var previewHeightConstraint: NSLayoutConstraint?
     private var previewHeight: CGFloat { max(44, UIFont.preferredFont(forTextStyle: .body).lineHeight + 16) }
     private func configureKeyboardAssistant() {
         let item = keyboardEntry.inputAssistantItem
@@ -214,11 +216,13 @@ struct PlankIPadCanvas: UIViewRepresentable {
     func refreshSoftwareKeyboard() {
         guard window != nil else { return }
         previewText.font = .preferredFont(forTextStyle: .body)
-        keyboardControls.frame.size.height = previewHeight
+        previewHeightConstraint?.constant = previewHeight
+        keyboardControls.isHidden = !router.softwareKeyboardPresented
         configureKeyboardAssistant()
         transferringKeyboardFocus = true
         defer { transferringKeyboardFocus = false }
-        keyboardEntry.inputAccessoryView = router.softwareKeyboardPresented ? keyboardControls : nil
+        // The preview is app-owned, not an accessory reparented by UIKit when
+        // the system keyboard switches between floating and docked modes.
         if router.softwareKeyboardPresented {
             keyboardEntry.becomeFirstResponder()
             keyboardEntry.reloadInputViews()
@@ -229,6 +233,36 @@ struct PlankIPadCanvas: UIViewRepresentable {
         }
         // Presentation/focus evidence only; never record typed characters.
         NSLog("PLANK iPad keyboard requested=%d textResponder=%d keyWindow=%d hardware=%d", router.softwareKeyboardPresented, keyboardEntry.isFirstResponder, window?.isKeyWindow == true, keyboardInput != nil)
+    }
+    private func installTypingPreview() {
+        addSubview(keyboardControls)
+        let guide = keyboardLayoutGuide
+        guide.followsUndockedKeyboard = true
+        let height = keyboardControls.heightAnchor.constraint(equalToConstant: previewHeight)
+        previewHeightConstraint = height
+        // Keep the preview in this view's coordinate space. The guide updates
+        // with docking, undocking, floating movement and keyboard animation.
+        let width = keyboardControls.widthAnchor.constraint(equalTo: guide.widthAnchor)
+        let center = keyboardControls.centerXAnchor.constraint(equalTo: guide.centerXAnchor)
+        let above = keyboardControls.bottomAnchor.constraint(equalTo: guide.topAnchor)
+        let below = keyboardControls.topAnchor.constraint(equalTo: guide.bottomAnchor)
+        for constraint in [width, center, above, below] { constraint.priority = .defaultHigh }
+        let minimumWidth = keyboardControls.widthAnchor.constraint(greaterThanOrEqualToConstant: 160)
+        minimumWidth.priority = UILayoutPriority(740)
+        NSLayoutConstraint.activate([
+            height, width, center, minimumWidth,
+            keyboardControls.leadingAnchor.constraint(greaterThanOrEqualTo: safeAreaLayoutGuide.leadingAnchor),
+            keyboardControls.trailingAnchor.constraint(lessThanOrEqualTo: safeAreaLayoutGuide.trailingAnchor),
+            keyboardControls.topAnchor.constraint(greaterThanOrEqualTo: safeAreaLayoutGuide.topAnchor),
+            keyboardControls.bottomAnchor.constraint(lessThanOrEqualTo: safeAreaLayoutGuide.bottomAnchor)
+        ])
+        // A floating keyboard near the top leaves no room above it. Keep the
+        // preview adjacent below it; returning away from that edge restores it.
+        guide.setConstraints([above], activeWhenAwayFrom: .top)
+        guide.setConstraints([below], activeWhenNearEdge: .top)
+    }
+    private func isTypingPreview(_ point: CGPoint) -> Bool {
+        !keyboardControls.isHidden && keyboardControls.frame.contains(point)
     }
     private var viewport: PlankIPadViewport? {
         guard let dimensions else { return nil }
@@ -244,6 +278,7 @@ struct PlankIPadCanvas: UIViewRepresentable {
         // hardware attached. It stores no document and is not a visible field.
         keyboardEntry.frame = CGRect(x: 0, y: 0, width: 1, height: 1)
         addSubview(keyboardEntry)
+        installTypingPreview()
         registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { (view: PlankIPadInputView, _: UITraitCollection) in
             if view.router.softwareKeyboardPresented { view.refreshSoftwareKeyboard() }
         }
@@ -349,7 +384,7 @@ struct PlankIPadCanvas: UIViewRepresentable {
         guard squeezePolicy.click(ended: squeeze.phase == .ended, timestamp: squeeze.timestamp,
             enabled: router.enabled, touching: router.pencilTouching,
             heldButtons: router.hasHeldButtons,
-            hasPosition: position.flatMap { viewport.map($0) } != nil), let position else { return }
+            hasPosition: position.flatMap { isTypingPreview($0) ? nil : viewport.map($0) } != nil), let position else { return }
         guard router.pointer(position, viewport: viewport, dragging: false) else { return }
         router.button(3, pressed: true)
         router.button(3, pressed: false)
@@ -387,14 +422,16 @@ struct PlankIPadCanvas: UIViewRepresentable {
         return super.resignFirstResponder()
     }
     @objc private func hovered(_ gesture: UIHoverGestureRecognizer) {
-        guard gesture.state == .began || gesture.state == .changed, let viewport else { return }
+        guard gesture.state == .began || gesture.state == .changed, let viewport,
+              !isTypingPreview(gesture.location(in: self)) else { return }
         _ = router.pointer(gesture.location(in: self), viewport: viewport,
                            dragging: activeTouch != nil, suppressStationary: true)
     }
     @objc private func pencilHovered(_ gesture: UIHoverGestureRecognizer) {
         guard activeTouch == nil, let viewport else { return }
         if gesture.state == .began || gesture.state == .changed {
-            guard viewport.normalized(gesture.location(in: self)) != nil else {
+            guard !isTypingPreview(gesture.location(in: self)),
+                  viewport.normalized(gesture.location(in: self)) != nil else {
                 router.retirePencil(); return
             }
             _ = router.pen(.hover, point: gesture.location(in: self), viewport: viewport,
@@ -409,7 +446,8 @@ struct PlankIPadCanvas: UIViewRepresentable {
             wheelBlocked += 1; publishWheelDiagnosticsIfDue()
             gesture.setTranslation(.zero, in: self); wheel.reset(); return
         }
-        guard router.enabled, !router.pencilTouching, let viewport,
+        guard router.enabled, !router.pencilTouching,
+              !isTypingPreview(gesture.location(in: self)), let viewport,
               viewport.map(gesture.location(in: self)) != nil else {
             wheelBlocked += 1; publishWheelDiagnosticsIfDue()
             gesture.setTranslation(.zero, in: self); wheel.reset(); return
@@ -441,7 +479,8 @@ struct PlankIPadCanvas: UIViewRepresentable {
     }
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         if let touch = touches.first(where: { $0.type == .pencil }), let viewport {
-            guard viewport.normalized(touch.location(in: self)) != nil else { return }
+            guard !isTypingPreview(touch.location(in: self)),
+                  viewport.normalized(touch.location(in: self)) != nil else { return }
             // Retire pointer ownership without releasing held shortcuts such as
             // Space + pen drag. Keys keep their real hardware up edge.
             router.preparePencilContact()
@@ -451,6 +490,7 @@ struct PlankIPadCanvas: UIViewRepresentable {
         }
         guard activeTouch == nil, let viewport,
               let touch = touches.first(where: { $0.type == .direct || $0.type == .indirectPointer }),
+              !isTypingPreview(touch.location(in: self)),
               router.pointer(touch.location(in: self), viewport: viewport, dragging: false) else { return }
         activeTouch = touch
         if touch.type == .indirectPointer {
