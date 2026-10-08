@@ -1,0 +1,9 @@
+PLANK Vision 0.1.0 (37)
+
+This checkpoint adds stereo workstation audio, live volume/mute and bitrate controls, a registered Relay picker, hardware video recovery, raw mouse input, adjustable mouse speed, and an Allow window resizing toggle. Session controls open from the top of the desktop.
+
+For uninterrupted mouse control, leave window resizing off. Relay setup and authorization belong in PLANK AVP Relay Setup; PLANK selects an already registered Relay and draws over its network route.
+
+Known issue: after changing workstation resolution or frame rate, pen tip clicks or buttons may fail on the first connection. Disconnect and reconnect once more. One smaller-to-larger resolution change worked without this workaround; mode-change recovery is not yet reliable. Saving a mode change closes the Client connection and retained login, not the Linux graphical desktop.
+
+Please check audio stereo/sync, mute and volume, mouse movement and clicks at the edges, pressure and buttons, and reconnect behavior. Brief playback stutters remain under investigation. Long sessions and sleep/wake remain qualification work.
