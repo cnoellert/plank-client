@@ -91,12 +91,15 @@ A signed Client consent check, Linux receiver/application, desktop/audio/Wacom
 concurrency and the product lifetime gates remain separate acceptance work.
 
 The first built-in Mac camera attempt passed the permission gate but rejected
-the capture format before producing any frames. This is an unresolved physical
-source failure, not a qualification pass. Test build 2 reports the failing setup
+the capture format before producing any frames. Test build 2 reports the failing setup
 step or the delivered dimensions, pixel format, color metadata or clock check.
 It retains the strict format policy; diagnostic metadata never includes camera
 identifiers or image contents. Retry requires the operator to press Start again.
 The diagnostic retry identified 1920 × 1080 output despite selection of a 720p
 input mode/preset. Test build 3 requests explicit 1280 × 720 output dimensions
 through AVFoundation's uncompressed `videoSettings`, retaining strict validation
-of delivered size, limited-range NV12 and BT.709. Its physical retry is pending.
+of delivered size, limited-range NV12 and BT.709. The operator's built-in MacBook
+Pro camera retry passed: the screenshot shows 147 frames, five independent
+recovery frames and 123.2 ms maximum age. A later saved passing report contains
+83 frames, three independent frames, no invalid records and 140.9 ms maximum age.
+These are separate local runs; neither forwards images to a product Host.

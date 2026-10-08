@@ -174,7 +174,18 @@ records for the root test runner's optional `--encoded-records` /
 `--received-payload` test. The prefix is test-file framing, not a network contract.
 Neither test opens a camera, requests permission or connects to a product session.
 
-Open gates: physical-camera format/consent and loss testing; authenticated product
+The standalone build-3 physical source test passed with the built-in MacBook Pro
+camera after explicitly requesting 1280 × 720 output buffers. The operator's
+screenshot records 147 frames and five independent recovery frames in the local
+five-second test, maximum age 123.2 ms. A later saved passing run records 83
+frames, three independent frames, zero invalid records and maximum age 140.9 ms.
+Only counts/timing were retained. This qualifies that local source/encoder path
+under the separate test app identity, not product forwarding or distributed-app
+permissions. Camera integration is checkpointed while native Client upstream
+integration proceeds.
+
+Open gates: additional physical sources and loss testing; distributed Client consent;
+authenticated product
 capability/activation wiring; Linux Host receiver/device adapter and package policy;
 actual camera-consuming application, concurrent desktop/audio/Wacom and interruptions.
 The existing Host input-backpressure experiment remains held.
