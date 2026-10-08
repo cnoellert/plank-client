@@ -125,8 +125,15 @@ def prepare(inputs, args):
         source = source_parent / entry["directory"]
         verify_source(archive, source, entry)
         if name == "ffmpeg":
-            run(["git", "apply", "--check", REPOSITORY / patch["path"]], source)
-            run(["git", "apply", REPOSITORY / patch["path"]], source)
+            if args.platform == "macos":
+                # Preserve the maintained patch bytes/attribution. FFmpeg 9.0.1
+                # changed surrounding context; the full expected file hash below
+                # is the authority, not patch's context matching alone.
+                run(["patch", "--batch", "--forward", "-V", "none", "-p1", "-i",
+                     REPOSITORY / patch["path"]], source)
+            else:
+                run(["git", "apply", "--check", REPOSITORY / patch["path"]], source)
+                run(["git", "apply", REPOSITORY / patch["path"]], source)
             verify_source(archive, source, entry, patch["modified_files"])
     for name, path in git_paths(args.work, args.platform).items():
         # An uninitialized gitlink is an empty directory after checking out the root.
