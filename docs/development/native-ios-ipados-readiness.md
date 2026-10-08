@@ -210,3 +210,18 @@ or a moving system cursor.
 The next hardware-dependent choice is the test iPad/Pencil combination and
 external Wacom model. It selects available capabilities and the direct USB
 probe; it does not block the source/API audit or shared port planning.
+
+## Standalone probe checkpoint
+
+The [local iPad input probe](../../experiments/ipad-input-probe/README.md) is a
+separate UIKit app with contact accounting, actual/coalesced Pencil samples,
+force/orientation readings, optional hover, pointer/wheel and keyboard
+diagnostics. It makes no remote input or raw-Wacom capture claim. Device and
+simulator unsigned compilation and the focused terminal/order/cancellation
+checks passed on October 8. Physical input acceptance has not run.
+
+The connected test device reports iPad Air 11-inch (M4), iPadOS 26.5. This
+meets the documented M-series condition for a later USBDriverKit feasibility
+investigation. At inspection, Developer Mode was disabled; development
+installation and signing/provisioning remain separate from unsigned build
+evidence. Pencil and external Wacom model selection remains pending.
