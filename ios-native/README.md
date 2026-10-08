@@ -109,7 +109,13 @@ possible source of XTEST/uinput alternation. It compares exact remote pixels,
 without smoothing, and preserves contact/button positioning. Pen handoff, focus
 and geometry changes reset the comparison. Scroll diagnostics include pointer
 move and stationary-suppression counts; callback counts do not prove the cause
-or application acceptance. Wheel scale is unchanged pending this targeted check.
+or application acceptance. Wheel scale is unchanged.
+
+On October 8 the user accepted build 8 physical-wheel scrolling in gedit on
+Flame1: "Working great now." The log shows wheel submissions continuing while
+stationary hover callbacks are suppressed; during one stationary interval the
+pointer-move count stayed at 88 as scroll submissions rose from 15 to 70.
+This qualifies the tested physical wheel, not continuous or horizontal scrolling.
 
 No raw Wacom driver or direct Bluetooth Wacom support is claimed. PTH-660
 produced no visible probe input over USB or Bluetooth on the test iPad. The

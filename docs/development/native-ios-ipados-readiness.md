@@ -409,5 +409,13 @@ focus and geometry changes invalidate the stored position. Aggregate pointer
 move/stationary-suppression counters accompany the wheel diagnostics for the
 next targeted test. No wheel scale, Host or shared transport change is made.
 Policy checks cover repeated stationary callbacks, one-pixel movement, forced
-contact positioning and position restoration after reset. Device application
-scrolling acceptance remains pending.
+contact positioning and position restoration after reset.
+
+On October 8 the user accepted build 8 physical mouse-wheel scrolling in gedit
+on Flame1: "Working great now." In the stationary test interval at
+13:37:56–13:38:00 Pacific, local pointer moves stayed at 88 while scroll
+submissions increased from 15 to 70 and stationary hover suppressions increased
+from 30 to 114. These local counters support the stationary-hover explanation;
+application acceptance comes from the user's test. Preserve that pass and do
+not repeat it. Continuous/horizontal scroll, Space with Pencil drag and squeeze
+right-click remain separate pending checks.
