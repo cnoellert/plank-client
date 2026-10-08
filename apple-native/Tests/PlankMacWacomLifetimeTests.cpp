@@ -11,8 +11,7 @@
 // real bounded worker may. The test links the production C wrapper.
 static MacRawWacomInput::SendFrame lateSender;
 class MacRawWacomInput::Impl {};
-void MacRawWacomInput::requestPermissionIfNeeded() {}
-MacRawWacomInput::MacRawWacomInput(std::function<void()>, SendFrame send) { lateSender = send; }
+MacRawWacomInput::MacRawWacomInput(std::function<void()>, SendFrame send, GenerationProvider,bool) { lateSender = send; }
 MacRawWacomInput::~MacRawWacomInput() = default;
 void MacRawWacomInput::setActive(bool active) { if (!active) { unsigned char release = 13; lateSender(&release, 1); } }
 void MacRawWacomInput::handleControl(const unsigned char*, unsigned) {}
