@@ -1,7 +1,7 @@
 # Native Mac webcam: first source/sink pair
 
-Status: component proof and integration proposal; not a Client feature or Host
-release. Accepted Mac build 24 remains the runtime checkpoint. The camera lab
+Status: component proof plus isolated transport and Mac source candidates; not
+a shipping Client feature or Host release. Accepted Mac build 24 remains the runtime checkpoint. The camera lab
 does not link into either product, replace transport, capture a physical camera,
 or modify an artist's workstation.
 
@@ -134,3 +134,47 @@ No production Host package or live install is part of the component proof.
 Sources: [exact root camera contract](https://github.com/instinctual/plank/blob/66f5c2ad775b093b41c991bc120cad7913c44c8a/protocol/camera.md),
 [V4L2 output](https://docs.kernel.org/userspace-api/media/v4l/dev-output.html),
 [pinned loopback source](https://github.com/v4l2loopback/v4l2loopback/tree/0f9ee86760b7f2bea174b7e3e7a1d38845da0ab4).
+
+## Encoded source candidate — October 7, 2026
+
+[Root PR 24](https://github.com/instinctual/plank/pull/24) adds PCAM v2 alongside
+unchanged v1. Its C/Rust vectors, bounded queues, eight encrypted v1/v2 ×
+microphone × setup/direct combinations, and camera-only failure isolation passed.
+It adds explicit API version selection, not the authenticated product negotiation
+that Linux PLS1 and the native pilot still need.
+
+The Mac candidate adds an AVFoundation source with explicit device selection and
+normal consent, plus a hardware-only VideoToolbox encoder. Its capture clock is
+converted from `AVCaptureSession.synchronizationClock` to the host monotonic clock.
+The admission lock bounds pending work to two frames, rejects frames older than
+150 ms, revokes stale callbacks by activation epoch, and requires an independent
+frame after drops. Off/background/sleep/source loss revoke submission immediately;
+separate capture and encode queues drain camera-owned work without blocking Wacom.
+A failed submission consumes its wire ordinal so a transport queue drop cannot
+cause repeated-sequence failures during recovery.
+
+The generated source test produced 90 PCAM-v2 records and recovery keyframes at
+0/30/45/75. Both Core Media metadata and baseline SPS VUI must agree on 720p,
+BT.709 and limited range. Unknown/conflicting metadata is rejected. An independent
+FFmpeg decoder confirmed all 90 frames with that exact format. A TLS setup test
+then delivered the same 90 records byte for byte to a receiver endpoint, and the
+received H.264 bytes independently decoded without errors.
+
+`PLANK_MAC_CAMERA_SOURCE=ON` compiles these files in the Mac app; default is off.
+The source-enabled app compiles with SDK27 and deployment target15.0. This is an
+unsigned compile check, not an installable build or macOS15 hardware acceptance.
+No session controller instantiates the adapter yet. Caller-supplied version and
+Host acknowledgement must be bound to authenticated negotiation before UI or
+capture can be enabled. The old default build's transport pin is unchanged.
+
+Run the generated source checks with `scripts/test-macos-camera-source.py`, passing
+the reviewed transport directory, the qualified FFmpeg prefix and an output
+directory. Its `.pcam` fixture contains big-endian length-prefixed complete PCAM
+records for the root test runner's optional `--encoded-records` /
+`--received-payload` test. The prefix is test-file framing, not a network contract.
+Neither test opens a camera, requests permission or connects to a product session.
+
+Open gates: physical-camera format/consent and loss testing; authenticated product
+capability/activation wiring; Linux Host receiver/device adapter and package policy;
+actual camera-consuming application, concurrent desktop/audio/Wacom and interruptions.
+The existing Host input-backpressure experiment remains held.
