@@ -11,12 +11,12 @@
   },
   "git": {
     "root": {
-      "url": "https://github.com/instinctual/plank.git",
-      "commit": "e532a5e1691cfa62c325169b8fc29a601f544382"
+      "url": "https://github.com/cnoellert/plank.git",
+      "commit": "6c6865562713d265a657dec613f55169ccb379b2"
     },
     "kymux": {
-      "url": "https://github.com/instinctual/plank-kymux.git",
-      "commit": "4647272e43330fad3fbe31cdb60ca6127d34764a"
+      "url": "https://github.com/cnoellert/plank-kymux.git",
+      "commit": "8654cfece0fe5f3ab35177f520ca9378f6d35c24"
     },
     "raw": {
       "url": "https://github.com/cnoellert/plank-tablet-relay.git",

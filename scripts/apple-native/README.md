@@ -41,11 +41,20 @@ Do not resolve this distinction by silently using a moving `stable` toolchain.
 | FFmpeg | 9.0.1 | Shared on Mac, static on Vision; verified platform patch |
 | libopus | 1.6.1 | Static, float API, optional neural extensions disabled |
 | libsodium | 1.0.22 | Static; Mac assembly disabled as in the retained build |
-| Parent transport | `e532a5e1691cfa62c325169b8fc29a601f544382` | Native Cargo target only |
-| Kymux | `4647272e43330fad3fbe31cdb60ca6127d34764a` | Exact parent gitlink |
+| Parent transport | `6c6865562713d265a657dec613f55169ccb379b2` | Original native parent plus reconciled Kymux gitlink only |
+| Kymux | `8654cfece0fe5f3ab35177f520ca9378f6d35c24` | Stale-video retirement plus shipping packet draining and admission regressions |
 | Drawing Relay | `029721f9b60833d36aa31f4da558cf8325e111ca` | Shared raw protocol/crypto sources |
 | Managed Relay | `73a3743e10c8031b7f5f34105d22f207e8783397` | Mac Setup codec only |
 | common-C | `060f6179f88343327b44d915007f1fb4cede71f1` | Selected Client headers; no recursive dependencies |
+
+The historical accepted builds used parent `e532a5e1691cfa62c325169b8fc29a601f544382`
+and Kymux `4647272e43330fad3fbe31cdb60ca6127d34764a`. The current recipe changes
+only that parent's Kymux gitlink. Kymux retains shipping completed-packet draining
+`3f7a9d8618978287186e5d6ce0eaa067743cb06c` and resolves incoming video groups
+after capacity eviction, including an updated retirement-boundary check.
+Object, group and byte limits are unchanged. These changed transport inputs
+require their own component/build evidence; they do not replace historical
+accepted device evidence or move native transport to current parent main.
 
 The refreshed upstream integration branch uses common-C
 `036df96f2d1577af7a1b08c05d87a5218fff7c9b`. That separate input is also declared

@@ -22,7 +22,7 @@ Wacom/scaling changes remain at the integration baseline. Directory moves into
 ## Reproducible unsigned builds
 
 Use the [public native build recipe](../../scripts/apple-native/README.md).
-Its input lock supplies public FFmpeg/Opus/libsodium archives and the original
+Its input lock supplies public FFmpeg/Opus/libsodium archives and explicit
 parent transport/Kymux/Relay source commits. Full source comparisons validate
 the selected FFmpeg patch independently before compilation. Cargo dependencies
 are fetched with the committed lockfile, then the app builds offline. Signing
@@ -35,8 +35,15 @@ recorded in build evidence. The raw-HID `src/plank.h` header is identical at
 these revisions; the upstream implementation changes are not compiled into the
 native bridge. That observation is not a Wacom device-acceptance claim.
 
-The original parent transport remains `e532a5e1691cfa62c325169b8fc29a601f544382`
-for this source build. The refreshed parent integration baseline is
+The original parent transport is `e532a5e1691cfa62c325169b8fc29a601f544382`.
+The current recipe selects `6c6865562713d265a657dec613f55169ccb379b2`, which changes
+only its Kymux gitlink to `8654cfece0fe5f3ab35177f520ca9378f6d35c24`. This narrowly
+reconciles stale-video retirement with shipping completed-packet draining,
+re-resolves incoming groups after eviction, and checks retirement advances
+before inserting media. The three admission regressions reproduced the original
+crash, wrong-group insertion and obsolete-sequence reinsertion before the fix;
+all now pass alongside the late-config audio/video draining tests. Resource
+bounds, parent protocol/ABI, lockfile and native runtime are unchanged. The refreshed parent integration baseline is
 `b26b84e377522fddacb21617a23c82def66040da`; moving native transport to it requires
 explicit contract reconciliation and verification with upstream. The protocol
 implementation is not copied into Client. Root's declared Rust 1.89 and the
