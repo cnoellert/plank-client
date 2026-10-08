@@ -1,0 +1,91 @@
+import UIKit
+
+// Existing UIKit HID-to-Windows mapping from the Vision keyboard adapter.
+func plankIPadModifiers(for flags: UIKeyModifierFlags) -> UInt8 {
+    var modifiers: UInt8 = 0
+    if flags.contains(.shift) { modifiers |= 0x01 }
+    if flags.contains(.control) { modifiers |= 0x02 }
+    if flags.contains(.alternate) { modifiers |= 0x04 }
+    if flags.contains(.command) { modifiers |= 0x08 }
+    return modifiers
+}
+
+func plankIPadVirtualKey(
+    for usage: UIKeyboardHIDUsage,
+    functionKeyMode: KeyboardFunctionKeyMode
+) -> UInt16? {
+    let key = Int(usage.rawValue)
+    if functionKeyMode == .pc {
+        switch key {
+        // visionOS reports these three top-right keys from a Windows keyboard
+        // as F13-F15. Restore the meanings printed on the physical keycaps.
+        case 0x68: return 0x2C // Print Screen
+        case 0x69: return 0x91 // Scroll Lock
+        case 0x6A: return 0x13 // Pause
+        default: break
+        }
+    }
+    if (0x04...0x1D).contains(key) {
+        return UInt16(0x41 + key - 0x04)
+    }
+    if (0x1E...0x26).contains(key) {
+        return UInt16(0x31 + key - 0x1E)
+    }
+    if key == 0x27 { return 0x30 }
+    if (0x3A...0x45).contains(key) {
+        return UInt16(0x70 + key - 0x3A)
+    }
+    if (0x59...0x61).contains(key) {
+        return UInt16(0x61 + key - 0x59)
+    }
+    if key == 0x62 { return 0x60 }
+    if (0x68...0x73).contains(key) {
+        return UInt16(0x7C + key - 0x68)
+    }
+
+    switch key {
+    case 0x28, 0x58: return 0x0D // Return and keypad Enter
+    case 0x29: return 0x1B
+    case 0x2A: return 0x08
+    case 0x2B: return 0x09
+    case 0x2C: return 0x20
+    case 0x2D: return 0xBD
+    case 0x2E: return 0xBB
+    case 0x2F: return 0xDB
+    case 0x30: return 0xDD
+    case 0x31, 0x32, 0x64: return 0xDC
+    case 0x33: return 0xBA
+    case 0x34: return 0xDE
+    case 0x35: return 0xC0
+    case 0x36: return 0xBC
+    case 0x37: return 0xBE
+    case 0x38: return 0xBF
+    case 0x39: return 0x14
+    case 0x46: return 0x2C
+    case 0x47: return 0x91
+    case 0x48: return 0x13
+    case 0x49: return 0x2D
+    case 0x4A: return 0x24
+    case 0x4B: return 0x21
+    case 0x4C: return 0x2E
+    case 0x4D: return 0x23
+    case 0x4E: return 0x22
+    case 0x4F: return 0x27
+    case 0x50: return 0x25
+    case 0x51: return 0x28
+    case 0x52: return 0x26
+    case 0x53: return 0x90
+    case 0x54: return 0x6F
+    case 0x55: return 0x6A
+    case 0x56: return 0x6D
+    case 0x57: return 0x6B
+    case 0x63: return 0x6E
+    case 0x65: return 0x5D
+    case 0xE0, 0xE4: return 0x11
+    case 0xE1, 0xE5: return 0x10
+    case 0xE2, 0xE6: return 0x12
+    case 0xE3: return 0x5B
+    case 0xE7: return 0x5C
+    default: return nil
+    }
+}
