@@ -1,3 +1,14 @@
+## 1.1.034 — Scaling quality candidate
+
+### Client
+- Use the Mac's current display resolution when choosing the stream size.
+- Smoothly reduce video in smaller Mac windows without skipping fine lines.
+- Keep the stream resolution unchanged when switching between fullscreen and windowed mode.
+
+### Host
+- Improve Linux NvFBC/NVENC downscaling with GPU area averaging, preserving RGB identity and 10-bit conversion.
+- Keep exact-size capture conversion unchanged.
+
 ## 1.1.033 — Wacom recovery candidate
 
 ### Client

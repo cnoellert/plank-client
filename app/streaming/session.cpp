@@ -2004,14 +2004,6 @@ int Session::getTargetDisplayIndex() const
 bool Session::snapshotClientDisplays()
 {
     m_ClientDisplays.clear();
-#ifdef Q_OS_DARWIN
-    bool matchMacDesktop;
-    {
-        QReadLocker lock(&m_Computer->lock);
-        matchMacDesktop = m_PlankCaptureSource == StreamingPreferences::PLANK_CAPTURE_SCREENCAPTUREKIT &&
-            m_Computer->plankHostLayout == NvOutputTopology::MatchClientHostLayout;
-    }
-#endif
     const int targetIndex = getTargetDisplayIndex();
     m_TargetDisplayId = StreamUtils::getDisplayId(targetIndex);
     const int displayCount = StreamUtils::getDisplayCount();
@@ -2019,21 +2011,16 @@ bool Session::snapshotClientDisplays()
         ClientDisplaySnapshot snapshot;
         snapshot.displayId = StreamUtils::getDisplayId(index);
         snapshot.primary = snapshot.displayId == SDL_GetPrimaryDisplay();
-        SDL_DisplayMode nativeMode;
-        SDL_Rect safeArea;
         if (snapshot.displayId == 0 ||
                 !SDL_GetDisplayBounds(snapshot.displayId,
-                                      &snapshot.logicalBounds) ||
-                !StreamUtils::getNativeDesktopMode(index, &nativeMode,
-                                                   &safeArea)) {
+                                      &snapshot.logicalBounds)) {
             SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
                          "Unable to snapshot client display %d: %s",
                          index, SDL_GetError());
             return false;
         }
-        snapshot.nativeSize = QSize(nativeMode.w, nativeMode.h);
 #ifdef Q_OS_DARWIN
-        if (matchMacDesktop) {
+        {
             SDL_DisplayMode currentMode;
             SDL_Rect matchedBounds;
             if (!StreamUtils::getMacCurrentDisplayModeForBounds(snapshot.logicalBounds,
@@ -2042,10 +2029,22 @@ bool Session::snapshotClientDisplays()
             snapshot.macMatchedBounds = QRect(matchedBounds.x, matchedBounds.y,
                                              matchedBounds.w, matchedBounds.h);
             snapshot.macBackingSize = QSize(currentMode.w, currentMode.h);
-            // Presentation tiles must share the matched backing-pixel canvas,
-            // not mix differently scaled panel-native pixel dimensions.
+            // Stream sizing and presentation must use the active backing-pixel
+            // canvas for every Host/layout, not the panel's advertised native
+            // mode. A virtual display's native mode can differ from its current
+            // size. Keep the logical bounds separately for Mac Match Client.
             snapshot.nativeSize = snapshot.macBackingSize;
         }
+#else
+        SDL_DisplayMode nativeMode;
+        SDL_Rect safeArea;
+        if (!StreamUtils::getNativeDesktopMode(index, &nativeMode, &safeArea)) {
+            SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                         "Unable to snapshot client display %d: %s",
+                         index, SDL_GetError());
+            return false;
+        }
+        snapshot.nativeSize = QSize(nativeMode.w, nativeMode.h);
 #endif
         m_ClientDisplays.append(snapshot);
     }
