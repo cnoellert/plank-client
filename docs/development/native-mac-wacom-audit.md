@@ -4,6 +4,14 @@ Source review: October 7, 2026. Native sharing runtime `16ef937`, display runtim
 `fd844b5`, based on maintained Client integration `1953cc1`. Component evidence
 and import scope are in [the slice map](native-mac-integration.md).
 
+October 8 update: foundation review fixes are carried through this stack.
+Session opt-out now retires local USB admission/capture, preserving release
+submission while its input sender is alive. The native wrapper now carries
+filtered physical activity separately from raw input, revoking both callbacks
+on destruction. See the slice map's review-correction evidence. This does not
+resolve the separate unexpected-failure ordering/Host-cleanup finding below or
+change the registered-Relay presentation path.
+
 ## Ownership boundaries
 
 | Boundary | Source behavior | Evidence / remaining qualification |

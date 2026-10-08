@@ -133,6 +133,40 @@ and upstream trust/format/audio gates remain open. Host input-backpressure
 package work remains held. This preparation changes no live installation,
 device or network settings.
 
+## October 8 foundation review corrections
+
+[Alan's two findings](https://github.com/instinctual/plank-client/pull/11#issuecomment-6052964997)
+are addressed in foundation runtime `4a20f40`, with a subsequent test-only commit
+covering USB discovery already enabled during opt-out:
+
+- Manual **Continue without tablet** and initial availability expiry use the
+  same retirement path. It immediately revokes local USB admission and selection,
+  closes capture on its worker queue, permits SUSPEND/DETACH through the still
+  live sender, and prevents captured Host/focus callbacks from reactivating that
+  instance. A new session can create a fresh capture instance.
+- The production wrapper carries the maintained worker's descriptor-filtered
+  activity callback into local USB cursor ownership. Background raw input,
+  including status traffic, still forwards unchanged but no longer selects
+  tablet ownership. Sender and activity callbacks are revoked together before
+  their Swift context can disappear. The existing registered-Relay presentation
+  path is unchanged; this correction does not introduce a Relay activity contract.
+
+The focused suites pass on all three slices: foundation/sharing policy 553,
+display policy 569, and 288 production-wrapper/Swift checks including manual
+opt-out, timeout/hotplug, focus/Host callbacks, ordered live-sender release,
+fresh capture, background status, real activity and late callback refusal.
+Restoring the old unfiltered-input behavior fails the background-status check;
+a policy/UI-only opt-out fails the late-hotplug check. Those are negative
+fixtures, not new physical hardware reproductions. The production C-wrapper
+lifetime suite also passes Clang AddressSanitizer/UndefinedBehaviorSanitizer.
+
+Fresh unsigned application builds passed for foundation Mac and the full
+display-stack Mac and Vision device targets. Previously verified public
+dependency inputs were reused with fresh app build directories; input pins and
+source patches are unchanged. Source/receipt hashes are recorded privately.
+No app was installed or launched. Wider unexpected-stream-failure/Host
+held-state cleanup, shipping CI and macOS15/27 gates remain open.
+
 ## Next independent features
 
 Capture quality remains [the separate original PR 6](https://github.com/cnoellert/plank-client/pull/6),
