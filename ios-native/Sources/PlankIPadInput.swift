@@ -6,10 +6,14 @@ import GameController
     weak var surface: PlankIPadInputView?
     let client: PlankCoreClient
     @Published private(set) var wheelDiagnostics = "Received 0 · sent 0 · blocked 0"
+    @Published private(set) var softwareKeyboardPresented = false
     func updateWheelDiagnostics(_ value: String) { wheelDiagnostics = value }
     var enabled = false {
         didSet {
-            if !enabled { surface?.publishWheelDiagnostics(); release() }
+            if !enabled {
+                setSoftwareKeyboardPresented(false)
+                surface?.publishWheelDiagnostics(); release()
+            }
             else if !oldValue { surface?.resumeKeyboard() }
         }
     }
@@ -20,6 +24,26 @@ import GameController
     var pencilTouching: Bool { pencil.touching }
     var hasHeldButtons: Bool { !held.buttons.isEmpty }
     init(client: PlankCoreClient) { self.client = client }
+    func setSoftwareKeyboardPresented(_ presented: Bool) {
+        let next = presented && enabled
+        guard next != softwareKeyboardPresented else { return }
+        release()
+        softwareKeyboardPresented = next
+        surface?.refreshSoftwareKeyboard()
+    }
+    func softwareText(_ text: String) {
+        guard enabled, softwareKeyboardPresented else { return }
+        for command in PlankIPadSoftwareKeyboard.commands(for: text) {
+            switch command {
+            case let .key(code, modifiers): client.pressKey(code: code, modifiers: modifiers)
+            case let .text(value): client.sendText(value)
+            }
+        }
+    }
+    func softwareKey(_ code: UInt16) {
+        guard enabled, softwareKeyboardPresented else { return }
+        client.pressKey(code: code)
+    }
     func pointer(_ point: CGPoint, viewport: PlankIPadViewport, dragging: Bool,
                  suppressStationary: Bool = false) -> Bool {
         guard !pencil.touching else { return false }
@@ -87,7 +111,7 @@ struct PlankIPadCanvas: UIViewRepresentable {
     static func dismantleUIView(_ view: PlankIPadInputView, coordinator: ()) { view.stop() }
 }
 
-@MainActor final class PlankIPadInputView: UIView, UIPencilInteractionDelegate {
+@MainActor final class PlankIPadInputView: UIView, UIPencilInteractionDelegate, UIKeyInput {
     private let client: PlankCoreClient
     private let router: PlankIPadInputRouter
     private let video = PlankIPadVideoView(frame: .zero)
@@ -111,6 +135,44 @@ struct PlankIPadCanvas: UIViewRepresentable {
     }
 
     override var canBecomeFirstResponder: Bool { true }
+    // There is no local document. Permit Backspace against the remote text,
+    // even when this view has never received a character itself.
+    var hasText: Bool { true }
+    var autocorrectionType: UITextAutocorrectionType = .no
+    var autocapitalizationType: UITextAutocapitalizationType = .none
+    var spellCheckingType: UITextSpellCheckingType = .no
+    var smartQuotesType: UITextSmartQuotesType = .no
+    var smartDashesType: UITextSmartDashesType = .no
+    var smartInsertDeleteType: UITextSmartInsertDeleteType = .no
+    private let hiddenKeyboard = UIView(frame: .zero)
+    private lazy var keyboardControls: UIToolbar = {
+        let bar = UIToolbar(frame: CGRect(x: 0, y: 0, width: 320, height: 44))
+        bar.items = [
+            UIBarButtonItem(title: "Esc", style: .plain, target: self, action: #selector(softwareEscape)),
+            UIBarButtonItem(title: "Tab", style: .plain, target: self, action: #selector(softwareTab)),
+            UIBarButtonItem(systemItem: .flexibleSpace),
+            UIBarButtonItem(title: "Hide Keyboard", style: .done, target: self, action: #selector(hideSoftwareKeyboard))
+        ]
+        return bar
+    }()
+    override var inputView: UIView? { router.softwareKeyboardPresented ? nil : hiddenKeyboard }
+    override var inputAccessoryView: UIView? { router.softwareKeyboardPresented ? keyboardControls : nil }
+    func insertText(_ text: String) {
+        guard isFirstResponder else { return }
+        router.softwareText(text)
+    }
+    func deleteBackward() {
+        guard isFirstResponder else { return }
+        router.softwareKey(0x08)
+    }
+    @objc private func softwareEscape() { router.softwareKey(0x1B) }
+    @objc private func softwareTab() { router.softwareKey(0x09) }
+    @objc private func hideSoftwareKeyboard() { router.setSoftwareKeyboardPresented(false) }
+    func refreshSoftwareKeyboard() {
+        guard window != nil else { return }
+        reloadInputViews()
+        if router.enabled { resumeKeyboard() }
+    }
     private var viewport: PlankIPadViewport? {
         guard let dimensions else { return nil }
         return PlankIPadViewport(bounds: bounds, width: dimensions.width, height: dimensions.height)
@@ -233,6 +295,7 @@ struct PlankIPadCanvas: UIViewRepresentable {
         becomeFirstResponder()
     }
     func stop() {
+        router.setSoftwareKeyboardPresented(false)
         router.release()
         NotificationCenter.default.removeObserver(self)
         keyboardInput?.keyChangedHandler = nil
@@ -241,6 +304,7 @@ struct PlankIPadCanvas: UIViewRepresentable {
         if router.surface === self { router.surface = nil }
     }
     override func resignFirstResponder() -> Bool {
+        router.setSoftwareKeyboardPresented(false)
         router.release()
         return super.resignFirstResponder()
     }

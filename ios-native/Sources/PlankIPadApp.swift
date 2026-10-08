@@ -23,7 +23,6 @@ struct PlankIPadRoot: View {
     @State private var add = false
     @State private var editing: HostBookmark?
     @State private var controls = false
-    @State private var textEntry = false
     @State private var username = ""
     @State private var password = ""
     @AppStorage("plank.ipad.showSessionToolbar") private var showToolbar = true
@@ -92,7 +91,9 @@ struct PlankIPadRoot: View {
             .toolbar {
                 if client.hasActiveDesktopSession {
                     ToolbarItemGroup(placement: .topBarTrailing) {
-                        Button { textEntry = true } label: { Label("Send Text", systemImage: "keyboard") }
+                        Button { router.setSoftwareKeyboardPresented(!router.softwareKeyboardPresented) } label: {
+                            Label(router.softwareKeyboardPresented ? "Hide Keyboard" : "Show Keyboard", systemImage: "keyboard")
+                        }
                         Button { controls = true } label: { Label("Session Controls", systemImage: "slider.horizontal.3") }
                         Button { setToolbarVisible(false) } label: { Label("Hide Toolbar", systemImage: "chevron.up") }
                         Button("Disconnect") { disconnect() }.disabled(client.isClosingSession)
@@ -109,11 +110,9 @@ struct PlankIPadRoot: View {
         .sheet(isPresented: $add) { PlankIPadBookmarkEditor(store: store, client: client, host: .init(name: "", address: "", spatialDisplaySize: PlankIPadDisplayOptions.defaultSize), isNew: true) }
         .sheet(item: $editing) { host in PlankIPadBookmarkEditor(store: store, client: client, host: host, isNew: false) }
         .sheet(isPresented: $controls) { PlankIPadControls(client: client, router: router) }
-        .sheet(isPresented: $textEntry) { PlankIPadTextEntry(client: client) }
         .onAppear { selectedID = store.hosts.first?.id; updateAdmission() }
         .onChange(of: store.hosts) { _, hosts in if selectedID == nil { selectedID = hosts.first?.id } }
         .onChange(of: controls) { _, _ in updateAdmission() }
-        .onChange(of: textEntry) { _, _ in updateAdmission() }
         .onChange(of: client.phase) { _, _ in updateAdmission() }
         .onChange(of: scenePhase) { _, phase in
             updateAdmission()
@@ -155,7 +154,7 @@ struct PlankIPadRoot: View {
     private func disconnect() {
         router.enabled = false
         client.setTabletActive(false)
-        controls = false; textEntry = false
+        controls = false
         client.reset()
     }
     private func setToolbarVisible(_ visible: Bool) {
@@ -172,7 +171,7 @@ struct PlankIPadRoot: View {
         let foreground = scenePhase == .active
         let streaming: Bool
         if case .streaming = client.phase { streaming = true } else { streaming = false }
-        router.enabled = foreground && streaming && !controls && !textEntry
+        router.enabled = foreground && streaming && !controls
         client.setTabletActive(foreground && client.hasActiveDesktopSession)
         PlankAudioOutput.shared.setSceneActive(foreground)
     }
@@ -304,21 +303,4 @@ struct PlankIPadControls: View {
         }
     }
     private func applyAudio() { PlankAudioOutput.shared.setVolume(Float(volume), muted: muted) }
-}
-
-struct PlankIPadTextEntry: View {
-    @ObservedObject var client: PlankCoreClient
-    @Environment(\.dismiss) private var dismiss
-    @State private var text = ""
-    var body: some View {
-        NavigationStack {
-            Form {
-                TextField("Text to send", text: $text).textInputAutocapitalization(.never).autocorrectionDisabled()
-                Button("Send Text") { client.sendText(text); text = ""; dismiss() }.disabled(text.isEmpty)
-                Button("Return") { client.pressKey(code: 0x0D); dismiss() }
-                Button("Escape") { client.pressKey(code: 0x1B); dismiss() }
-            }.navigationTitle("Keyboard")
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
-        }
-    }
 }

@@ -417,5 +417,30 @@ on Flame1: "Working great now." In the stationary test interval at
 submissions increased from 15 to 70 and stationary hover suppressions increased
 from 30 to 114. These local counters support the stationary-hover explanation;
 application acceptance comes from the user's test. Preserve that pass and do
-not repeat it. Continuous/horizontal scroll, Space with Pencil drag and squeeze
-right-click remain separate pending checks.
+not repeat it. The user subsequently confirmed the remaining Space-with-Pencil
+drag and squeeze right-click checks working. Continuous/horizontal scrolling
+remains unqualified.
+
+## Build 9 live on-screen keyboard candidate — October 8
+
+The user confirmed the remaining hardware shortcut/Pencil squeeze checks working
+and requested direct typing from the toolbar keyboard icon. Build 9 removes the
+compose-and-send sheet. The canvas implements UIKeyInput, toggling its system
+input view while keeping remote input admitted. Committed characters are sent
+immediately without a local editable document or recorded text. Backspace is
+always available against remote content; Return, Tab and Escape retain existing
+wire keys. The accessory toolbar provides Esc, Tab and Hide Keyboard.
+
+ASCII uses the existing Vision software-character mapping; non-ASCII uses the
+existing UTF-8 text command. Autocorrection, automatic capitalization and smart
+punctuation are disabled. Hardware key ownership is unchanged: mapped physical
+keys are consumed by the existing GCKeyboard/UIKit fallback path. Geometry
+changes retire local contact; controls, focus loss, background and disconnect
+hide the software keyboard. Shared sender teardown remains an upstream gate.
+
+Focused checks cover mapping/order, controls, CRLF and non-ASCII fallback.
+Device compilation/signing and live acceptance are separate gates. Full software
+keyboard presentation while a hardware keyboard is connected remains controlled
+by iPadOS. Complex IME composition is not qualified by this basic UIKeyInput
+adapter. The targeted check is live typing into gedit, deletion of existing
+content, Return/Tab/Escape, hide/reopen and absence of duplicate hardware text.

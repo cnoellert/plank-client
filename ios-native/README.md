@@ -15,8 +15,8 @@ expands the canvas. A small down-chevron restores the toolbar. This preference
 persists; the connection screen always shows its navigation bar. Hiding or
 restoring controls cancels held local input without restarting the stream or
 changing the remote display mode. iPadOS retains its own window management and
-system gestures. The keyboard sheet sends text plus Return/Escape without stealing
-remote drags. Rotation/size changes cancel the current local contact. Background
+system gestures. Build 9 replaces the compose-and-send keyboard sheet with live
+on-screen typing (see below). Rotation/size changes cancel the current local contact. Background
 ends this pilot's stream and requires reconnect; it does not log out Linux.
 
 Build 2 simplifies resolution selection to **Balanced (1920×1200)** and
@@ -77,7 +77,8 @@ stroke or releasing a physical mouse button. Double-tap and barrel roll remain
 unmapped. Apple Pencil system shortcuts can consume squeeze before the app
 receives it. On October 8 the user confirmed F-keys reach Flame with Fn held on a separate
 Bluetooth Apple Magic Keyboard; ordinary top-row keys still control the iPad.
-Space during a Pencil drag and squeeze acceptance remain pending. No iPadOS
+The user subsequently confirmed Space during Pencil dragging and squeeze right-click
+working. No iPadOS
 setting reversing the keyboard's default top row has been verified.
 
 Build 5 separates UIKit discrete wheel and continuous scroll recognizers. Each
@@ -116,6 +117,22 @@ Flame1: "Working great now." The log shows wheel submissions continuing while
 stationary hover callbacks are suppressed; during one stationary interval the
 pointer-move count stayed at 88 as scroll submissions rose from 15 to 70.
 This qualifies the tested physical wheel, not continuous or horizontal scrolling.
+
+Build 9 makes the toolbar keyboard icon show/hide UIKit's keyboard while the
+canvas remains the first responder. Characters go to the remote application
+immediately; there is no local composition field or Send button. Backspace also
+works against pre-existing remote text. Return comes from the keyboard, with
+Esc, Tab and Hide Keyboard in its accessory bar. Opening controls, losing focus,
+backgrounding or disconnecting hides it and retires locally held input.
+Keyboard-driven viewport resizing follows the existing geometry cancellation.
+
+Committed ASCII characters use the Vision software-keyboard mapping; other
+characters use the existing UTF-8 text path. Autocorrection, capitalization and
+smart punctuation are disabled. This is basic UIKeyInput, not qualified complex
+IME composition. Hardware mapped keys retain their existing single-owner path.
+iPadOS controls whether a full software keyboard is visible while a physical
+keyboard is connected; no private keyboard-forcing API is used. Live typing,
+Backspace/Return, accessory keys and hardware coexistence need device acceptance.
 
 No raw Wacom driver or direct Bluetooth Wacom support is claimed. PTH-660
 produced no visible probe input over USB or Bluetooth on the test iPad. The

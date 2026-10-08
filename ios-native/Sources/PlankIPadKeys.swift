@@ -79,3 +79,76 @@ func plankIPadVirtualKey(
     default: return nil
     }
 }
+
+// Same committed-character mapping as the Vision software keyboard. The
+// remote application owns its text; this adapter stores no editable buffer.
+enum PlankIPadSoftwareKeyboard {
+    enum Command: Equatable {
+        case key(UInt16, UInt8)
+        case text(String)
+    }
+    static func commands(for text: String) -> [Command] {
+        text.map { character in
+            switch character {
+            case "\r", "\n", "\r\n": return .key(0x0D, 0)
+            case "\t": return .key(0x09, 0)
+            case "\u{8}", "\u{7f}": return .key(0x08, 0)
+            case "\u{1b}": return .key(0x1B, 0)
+            default:
+                if let key = physicalKey(for: character) {
+                    return .key(key.code, key.shifted ? 1 : 0)
+                }
+                return .text(String(character))
+            }
+        }
+    }
+    private static func physicalKey(for character: Character) -> (code: UInt16, shifted: Bool)? {
+        if let ascii = character.asciiValue {
+            if ascii >= Character("a").asciiValue!, ascii <= Character("z").asciiValue! {
+                return (UInt16(ascii - Character("a").asciiValue! + 0x41), false)
+            }
+            if ascii >= Character("A").asciiValue!, ascii <= Character("Z").asciiValue! {
+                return (UInt16(ascii - Character("A").asciiValue! + 0x41), true)
+            }
+            if ascii >= Character("0").asciiValue!, ascii <= Character("9").asciiValue! {
+                return (UInt16(ascii), false)
+            }
+        }
+        switch character {
+        case " ": return (0x20, false)
+        case "!": return (0x31, true)
+        case "@": return (0x32, true)
+        case "#": return (0x33, true)
+        case "$": return (0x34, true)
+        case "%": return (0x35, true)
+        case "^": return (0x36, true)
+        case "&": return (0x37, true)
+        case "*": return (0x38, true)
+        case "(": return (0x39, true)
+        case ")": return (0x30, true)
+        case ";": return (0xBA, false)
+        case ":": return (0xBA, true)
+        case "=": return (0xBB, false)
+        case "+": return (0xBB, true)
+        case ",": return (0xBC, false)
+        case "<": return (0xBC, true)
+        case "-": return (0xBD, false)
+        case "_": return (0xBD, true)
+        case ".": return (0xBE, false)
+        case ">": return (0xBE, true)
+        case "/": return (0xBF, false)
+        case "?": return (0xBF, true)
+        case "`": return (0xC0, false)
+        case "~": return (0xC0, true)
+        case "[": return (0xDB, false)
+        case "{": return (0xDB, true)
+        case "\\": return (0xDC, false)
+        case "|": return (0xDC, true)
+        case "]": return (0xDD, false)
+        case "}": return (0xDD, true)
+        case "'": return (0xDE, false)
+        case "\"": return (0xDE, true)
+        default: return nil
+        }
+    }
+}

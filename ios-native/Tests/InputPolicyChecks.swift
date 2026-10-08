@@ -109,6 +109,19 @@ import CoreGraphics
         precondition(!squeeze.click(ended: true, timestamp: 5, enabled: true, touching: false, heldButtons: true, hasPosition: true))
         precondition(!squeeze.click(ended: true, timestamp: 6, enabled: true, touching: false, heldButtons: false, hasPosition: false))
         precondition(!squeeze.click(ended: true, timestamp: .nan, enabled: true, touching: false, heldButtons: false, hasPosition: true))
-        print("iPad viewport, held-input, wheel, keyboard mapping/ownership and squeeze checks passed")
+        precondition(PlankIPadSoftwareKeyboard.commands(for: "Az9 !") == [
+            .key(0x41, 1), .key(0x5A, 0), .key(0x39, 0), .key(0x20, 0), .key(0x31, 1)
+        ])
+        precondition(PlankIPadSoftwareKeyboard.commands(for: "\n\t\u{8}\u{7f}\u{1b}") == [
+            .key(0x0D, 0), .key(0x09, 0), .key(0x08, 0), .key(0x08, 0), .key(0x1B, 0)
+        ])
+        precondition(PlankIPadSoftwareKeyboard.commands(for: "\r\n") == [.key(0x0D, 0)],
+                     "A CRLF commit must not press Return twice")
+        precondition(PlankIPadSoftwareKeyboard.commands(for: "🙂é") == [.text("🙂"), .text("é")])
+        precondition(PlankIPadSoftwareKeyboard.commands(for: "a\n🙂b") == [
+            .key(0x41, 0), .key(0x0D, 0), .text("🙂"), .key(0x42, 0)
+        ], "Mixed Unicode and key input must retain callback order")
+        precondition(PlankIPadSoftwareKeyboard.commands(for: "").isEmpty)
+        print("iPad viewport, held-input, wheel, live keyboard mapping/ownership and squeeze checks passed")
     }
 }
