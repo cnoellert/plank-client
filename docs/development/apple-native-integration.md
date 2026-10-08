@@ -153,7 +153,9 @@ held drag, focus, reconnect and hotplug. Periodic video pauses and the reported
 Host input receive queue overflow remain unresolved. The Host input-backpressure
 experiment remains held; this import does not build or deploy a Host package.
 
-The next native contribution is the separate Mac pilot after reconciliation.
-Tablet sharing, multiple displays, capture quality and product camera forwarding
-remain independently reviewable steps. iOS is later work after the foundation
-stabilizes, not an acceptance target of this import.
+The separate Mac pilot and its tablet-sharing/display slices are now prepared
+for review on this merged foundation; see [the Mac integration map](native-mac-integration.md).
+Preparation does not bypass upstream contract reconciliation or production
+acceptance. Capture quality and product camera forwarding remain independent
+follow-ups. iOS follows foundation stabilization and is not an acceptance target
+of this import.
