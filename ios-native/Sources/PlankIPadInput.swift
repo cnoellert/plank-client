@@ -17,6 +17,7 @@ import GameController
             else if !oldValue { surface?.resumeKeyboard() }
         }
     }
+    private var typingPreview = PlankIPadTypingPreview()
     private var held = PlankIPadHeldInput()
     private var pointerMotion = PlankIPadPointerMotion()
     private(set) var pointerMoves = 0, stationaryPointerCallbacks = 0
@@ -29,10 +30,14 @@ import GameController
         guard next != softwareKeyboardPresented else { return }
         release()
         softwareKeyboardPresented = next
+        typingPreview.clear()
+        surface?.updateTypingPreview(typingPreview.text)
         surface?.refreshSoftwareKeyboard()
     }
     func softwareText(_ text: String) {
         guard enabled, softwareKeyboardPresented else { return }
+        typingPreview.insert(text)
+        surface?.updateTypingPreview(typingPreview.text)
         for command in PlankIPadSoftwareKeyboard.commands(for: text) {
             switch command {
             case let .key(code, modifiers): client.pressKey(code: code, modifiers: modifiers)
@@ -42,6 +47,8 @@ import GameController
     }
     func softwareKey(_ code: UInt16) {
         guard enabled, softwareKeyboardPresented else { return }
+        typingPreview.key(code)
+        surface?.updateTypingPreview(typingPreview.text)
         client.pressKey(code: code)
     }
     func pointer(_ point: CGPoint, viewport: PlankIPadViewport, dragging: Bool,
@@ -145,7 +152,25 @@ struct PlankIPadCanvas: UIViewRepresentable {
     var smartDashesType: UITextSmartDashesType = .no
     var smartInsertDeleteType: UITextSmartInsertDeleteType = .no
     private let hiddenKeyboard = UIView(frame: .zero)
-    private lazy var keyboardControls: UIToolbar = {
+    private lazy var previewText: UITextView = {
+        let view = UITextView()
+        view.font = .monospacedSystemFont(ofSize: 24, weight: .regular)
+        view.backgroundColor = .clear
+        view.isEditable = false; view.isSelectable = false
+        view.isUserInteractionEnabled = false
+        view.textContainerInset = .zero
+        view.textContainer.lineFragmentPadding = 0
+        view.accessibilityLabel = "Typing preview"
+        return view
+    }()
+    private lazy var keyboardControls: UIView = {
+        let container = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 124))
+        container.backgroundColor = .secondarySystemBackground
+        let title = UILabel()
+        title.text = "Typing preview"
+        title.font = .preferredFont(forTextStyle: .caption1)
+        title.textColor = .secondaryLabel
+
         let bar = UIToolbar(frame: CGRect(x: 0, y: 0, width: 320, height: 44))
         bar.items = [
             UIBarButtonItem(title: "Esc", style: .plain, target: self, action: #selector(softwareEscape)),
@@ -153,8 +178,35 @@ struct PlankIPadCanvas: UIViewRepresentable {
             UIBarButtonItem(systemItem: .flexibleSpace),
             UIBarButtonItem(title: "Hide Keyboard", style: .done, target: self, action: #selector(hideSoftwareKeyboard))
         ]
-        return bar
+        for view in [title, previewText, bar] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            container.addSubview(view)
+        }
+        NSLayoutConstraint.activate([
+            title.topAnchor.constraint(equalTo: container.topAnchor, constant: 6),
+            title.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
+            title.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
+            title.heightAnchor.constraint(equalToConstant: 18),
+            previewText.topAnchor.constraint(equalTo: title.bottomAnchor, constant: 4),
+            previewText.leadingAnchor.constraint(equalTo: title.leadingAnchor),
+            previewText.trailingAnchor.constraint(equalTo: title.trailingAnchor),
+            previewText.heightAnchor.constraint(equalToConstant: 52),
+            bar.topAnchor.constraint(equalTo: previewText.bottomAnchor),
+            bar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            bar.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            bar.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            bar.heightAnchor.constraint(equalToConstant: 44)
+        ])
+        return container
     }()
+    func updateTypingPreview(_ text: String) {
+        previewText.text = text.isEmpty ? "Type into the remote desktop…" : text
+        previewText.textColor = text.isEmpty ? .secondaryLabel : .label
+        if !text.isEmpty {
+            previewText.layoutIfNeeded()
+            previewText.scrollRangeToVisible(NSRange(location: (text as NSString).length, length: 0))
+        }
+    }
     override var inputView: UIView? { router.softwareKeyboardPresented ? nil : hiddenKeyboard }
     override var inputAccessoryView: UIView? { router.softwareKeyboardPresented ? keyboardControls : nil }
     func insertText(_ text: String) {

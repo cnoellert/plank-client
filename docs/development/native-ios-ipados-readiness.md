@@ -444,3 +444,22 @@ keyboard presentation while a hardware keyboard is connected remains controlled
 by iPadOS. Complex IME composition is not qualified by this basic UIKeyInput
 adapter. The targeted check is live typing into gedit, deletion of existing
 content, Return/Tab/Escape, hide/reopen and absence of duplicate hardware text.
+
+## Build 10 readable typing preview candidate — October 8
+
+The user confirmed build 9's system keyboard appears when the separate Bluetooth
+Magic Keyboard is turned off, then requested a larger preview above it. Apple
+supports showing the onscreen keyboard with hardware attached via the bottom
+Shortcuts button → Show Keyboard ([guide](https://support.apple.com/guide/ipad/ipaddd28d7ed/ipados)).
+No public programmatic forcing API was found; no private API is introduced.
+Do not label hardware-keyboard suppression as a confirmed PLANK focus defect.
+
+Build 10 adds an accessory preview at 24-point text, displaying the last 160
+software-committed characters over two lines and scrolling to recent typing.
+Backspace removes one grapheme; Return/Tab preserve order. Escape or keyboard
+hide/open/focus loss clears it. The preview cannot edit the remote field and
+cannot reconstruct existing remote content, cursor selection or physical-keyboard
+text. It remains memory-only, with no typed-text diagnostics or persistence.
+The existing immediate wire submission and hardware key ownership are unchanged.
+Focused bounded-preview and Unicode deletion checks pass. Device compile/signing
+and user preview/layout acceptance remain separate gates.

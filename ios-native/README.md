@@ -134,6 +134,22 @@ iPadOS controls whether a full software keyboard is visible while a physical
 keyboard is connected; no private keyboard-forcing API is used. Live typing,
 Backspace/Return, accessory keys and hardware coexistence need device acceptance.
 
+The user confirmed build 9 keyboard presentation works after turning off the
+Bluetooth Magic Keyboard. Apple also documents switching to the onscreen keyboard
+without disconnecting hardware through the bottom Shortcuts button → Show Keyboard:
+[Apple iPad guide](https://support.apple.com/guide/ipad/ipaddd28d7ed/ipados).
+No documented public API to force this system action was identified; do not use
+private keyboard APIs or claim PLANK's icon forces presentation with hardware.
+
+Build 10 adds a two-line, 24-point live typing preview above the software keyboard.
+It echoes the latest 160 committed characters, follows Return/Tab and Backspace,
+and clears on Escape, keyboard hide/open, focus loss and disconnect. This is a
+read-only echo of software-keyboard typing, not a synchronized remote document;
+remote mouse/cursor edits and physical keyboard text are not reconstructed.
+Text stays in memory, is not logged/saved, and is sent live just as in build 9.
+Focused checks cover grapheme deletion, CRLF, bounded length and clearing; device
+preview/layout acceptance is pending.
+
 No raw Wacom driver or direct Bluetooth Wacom support is claimed. PTH-660
 produced no visible probe input over USB or Bluetooth on the test iPad. The
 registered Mac/Linux Relay route is the planned first Wacom path; its codecs
