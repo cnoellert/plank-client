@@ -32,6 +32,7 @@ xcrun swiftc -swift-version 6 -Onone -parse-as-library -DPLANK_NATIVE_MAC_WACOM 
     -import-objc-header apple-native/Tests/PlankMacWacomWorkerDriver.h -Iapple-native/Bridge \
     apple-native/Sources/PlankMacWacomSession.swift apple-native/Sources/PlankMacInputPolicy.swift \
     visionos-native/Sources/Services/PlankInputQueue.swift visionos-native/Sources/Services/PlankWacomPreflight.swift \
+    visionos-native/Sources/Services/PlankTabletInputPolicy.swift \
     apple-native/Tests/PlankMacWacomWorkerTests.swift "$out/mac-wacom-wrapper.o" "$out/mac-wacom-worker.o" \
     -lc++ -o "$out/mac-wacom-worker"
 "$out/mac-wacom-worker"

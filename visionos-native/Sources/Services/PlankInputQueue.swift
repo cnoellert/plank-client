@@ -26,7 +26,7 @@ final class PlankInputQueue: @unchecked Sendable {
     private func observePointerSource(_ event: PlankInputEvent) {
         if case .pointer = event { mouseOwnsPointer = true }
         if case let .rawHid(frame) = event, frame.count >= 20,
-           frame[6] == 3, frame[7] == 0 { mouseOwnsPointer = false } // PLANK_RAW_HID_INPUT
+           frame[6] == 3, frame[7] == 0 { mouseOwnsPointer = false } // Existing registered-Relay presentation path; local USB uses the filtered callback.
     }
 #endif
     // Bounded diagnostics only: timings and counts, never event contents.
@@ -65,6 +65,14 @@ final class PlankInputQueue: @unchecked Sendable {
     }
 
 #if PLANK_NATIVE_MAC_WACOM
+    // Only the physical worker's descriptor-filtered activity signal selects
+    // tablet ownership for local USB input; raw status traffic never does.
+    func observeNativeTabletActivity() {
+        lock.lock(); defer { lock.unlock() }
+        guard !stopped else { return }
+        mouseOwnsPointer = false
+    }
+
     // Refuse a congested or stopped sender; the capture worker then releases
     // and retries rather than losing a tip/button transition silently.
     func offerNativeRawHid(_ frame: Data) -> Bool {
@@ -72,7 +80,6 @@ final class PlankInputQueue: @unchecked Sendable {
         guard !stopped, events.count < 256 else { lock.unlock(); return false }
         let shouldWake = events.isEmpty
         if shouldWake { oldestEnqueueTime = DispatchTime.now().uptimeNanoseconds }
-        observePointerSource(.rawHid(frame))
         events.append(.rawHid(frame))
         highWaterDepth = max(highWaterDepth, events.count)
         lock.unlock()

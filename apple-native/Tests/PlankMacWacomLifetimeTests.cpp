@@ -10,21 +10,24 @@
 // A fake stalled driver retains its sender after destruction, just as the
 // real bounded worker may. The test links the production C wrapper.
 static MacRawWacomInput::SendFrame lateSender;
+static std::function<void()> lateActivity;
 class MacRawWacomInput::Impl {};
-MacRawWacomInput::MacRawWacomInput(std::function<void()>, SendFrame send, GenerationProvider,bool) { lateSender = send; }
+MacRawWacomInput::MacRawWacomInput(std::function<void()> activity, SendFrame send, GenerationProvider, bool) { lateSender = send; lateActivity = activity; }
 MacRawWacomInput::~MacRawWacomInput() = default;
 void MacRawWacomInput::setActive(bool active) { if (!active) { unsigned char release = 13; lateSender(&release, 1); } }
 void MacRawWacomInput::handleControl(const unsigned char*, unsigned) {}
 static bool send(void* ctx, const uint8_t*, size_t) { ++*static_cast<int*>(ctx); return true; }
 int main() {
-    assert(!plank_mac_wacom_create(nullptr, nullptr));
+    assert(!plank_mac_wacom_create(nullptr, nullptr, nullptr));
     int called = 0;
-    auto capture = plank_mac_wacom_create(send, &called);
+    auto capture = plank_mac_wacom_create(send, [](void* ctx) { ++*static_cast<int*>(ctx); }, &called);
     unsigned char b = 3;
     assert(lateSender(&b, 1) && called == 1);
+    lateActivity(); assert(called == 2);
     plank_mac_wacom_destroy(capture);
-    assert(called == 2); // release precedes revocation
-    assert(!lateSender(&b, 1) && called == 2); // late driver cannot touch freed Swift context
+    assert(called == 3); // release precedes revocation
+    lateActivity(); assert(called == 3);
+    assert(!lateSender(&b, 1) && called == 3); // late driver cannot touch freed Swift context
     MacWacomLifecycle life;
     life.setActive(true); assert(life.canForward());
     auto ticket = life.setActive(false); assert(!life.canForward());

@@ -273,6 +273,9 @@ final class PlankCoreClient: ObservableObject {
 
     private func finishContinuingWithoutTablet(status: String) {
         tabletWaitTimeoutID = UUID()
+#if PLANK_NATIVE_MAC_WACOM
+        PlankMacWacomSession.retireForSession(&nativeWacom)
+#endif
         tabletBridge?.close(reason: .continueWithoutTablet)
         stoppingTabletBridge = tabletBridge
         tabletBridge = nil
