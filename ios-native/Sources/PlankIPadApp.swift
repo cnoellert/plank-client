@@ -26,7 +26,9 @@ struct PlankIPadRoot: View {
     @State private var textEntry = false
     @State private var username = ""
     @State private var password = ""
+    @AppStorage("plank.ipad.showSessionToolbar") private var showToolbar = true
     private var host: HostBookmark? { store.hosts.first { $0.id == selectedID } }
+    private var hideBars: Bool { client.hasActiveDesktopSession && !showToolbar }
     private var busy: Bool {
         switch client.phase { case .probing, .authenticating, .startingSession: true; default: client.isClosingSession }
     }
@@ -47,6 +49,18 @@ struct PlankIPadRoot: View {
                                         .allowsHitTesting(false)
                                 }
                             }
+                    }
+                    .ignoresSafeArea(.container, edges: hideBars ? [.top, .bottom] : [])
+                    .overlay(alignment: .topTrailing) {
+                        if hideBars {
+                            Button { setToolbarVisible(true) } label: {
+                                Image(systemName: "chevron.down")
+                                    .frame(width: 44, height: 44)
+                                    .background(.regularMaterial, in: Circle())
+                            }
+                            .accessibilityLabel("Show session toolbar")
+                            .padding(12)
+                        }
                     }
                 } else {
                     ScrollView {
@@ -79,6 +93,7 @@ struct PlankIPadRoot: View {
                     ToolbarItemGroup(placement: .topBarTrailing) {
                         Button { textEntry = true } label: { Label("Send Text", systemImage: "keyboard") }
                         Button { controls = true } label: { Label("Session Controls", systemImage: "slider.horizontal.3") }
+                        Button { setToolbarVisible(false) } label: { Label("Hide Toolbar", systemImage: "chevron.up") }
                         Button("Disconnect") { disconnect() }.disabled(client.isClosingSession)
                     }
                 } else {
@@ -87,8 +102,10 @@ struct PlankIPadRoot: View {
                     }
                 }
             }
+            .toolbar(hideBars ? .hidden : .visible, for: .navigationBar)
         }
-        .sheet(isPresented: $add) { PlankIPadBookmarkEditor(store: store, client: client, host: .init(name: "", address: "", spatialDisplaySize: .fullHD), isNew: true) }
+        .statusBarHidden(hideBars)
+        .sheet(isPresented: $add) { PlankIPadBookmarkEditor(store: store, client: client, host: .init(name: "", address: "", spatialDisplaySize: PlankIPadDisplayOptions.defaultSize), isNew: true) }
         .sheet(item: $editing) { host in PlankIPadBookmarkEditor(store: store, client: client, host: host, isNew: false) }
         .sheet(isPresented: $controls) { PlankIPadControls(client: client) }
         .sheet(isPresented: $textEntry) { PlankIPadTextEntry(client: client) }
@@ -140,6 +157,16 @@ struct PlankIPadRoot: View {
         controls = false; textEntry = false
         client.reset()
     }
+    private func setToolbarVisible(_ visible: Bool) {
+        // A local control changes the canvas bounds. Retire held input before
+        // the layout moves, while retaining this stream and its remote mode.
+        router.release()
+        showToolbar = visible
+        Task { @MainActor in
+            await Task.yield()
+            if router.enabled { router.surface?.resumeKeyboard() }
+        }
+    }
     private func updateAdmission() {
         let foreground = scenePhase == .active
         let streaming: Bool
@@ -182,8 +209,12 @@ struct PlankIPadBookmarkEditor: View {
                 }
                 Section("Display") {
                     Picker("Resolution", selection: $host.spatialDisplaySize) {
-                        ForEach(SpatialDisplaySize.allCases) { Text($0.title).tag($0) }
+                        ForEach(PlankIPadDisplayOptions.choices(current: host.spatialDisplaySize)) {
+                            Text(PlankIPadDisplayOptions.title($0)).tag($0)
+                        }
                     }
+                    Text("Two landscape sizes with the same shape. The desktop keeps its proportions when you rotate the iPad.")
+                        .font(.footnote).foregroundStyle(.secondary)
                     Picker("Frame rate", selection: $host.streamFrameRate) {
                         ForEach(StreamFrameRate.presets, id: \.self) { Text("\($0) fps").tag($0) }
                     }

@@ -3,6 +3,12 @@ import CoreGraphics
 
 @main enum Checks {
     static func main() {
+        precondition(PlankIPadDisplayOptions.defaultSize == .wuxga)
+        precondition(PlankIPadDisplayOptions.choices(current: .wuxga) == [.wuxga, .tall2560])
+        precondition(PlankIPadDisplayOptions.choices(current: .ultraHD) == [.wuxga, .tall2560, .ultraHD],
+                     "Existing bookmarks must remain selectable without rewriting their mode")
+        let small = SpatialDisplaySize.wuxga.pixelSize, large = SpatialDisplaySize.tall2560.pixelSize
+        precondition(small.width * large.height == large.width * small.height)
         let viewport = PlankIPadViewport(bounds: CGRect(x: 0, y: 0, width: 1000, height: 1000), width: 1920, height: 1080)!
         precondition(viewport.rect == CGRect(x: 0, y: 218.75, width: 1000, height: 562.5))
         precondition(viewport.map(CGPoint(x: 500, y: 100)) == nil, "Letterbox must not start a click")

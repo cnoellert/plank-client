@@ -10,9 +10,30 @@ Silicon device/simulator are the initial compile scope, not a final OS matrix.
 One saved workstation, login, one aspect-fit desktop, video/audio, direct finger
 mouse emulation, indirect pointer buttons, physical wheel and hardware keyboard.
 Local controls live above the canvas; opening a control sheet retires locally
-held input. The keyboard sheet sends text plus Return/Escape without stealing
+held input. The toolbar's up-chevron hides PLANK's navigation/status bars and
+expands the canvas. A small down-chevron restores the toolbar. This preference
+persists; the connection screen always shows its navigation bar. Hiding or
+restoring controls cancels held local input without restarting the stream or
+changing the remote display mode. iPadOS retains its own window management and
+system gestures. The keyboard sheet sends text plus Return/Escape without stealing
 remote drags. Rotation/size changes cancel the current local contact. Background
 ends this pilot's stream and requires reconnect; it does not log out Linux.
+
+Build 2 simplifies resolution selection to **Balanced (1920×1200)** and
+**Sharper (2560×1600)**, both 16:10. Existing bookmarks retain their saved mode
+as an additional choice until explicitly changed. The new-bookmark default is
+Balanced. Rotation resizes the local aspect-fit viewport; it does not renegotiate
+the Host or crop/stretch the desktop.
+
+These are interim supported modes, not exact iPad fit. The test iPad Air's
+landscape panel is 2360×1640 (59:41). The pinned virtual-startup Host mode list
+has no exact match. The maintained parent already documents optional bounded
+physical-startup display matching (`0x400000`), but that contract explicitly
+keeps headless virtual startup preset-only. Exact-fit support must use a
+capability-qualified existing matching path where available, and qualified
+virtual EDID modes for headless workstations. Do not blindly send arbitrary
+sizes or stretch/crop the image to claim native fit. No Host deployment is
+included in this pilot change.
 
 Pencil samples are deliberately excluded from mouse emulation. The separate
 input probe remains the pressure/tilt/contact test until Pencil hardware arrives.
@@ -47,7 +68,9 @@ python3 scripts/apple-native/build.py prepare --platform ios-device \
 python3 scripts/apple-native/build.py deps --platform ios-device --work "$PLANK_IPAD_WORK"
 python3 scripts/apple-native/build.py build --platform ios-device \
   --work "$PLANK_IPAD_WORK" --client "$PLANK_CLIENT_SOURCE"
-xcrun swiftc -Onone ios-native/Sources/PlankIPadInputPolicy.swift \
+xcrun swiftc -Onone visionos-native/Sources/Models/HostBookmark.swift \
+  ios-native/Sources/PlankIPadDisplayOptions.swift \
+  ios-native/Sources/PlankIPadInputPolicy.swift \
   ios-native/Tests/InputPolicyChecks.swift -o "$PLANK_IPAD_CHECKS"
 "$PLANK_IPAD_CHECKS"
 ```

@@ -1,7 +1,8 @@
 # Native iOS and iPadOS readiness
 
 Audit date: 2026-10-08. Status: input probe partially accepted; single-display
-iPad Client development candidate in progress, not production qualification.
+iPad Client has targeted playback, mouse, keyboard and resolution-switching
+acceptance, not production qualification.
 
 ## Recommended order
 
@@ -248,6 +249,35 @@ and iOS Wacom acceptance are next; compiled receiver code is not drawing
 qualification. iPhone and multiple displays are outside this first target.
 The initial pilot deployment target is iPadOS 26, separate from the input
 probe's iPadOS 18 target and from any final supported OS matrix.
+
+On October 8, the user accepted playback, mouse, hardware keyboard and several
+resolution changes on installed pilot build 1. This report does not establish
+Pencil, pressure, Relay drawing, audio, wheel, held-contact teardown or sustained
+qualification. The next local pilot simplifies display choices and makes the
+session toolbar hideable; it requires its own focused device check.
+
+### iPad display fit
+
+The connected iPad reports native portrait pixels 1640×2360 and landscape-right
+orientation, consistent with Apple's [iPad Air 11-inch (M4) specifications](https://support.apple.com/en-us/126471).
+Its landscape aspect ratio is 59:41. The currently pinned native Client requests
+only the shared qualified virtual modes; none matches that panel exactly.
+The interim iPad choices are 1920×1200 and 2560×1600 (both 16:10), with saved
+legacy modes preserved. They must not be labeled exact-fit or native resolution.
+
+The maintained parent's `protocol/output-topology.md` already defines bounded
+physical matching (`0x400000`), so a new general display contract is not the
+first step. Coordinate adoption with issue 9, verify the installed Host's
+capabilities/startup kind, and use that existing path only where negotiated.
+Headless virtual startup remains EDID-preset-only under that contract and needs
+qualified iPad modes before exact fit can be offered. Suggested native-panel
+target for this device: 2360×1640; any lower-cost same-aspect preset also needs
+timing/EDID and encoder qualification. Never silently send unsupported modes.
+
+Toolbar visibility and rotation only alter local layout; they do not change
+remote session geometry. Local input is retired before layout changes and the
+renderer/input adapter continue sharing the same aspect-fit rectangle. This
+avoids cropping, stretching or display/session churn just to hide controls.
 
 Focused fit/edge, held-button/key release and fractional-wheel checks pass.
 Unsigned device and simulator compilation, protected signing and remote
