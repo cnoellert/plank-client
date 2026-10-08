@@ -377,3 +377,18 @@ the build 5 unit conversion. Received/submitted/blocked aggregate counts appear
 under Session Controls when Show statistics is enabled, independently of the
 launch console. Runtime acceptance is pending. Reference: [Moonlight iOS
 StreamView](https://github.com/moonlight-stream/moonlight-ios/blob/master/Limelight/Input/StreamView.m).
+
+### Build 7 wheel delivery without synthetic pointer movement
+
+Build 6 received wheel callbacks and a bounded Flame1 XInput capture confirmed
+292 wheel notches with balanced button 4/5 edges. The pointer query identified
+gedit under the mouse, with no mouse button held. The user confirmed hundreds
+of lines in the document, but no scrolling. Host receipt alone was therefore
+insufficient to qualify application scrolling.
+
+The accepted Mac adapter already corrected this combination in commit
+`5db90ff`: absolute XTEST pointer movement before every uinput wheel event
+resets GTK's scroll baseline. Build 7 applies the same correction to the iPad
+handler, leaving real hover/contact positioning, UIKit admission, unit
+conversion and existing Pencil guards intact. No Host or shared transport
+change is required. Device application acceptance remains pending.

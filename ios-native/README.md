@@ -95,6 +95,14 @@ submitted and blocked scroll counts. They remain available after reopening the
 controls, even when a launch console has ended. This is a diagnostic correction,
 not a device acceptance claim.
 
+Build 6 delivered balanced wheel-up/down events to Flame1's XInput mouse, but
+the user's gedit document with hundreds of lines still did not scroll. Build 7
+removes the absolute pointer update previously sent before each wheel event,
+matching the accepted Mac correction: alternating XTEST pointer motion with
+uinput wheel input resets GTK's scrolling baseline. Hover and contact still
+position the pointer; scroll admission and unit conversion are unchanged.
+Application scrolling acceptance remains pending.
+
 No raw Wacom driver or direct Bluetooth Wacom support is claimed. PTH-660
 produced no visible probe input over USB or Bluetooth on the test iPad. The
 registered Mac/Linux Relay route is the planned first Wacom path; its codecs

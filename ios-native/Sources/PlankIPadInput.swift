@@ -265,7 +265,10 @@ struct PlankIPadCanvas: UIViewRepresentable {
         let value = wheel.add(x: Double(delta.x), y: Double(delta.y),
             source: gesture === discreteScroll ? .discrete : .continuous)
         guard value.vertical != 0 || value.horizontal != 0 else { publishWheelDiagnosticsIfDue(); return }
-        _ = router.pointer(gesture.location(in: self), viewport: viewport, dragging: activeTouch != nil)
+        // Hover/contact events position the Host pointer. Do not manufacture
+        // absolute motion for wheel-only input: Linux alternates XTEST motion
+        // with uinput scrolling, resetting GTK's scroll baseline each tick.
+        // This matches the accepted Mac adapter's wheel path.
         client.scroll(vertical: value.vertical, horizontal: value.horizontal)
         wheelEvents += 1; wheelVertical += Int(value.vertical); wheelHorizontal += Int(value.horizontal)
         publishWheelDiagnosticsIfDue()
