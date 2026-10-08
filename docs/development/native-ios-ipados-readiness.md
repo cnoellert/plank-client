@@ -348,3 +348,18 @@ hardware and an iPadOS squeeze preference that delivers the gesture to apps.
 Double-tap is unchanged. Focused keyboard mapping/alias/release and squeeze
 admission checks plus device compilation pass; live keyboard/squeeze acceptance
 is pending. Shared shutdown receipt/Host cleanup remains upstream-owned.
+
+## iPad wheel correction (build 5)
+
+The prior adapter passed UIKit view-point translation directly as high-resolution
+wire units. The working Mac adapter and common-C contract use 120 units per
+wheel detent. Build 5 separates discrete and continuous UIKit scroll masks: a
+nonzero discrete callback emits one bounded detent per axis, while continuous
+input retains fractional motion at 32 points per detent (the existing Vision
+fallback's nominal scale). Horizontal sign matches the Mac adapter. Cancellation,
+focus/geometry reset, controls, letterboxes and active Pencil contact remain
+guarded. Aggregate console counts measure submission only. Policy checks and a
+device build are required; user wheel speed/direction acceptance is pending.
+
+Build 4 F-key forwarding was accepted with Fn held on the user's separate
+Bluetooth Magic Keyboard. Space with Pencil drag and squeeze remain pending.

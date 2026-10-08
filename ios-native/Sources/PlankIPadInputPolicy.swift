@@ -61,12 +61,22 @@ struct PlankIPadHeldInput {
 }
 
 struct PlankIPadWheel {
+    enum Source { case discrete, continuous }
     private var x = 0.0
     private var y = 0.0
-    mutating func add(x: Double, y: Double) -> (vertical: Int16, horizontal: Int16) {
-        guard x.isFinite, y.isFinite else { return (0, 0) }
-        self.x += min(max(x, -32767), 32767)
-        self.y += min(max(y, -32767), 32767)
+    mutating func add(x: Double, y: Double, source: Source) -> (vertical: Int16, horizontal: Int16) {
+        guard x.isFinite, y.isFinite else { reset(); return (0, 0) }
+        // UIKit reports view points, not the wire's 120 units per detent.
+        // A discrete callback gets one bounded notch per nonzero axis, as in
+        // the Mac adapter. Smooth input keeps fractions at 32 points/detent,
+        // matching the existing Vision fallback's nominal scroll distance.
+        if source == .discrete {
+            reset()
+            func notch(_ delta: Double) -> Int16 { delta == 0 ? 0 : (delta > 0 ? 120 : -120) }
+            return (notch(y), notch(-x))
+        }
+        self.x += min(max(-x * 120 / 32, -32767), 32767)
+        self.y += min(max(y * 120 / 32, -32767), 32767)
         let dx = min(max(self.x.rounded(.towardZero), -32767), 32767)
         let dy = min(max(self.y.rounded(.towardZero), -32767), 32767)
         self.x -= dx; self.y -= dy

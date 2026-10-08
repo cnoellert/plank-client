@@ -82,6 +82,10 @@ struct PlankIPadCanvas: UIViewRepresentable {
     private var activeTouch: UITouch?
     private var pointerButtons = Set<UInt8>()
     private var wheel = PlankIPadWheel()
+    private var discreteScroll: UIPanGestureRecognizer?
+    private var wheelEvents = 0
+    private var wheelVertical = 0, wheelHorizontal = 0
+    private var lastWheelLog = 0.0
     private var previousBounds = CGRect.zero
     private var registered = false
     private var keyboardInput: GCKeyboardInput?
@@ -110,11 +114,16 @@ struct PlankIPadCanvas: UIViewRepresentable {
         pencilHover.allowedTouchTypes = [NSNumber(value: UITouch.TouchType.pencil.rawValue)]
         pencilHover.cancelsTouchesInView = false
         addGestureRecognizer(pencilHover)
-        let scroll = UIPanGestureRecognizer(target: self, action: #selector(scrolled(_:)))
-        scroll.allowedScrollTypesMask = .all
-        scroll.allowedTouchTypes = []
-        scroll.cancelsTouchesInView = false
-        addGestureRecognizer(scroll)
+        // Separate masks preserve the distinction between physical notches and
+        // continuous trackpad motion. Neither recognizer accepts touch drags.
+        for mask in [UIScrollTypeMask.discrete, .continuous] {
+            let scroll = UIPanGestureRecognizer(target: self, action: #selector(scrolled(_:)))
+            scroll.allowedScrollTypesMask = mask
+            scroll.allowedTouchTypes = []
+            scroll.cancelsTouchesInView = false
+            if mask == .discrete { discreteScroll = scroll }
+            addGestureRecognizer(scroll)
+        }
         addInteraction(UIPencilInteraction(delegate: self))
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -233,17 +242,27 @@ struct PlankIPadCanvas: UIViewRepresentable {
         } else { router.retirePencil() }
     }
     @objc private func scrolled(_ gesture: UIPanGestureRecognizer) {
+        guard gesture.state == .began || gesture.state == .changed || gesture.state == .ended else {
+            gesture.setTranslation(.zero, in: self); wheel.reset(); return
+        }
         guard router.enabled, !router.pencilTouching, let viewport,
               viewport.map(gesture.location(in: self)) != nil else {
             gesture.setTranslation(.zero, in: self); wheel.reset(); return
         }
         let delta = gesture.translation(in: self)
         gesture.setTranslation(.zero, in: self)
-        // Keep fractional motion between callbacks rather than throwing small
-        // physical-wheel deltas away. Touch drags cannot enter this recognizer.
-        let value = wheel.add(x: Double(delta.x), y: Double(delta.y))
+        if gesture.state == .began { wheel.reset() }
+        let value = wheel.add(x: Double(delta.x), y: Double(delta.y),
+            source: gesture === discreteScroll ? .discrete : .continuous)
+        guard value.vertical != 0 || value.horizontal != 0 else { return }
+        _ = router.pointer(gesture.location(in: self), viewport: viewport, dragging: activeTouch != nil)
         client.scroll(vertical: value.vertical, horizontal: value.horizontal)
-        if gesture.state == .cancelled || gesture.state == .failed { wheel.reset() }
+        wheelEvents += 1; wheelVertical += Int(value.vertical); wheelHorizontal += Int(value.horizontal)
+        let now = ProcessInfo.processInfo.systemUptime
+        if now - lastWheelLog >= 1 {
+            NSLog("PLANK iPad wheel forwarded=%d vertical=%d horizontal=%d", wheelEvents, wheelVertical, wheelHorizontal)
+            lastWheelLog = now
+        }
     }
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         if let touch = touches.first(where: { $0.type == .pencil }), let viewport {

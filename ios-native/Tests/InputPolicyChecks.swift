@@ -39,14 +39,28 @@ import CoreGraphics
         precondition(!held.button(1, pressed: false), "Stale up after cancellation must not create contact")
         precondition(!held.key(65, pressed: false, modifiers: 1))
         var wheel = PlankIPadWheel()
-        precondition(wheel.add(x: 0, y: 0.25).vertical == 0)
-        precondition(wheel.add(x: 0, y: 0.25).vertical == 0)
-        precondition(wheel.add(x: 0, y: 0.5).vertical == 1, "Small wheel samples must accumulate")
-        precondition(wheel.add(x: -2.5, y: -3).vertical == -3)
-        precondition(wheel.add(x: -0.5, y: 0).horizontal == -1)
-        precondition(wheel.add(x: .infinity, y: .nan).vertical == 0)
+        precondition(wheel.add(x: 0, y: 0.1, source: .continuous).vertical == 0)
+        precondition(wheel.add(x: 0, y: 0.1, source: .continuous).vertical == 0)
+        precondition(wheel.add(x: 0, y: 0.1, source: .continuous).vertical == 1,
+                     "Small smooth samples accumulate in wire units")
         wheel.reset()
-        precondition(wheel.add(x: 0, y: 0.5).vertical == 0)
+        precondition(wheel.add(x: 32, y: -32, source: .continuous).vertical == -120)
+        precondition(wheel.add(x: 32, y: 0, source: .continuous).horizontal == -120)
+        precondition(wheel.add(x: 0, y: 0.01, source: .discrete).vertical == 120,
+                     "A fractional physical notch must reach the Host")
+        precondition(wheel.add(x: -1000, y: -1000, source: .discrete).vertical == -120,
+                     "Accelerated physical input is bounded to one notch per callback")
+        precondition(wheel.add(x: -0.1, y: 0, source: .discrete).horizontal == 120)
+        precondition(wheel.add(x: 0, y: 0, source: .discrete).vertical == 0)
+        precondition(wheel.add(x: .infinity, y: .nan, source: .continuous).vertical == 0)
+        precondition(wheel.add(x: 0, y: Double.greatestFiniteMagnitude, source: .continuous).vertical == 32767)
+        precondition(wheel.add(x: 0, y: 0, source: .continuous).vertical == 0,
+                     "Saturation cannot replay a delayed tail")
+        wheel.reset()
+        precondition(wheel.add(x: 0, y: 0.1, source: .continuous).vertical == 0)
+        wheel.reset()
+        precondition(wheel.add(x: 0, y: 0.2, source: .continuous).vertical == 0,
+                     "Focus or geometry reset discards pending smooth motion")
         precondition(plankIPadVirtualKey(for: 0x2C, functionKeyMode: .pc) == 0x20)
         for hid in 0x3A...0x45 {
             precondition(plankIPadVirtualKey(for: hid, functionKeyMode: .pc) == UInt16(0x70 + hid - 0x3A))

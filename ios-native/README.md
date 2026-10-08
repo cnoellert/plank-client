@@ -75,7 +75,19 @@ while drawing, another mouse button is held, local controls are open, or the
 Pencil is outside hover range/the video area. This avoids ending an artist's
 stroke or releasing a physical mouse button. Double-tap and barrel roll remain
 unmapped. Apple Pencil system shortcuts can consume squeeze before the app
-receives it. Build 4 device keyboard/squeeze acceptance remains pending.
+receives it. On October 8 the user confirmed F-keys reach Flame with Fn held on a separate
+Bluetooth Apple Magic Keyboard; ordinary top-row keys still control the iPad.
+Space during a Pencil drag and squeeze acceptance remain pending. No iPadOS
+setting reversing the keyboard's default top row has been verified.
+
+Build 5 separates UIKit discrete wheel and continuous scroll recognizers. Each
+nonzero physical-wheel callback sends one bounded 120-unit protocol notch;
+continuous motion accumulates fractional units at a nominal 32 view points per
+detent. Horizontal direction follows the existing Mac adapter. Cancelled events,
+local controls, letterboxes and active Pencil strokes do not send scroll input.
+Focus/geometry changes clear fractional motion. Bounded aggregate console counts
+record locally submitted scroll events/units, not Host acknowledgment. Physical
+wheel speed/direction and continuous-device behavior require device acceptance.
 
 No raw Wacom driver or direct Bluetooth Wacom support is claimed. PTH-660
 produced no visible probe input over USB or Bluetooth on the test iPad. The
