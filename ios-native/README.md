@@ -51,8 +51,12 @@ geometry change. Terminal up is accepted even at the last move's timestamp;
 stale moves cannot restart a cancelled contact. Finger/pointer movement cannot
 interrupt an active Pencil stroke. Settings show negotiated Pencil availability.
 The local probe has observed contact, hover and rotation cancellation, and the
-user reports force responding. Remote drawing and pressure/tilt remain pending
-on the installed candidate; compilation and wire tests do not qualify them.
+user reports force responding. On October 8 the user accepted remote pressure, navigation and tip/cursor
+alignment on Flame1 with build 3. The initial offset occurred inside Flame and
+resolved when the user turned off Flame Tablet Margins. Use zero Tablet Margins
+for this Pencil path; do not compensate the iPad coordinate mapping globally.
+Remote tilt and rotation/interruption recovery remain unqualified; compilation
+and wire tests do not qualify them.
 No raw Wacom driver or direct Bluetooth Wacom support is claimed. PTH-660
 produced no visible probe input over USB or Bluetooth on the test iPad. The
 registered Mac/Linux Relay route is the planned first Wacom path; its codecs

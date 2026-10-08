@@ -313,3 +313,15 @@ compatible drawing app, plus rotation ending the old stroke and allowing a fresh
 one after lift. Finger/mouse/keyboard and playback acceptance already recorded
 must not be repeated as prerequisites. This candidate is separate from the
 shipping Mac/Vision targets and adds no Host package deployment.
+
+### Remote Pencil acceptance
+
+On October 8, the user reported pressure and navigation working on iPad build 3
+connected to Flame1. A stationary tip/cursor offset was isolated to Flame. The
+Host's virtual stylus had an active-area top/left inset; turning off Flame's
+Tablet Margins resolved the offset according to the user. Pressure, navigation
+and alignment are accepted for this tested setup, without a client coordinate
+change or Host package deployment. Keep Tablet Margins at zero for the Pencil
+path. Remote tilt, rotation recovery and interruption/held-state cleanup are not
+inferred from this pass. Do not repeat the accepted pressure/navigation/alignment
+checks as prerequisites.
