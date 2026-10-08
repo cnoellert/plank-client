@@ -80,6 +80,42 @@ for suite in PlankRawHidSessionBridgeTests PlankControlBridgeTests; do
 done
 ```
 
+### Transport review correction
+
+The dependency correction is in [Kymux PR 5](https://github.com/instinctual/plank-kymux/pull/5),
+responding to [the foundation review](https://github.com/instinctual/plank-client/pull/10#issuecomment-6051542663).
+Fresh public preparation, dependency compilation and unsigned app builds passed
+again with the new parent/Kymux pins. Vision compiled Client source
+`5df917f984430ff09fdcca67b4d7bde559514396` with integration common-C `036df96`;
+Mac compiled the same separate build-24 publication `04675c9` with common-C
+`060f617`. Publication after that source adds documentation only.
+
+- All 33 audio/video component tests passed, including the three new admission
+  regressions, both restored late-config draining tests and existing bounds/loss tests.
+- Parent transport unit tests passed: 52, with six integration tests still ignored
+  by that unit invocation. No claim is made for those integration tests.
+- The seven public build-input failure tests passed again.
+- Parent changes are confined to the Kymux gitlink; transport source, public ABI,
+  Cargo lockfile, resource limits and native runtime files are unchanged.
+- Both original stale-video retirement and shipping packet-draining commits remain
+  ancestors of the selected Kymux revision.
+
+Reproduce the component checks from the prepared native parent:
+
+```sh
+RUSTUP_TOOLCHAIN=1.96.0 cargo test --locked --offline \
+  --manifest-path protocol/plank-transport/Cargo.toml \
+  -p kyproto --lib protocol::driver::av
+RUSTUP_TOOLCHAIN=1.96.0 cargo test --locked --offline \
+  --manifest-path protocol/plank-transport/Cargo.toml \
+  -p plank-transport --lib
+```
+
+Build receipts record exact inputs, toolchain and executable hashes. This is new
+compile/component evidence for changed transport inputs. Existing source-policy
+and raw-HID bridge evidence is retained for unchanged files; device streaming
+acceptance is still separate. Neither application was installed or launched.
+
 ### Device scope
 
 The imported negotiation requests Linux-oriented HEVC, ten-bit 4:4:4 identity
