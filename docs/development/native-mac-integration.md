@@ -30,6 +30,11 @@ They must be retargeted for upstream integration in dependency order. A fork
 review is not a merge into Alan's maintained repository. The original Mac
 PRs remain historical checkpoints, not competing implementation targets.
 
+Review entry points: [upstream foundation PR 11](https://github.com/instinctual/plank-client/pull/11),
+[fork sharing PR 11](https://github.com/cnoellert/plank-client/pull/11), and
+[fork display/wheel PR 12](https://github.com/cnoellert/plank-client/pull/12).
+These are drafts; none of these Mac slices has merged upstream.
+
 ## Boundaries
 
 - The existing Qt/SDL application remains the shipping application. Foundation
@@ -59,6 +64,10 @@ compilation and unsigned Mac application compilation with integration common-C
 `036df96f2d1577af7a1b08c05d87a5218fff7c9b`. Use the
 [public recipe](../../scripts/apple-native/README.md), choosing a fresh work
 directory for each platform. Signed release staging remains separate.
+The final stack also passed a fresh unsigned Vision device compile at
+`1bcb595a6f8a9156490186e513a5304fdb072e04` (documentation-only successor to
+`fd844b5`), checking the shared session/input/topology source against SDK 27.
+It was not installed or launched on a headset.
 
 | Check | Foundation and sharing | Displays |
 | --- | --- | --- |
