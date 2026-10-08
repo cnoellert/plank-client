@@ -27,7 +27,7 @@ final class PlankMacWacomSession: @unchecked Sendable {
     @MainActor init(input: PlankInputQueue, preflight: PlankWacomPreflight) {
         self.input = input
         self.preflight = preflight
-        handle = plank_mac_wacom_create(Self.makeWorkerSender(), Unmanaged.passUnretained(self).toOpaque())
+        handle = plank_mac_wacom_create(Self.makeWorkerSender(), Self.makeWorkerActivity(), Unmanaged.passUnretained(self).toOpaque())
     }
 
     // Create the C thunk outside the MainActor initializer. The HID worker
@@ -38,7 +38,7 @@ final class PlankMacWacomSession: @unchecked Sendable {
             guard let context, let bytes else { return false }
             let owner = Unmanaged<PlankMacWacomSession>.fromOpaque(context).takeUnretainedValue()
             let data = Data(bytes: bytes, count: length)
-            guard owner.input.offerNativeRawHid(data) else { return false }
+            guard owner.offerWorkerFrame(data) else { return false }
             if length >= 20 {
                 let type = UInt16(bytes[6]) | UInt16(bytes[7]) << 8
                 if type == 1 { owner.preflight.observeLocalCapture(owned: true) }
@@ -46,6 +46,31 @@ final class PlankMacWacomSession: @unchecked Sendable {
             }
             return true
         }
+    }
+    nonisolated private static func makeWorkerActivity() -> PlankMacWacomActivity {
+        { context in
+            guard let context else { return }
+            let owner = Unmanaged<PlankMacWacomSession>.fromOpaque(context).takeUnretainedValue()
+            owner.inboxLock.lock(); defer { owner.inboxLock.unlock() }
+            guard !owner.closing else { return }
+            owner.input.observeNativeTabletActivity()
+        }
+    }
+    private func offerWorkerFrame(_ data: Data) -> Bool {
+        inboxLock.lock(); defer { inboxLock.unlock() }
+        // Revocation is immediate, but release messages must still reach the
+        // live sender before callback cancellation and physical destruction.
+        let release = data.count >= 20 && data[7] == 0 && (data[6] == 9 || data[6] == 13)
+        guard !closing || release else { return false }
+        return input.offerNativeRawHid(data)
+    }
+    // Used by both manual opt-out and initial availability expiry. Captured
+    // references in Host/focus callbacks remain permanently retired too.
+    static func retireForSession(_ session: inout PlankMacWacomSession?) {
+        guard let closingSession = session else { return }
+        closingSession.markClosing()
+        session = nil
+        closingSession.queue.async { [closingSession] in closingSession.destroyHandle() }
     }
     func setActive(_ active: Bool) {
         inboxLock.lock()

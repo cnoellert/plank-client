@@ -5,14 +5,20 @@
 struct CallbackState {
     std::mutex mutex;
     PlankMacWacomSend send;
+    PlankMacWacomActivity activity;
     void* context;
     bool deliver(const unsigned char* bytes, std::size_t length) {
         std::lock_guard<std::mutex> guard(mutex);
         return send && send(context, bytes, length);
     }
+    void notifyActivity() {
+        std::lock_guard<std::mutex> guard(mutex);
+        if (activity) activity(context);
+    }
     void cancel() {
         std::lock_guard<std::mutex> guard(mutex);
         send = nullptr;
+        activity = nullptr;
         context = nullptr;
     }
 };
@@ -20,7 +26,7 @@ struct PlankMacWacom {
     std::shared_ptr<CallbackState> callbacks;
     std::unique_ptr<MacRawWacomInput> capture;
 };
-extern "C" PlankMacWacom* plank_mac_wacom_create(PlankMacWacomSend send, void* context) {
+extern "C" PlankMacWacom* plank_mac_wacom_create(PlankMacWacomSend send, PlankMacWacomActivity activity, void* context) {
     if (!send || !context) return nullptr;
     // Creation runs in the MainActor session initializer. Preserve the
     // maintained worker's explicit OS permission path, outside its HID thread.
@@ -28,8 +34,10 @@ extern "C" PlankMacWacom* plank_mac_wacom_create(PlankMacWacomSend send, void* c
     auto result = std::make_unique<PlankMacWacom>();
     result->callbacks = std::make_shared<CallbackState>();
     result->callbacks->send = send;
+    result->callbacks->activity = activity;
     result->callbacks->context = context;
-    result->capture = std::make_unique<MacRawWacomInput>([] {},
+    result->capture = std::make_unique<MacRawWacomInput>(
+        [state = result->callbacks] { state->notifyActivity(); },
         [state = result->callbacks](const unsigned char* bytes, std::size_t length) {
             return state->deliver(bytes, length);
         });
