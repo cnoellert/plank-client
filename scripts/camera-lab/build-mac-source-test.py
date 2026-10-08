@@ -15,7 +15,7 @@ contents = app / "Contents"
 (contents / "MacOS").mkdir(parents=True, exist_ok=True)
 info = {"CFBundleName": "PLANK Camera Test", "CFBundleDisplayName": "PLANK Camera Test",
         "CFBundleIdentifier": "la.instinctual.PLANK.CameraSourceTest", "CFBundleExecutable": "PlankCameraTest",
-        "CFBundlePackageType": "APPL", "CFBundleVersion": "1", "CFBundleShortVersionString": "0.1.0",
+        "CFBundlePackageType": "APPL", "CFBundleVersion": "2", "CFBundleShortVersionString": "0.1.0",
         "LSMinimumSystemVersion": "15.0", "NSHighResolutionCapable": True,
         "NSCameraUsageDescription": "Test the camera you choose on this Mac for five seconds."}
 (contents / "Info.plist").write_bytes(plistlib.dumps(info))

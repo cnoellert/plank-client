@@ -65,14 +65,28 @@ final class PlankMacCameraEncoder: @unchecked Sendable {
     }
     static var nowUS: UInt64 { hostTimeUS(CMClockGetTime(CMClockGetHostTimeClock())) ?? 0 }
     static func validImage(_ image: CVPixelBuffer) -> Bool {
-        guard CVPixelBufferGetWidth(image) == 1280, CVPixelBufferGetHeight(image) == 720,
-              CVPixelBufferGetPixelFormatType(image) == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange else { return false }
-        for (key, expected) in [(kCVImageBufferColorPrimariesKey, kCVImageBufferColorPrimaries_ITU_R_709_2),
-                                 (kCVImageBufferTransferFunctionKey, kCVImageBufferTransferFunction_ITU_R_709_2),
-                                 (kCVImageBufferYCbCrMatrixKey, kCVImageBufferYCbCrMatrix_ITU_R_709_2)] {
-            guard let value = CVBufferCopyAttachment(image, key, nil), CFEqual(value, expected) else { return false }
+        imageValidationFailure(image) == nil
+    }
+    /// Bounded format metadata only; never includes image contents or device IDs.
+    static func imageValidationFailure(_ image: CVPixelBuffer) -> String? {
+        let width = CVPixelBufferGetWidth(image), height = CVPixelBufferGetHeight(image)
+        guard width == 1280, height == 720 else { return "Camera delivered \(width) × \(height); expected 1280 × 720." }
+        let pixels = CVPixelBufferGetPixelFormatType(image)
+        guard pixels == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange else {
+            return "Camera pixel format \(pixels); expected limited-range NV12."
         }
-        return true
+        for (name, key, expected) in [
+            ("primaries", kCVImageBufferColorPrimariesKey, kCVImageBufferColorPrimaries_ITU_R_709_2),
+            ("transfer", kCVImageBufferTransferFunctionKey, kCVImageBufferTransferFunction_ITU_R_709_2),
+            ("matrix", kCVImageBufferYCbCrMatrixKey, kCVImageBufferYCbCrMatrix_ITU_R_709_2)] {
+            guard let value = CVBufferCopyAttachment(image, key, nil) else {
+                return "Camera color \(name) metadata is missing."
+            }
+            guard CFEqual(value, expected) else {
+                return "Camera color \(name) is \(String(String(describing: value).prefix(64))); expected BT.709."
+            }
+        }
+        return nil
     }
     func encode(_ image: CVPixelBuffer, captureTimeUS: UInt64) {
         guard let session, Self.validImage(image) else { admission.invalidateReference(activation); return }

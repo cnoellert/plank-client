@@ -12,7 +12,18 @@ final class PlankMacCameraCapture: NSObject, @unchecked Sendable {
         case off, starting, active
         case unavailable(Reason)
     }
-    enum Reason: Sendable { case permission, sourceMissing, format, captureFailed, unsupportedHost }
+    enum Reason: Sendable, CustomStringConvertible {
+        case permission, sourceMissing, format(String), captureFailed, unsupportedHost
+        var description: String {
+            switch self {
+            case .permission: "Camera permission was not granted."
+            case .sourceMissing: "The selected camera is no longer available."
+            case let .format(detail): detail
+            case .captureFailed: "Camera capture or encoding stopped."
+            case .unsupportedHost: "Camera activation was not acknowledged."
+            }
+        }
+    }
     private let queue = DispatchQueue(label: "la.instinctual.plank.camera.capture", qos: .userInitiated)
     private let queueKey = DispatchSpecificKey<UInt8>()
     private let frameQueue = DispatchQueue(label: "la.instinctual.plank.camera.encode", qos: .userInitiated)
@@ -62,14 +73,21 @@ final class PlankMacCameraCapture: NSObject, @unchecked Sendable {
                 fail(next, .sourceMissing); return
             }
             report(.starting)
+            var step = "Creating the camera input"
             do {
                 let session = AVCaptureSession()
                 let videoOutput = AVCaptureVideoDataOutput()
                 let input = try AVCaptureDeviceInput(device: device)
                 session.beginConfiguration()
                 defer { session.commitConfiguration() }
-                guard session.canSetSessionPreset(.hd1280x720), session.canAddInput(input), session.canAddOutput(videoOutput),
-                      let format = device.formats.first(where: {
+                step = "Selecting the 720p capture preset"
+                guard session.canSetSessionPreset(.hd1280x720) else { throw PlankMacCameraEncoder.Failure.format }
+                step = "Adding the camera input"
+                guard session.canAddInput(input) else { throw PlankMacCameraEncoder.Failure.format }
+                step = "Adding the video output"
+                guard session.canAddOutput(videoOutput) else { throw PlankMacCameraEncoder.Failure.format }
+                step = "Selecting a camera mode supporting 1280 × 720 at 30 fps"
+                guard let format = device.formats.first(where: {
                           let size = CMVideoFormatDescriptionGetDimensions($0.formatDescription)
                           return size.width == 1280 && size.height == 720 && $0.videoSupportedFrameRateRanges.contains {
                               $0.minFrameRate <= 30 && $0.maxFrameRate >= 30
@@ -77,28 +95,32 @@ final class PlankMacCameraCapture: NSObject, @unchecked Sendable {
                       }) else { throw PlankMacCameraEncoder.Failure.format }
                 session.sessionPreset = .hd1280x720
                 session.addInput(input); session.addOutput(videoOutput)
+                step = "Setting the camera frame rate"
                 try device.lockForConfiguration()
                 device.activeFormat = format
                 device.activeVideoMinFrameDuration = CMTime(value: 1, timescale: 30)
                 device.activeVideoMaxFrameDuration = CMTime(value: 1, timescale: 30)
                 device.unlockForConfiguration()
+                step = "Requesting limited-range NV12 from the camera"
                 guard videoOutput.availableVideoPixelFormatTypes.contains(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange) else {
                     throw PlankMacCameraEncoder.Failure.format
                 }
                 videoOutput.alwaysDiscardsLateVideoFrames = true
                 videoOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange]
+                step = "Starting the hardware encoder"
                 let newEncoder = try PlankMacCameraEncoder(admission: admission, activation: next, submit: submit) { [weak self] in
                     self?.stopIfCurrent(next, reason: .captureFailed)
                 }
                 let newDelegate = PlankMacCameraCaptureDelegate(session: session, output: videoOutput,
-                    encoder: newEncoder, activation: next, admission: admission) { [weak self] in
-                        self?.stopIfCurrent(next, reason: .format)
+                    encoder: newEncoder, activation: next, admission: admission) { [weak self] detail in
+                        self?.stopIfCurrent(next, reason: .format(detail))
                     }
                 delegate = newDelegate
                 videoOutput.setSampleBufferDelegate(newDelegate, queue: frameQueue)
                 encoder = newEncoder; capture = session; output = videoOutput; activation = next
             } catch {
-                fail(next, .format); return
+                let code = (error as? PlankMacCameraEncoder.Failure).map { " (\($0))" } ?? ""
+                fail(next, .format("\(step) failed\(code).")); return
             }
             guard admission.isCurrent(next), let capture else { cleanup(); return }
             sourceObservers.append(NotificationCenter.default.addObserver(forName: AVCaptureSession.runtimeErrorNotification,
@@ -169,10 +191,10 @@ private final class PlankMacCameraCaptureDelegate: NSObject, AVCaptureVideoDataO
     let encoder: PlankMacCameraEncoder
     let activation: PlankMacCameraAdmission.Activation
     let admission: PlankMacCameraAdmission
-    let fail: @Sendable () -> Void
+    let fail: @Sendable (String) -> Void
     init(session: AVCaptureSession, output: AVCaptureVideoDataOutput, encoder: PlankMacCameraEncoder,
          activation: PlankMacCameraAdmission.Activation, admission: PlankMacCameraAdmission,
-         fail: @escaping @Sendable () -> Void) {
+         fail: @escaping @Sendable (String) -> Void) {
         self.session = session; self.output = output; self.encoder = encoder
         self.activation = activation; self.admission = admission; self.fail = fail
     }
@@ -180,11 +202,12 @@ private final class PlankMacCameraCaptureDelegate: NSObject, AVCaptureVideoDataO
         guard output === self.output, admission.isCurrent(activation) else { return }
         // AVCaptureSession documents every output PTS on synchronizationClock.
         // Convert to the host monotonic clock before comparing with the age gate.
-        guard let clock = session.synchronizationClock, let image = CMSampleBufferGetImageBuffer(sample),
-              PlankMacCameraEncoder.validImage(image),
-              let captureUS = PlankMacCameraEncoder.hostTimeUS(CMSyncConvertTime(
-                  CMSampleBufferGetPresentationTimeStamp(sample), from: clock, to: CMClockGetHostTimeClock())) else {
-            fail(); return
+        guard let clock = session.synchronizationClock else { fail("Camera synchronization clock is unavailable."); return }
+        guard let image = CMSampleBufferGetImageBuffer(sample) else { fail("Camera sample has no image buffer."); return }
+        if let detail = PlankMacCameraEncoder.imageValidationFailure(image) { fail(detail); return }
+        guard let captureUS = PlankMacCameraEncoder.hostTimeUS(CMSyncConvertTime(
+            CMSampleBufferGetPresentationTimeStamp(sample), from: clock, to: CMClockGetHostTimeClock())) else {
+            fail("Camera sample timestamp cannot be converted to the host clock."); return
         }
         encoder.encode(image, captureTimeUS: captureUS)
     }

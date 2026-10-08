@@ -89,3 +89,10 @@ product camera authorization works. A pass establishes the selected physical
 camera's format, clock mapping and the actual hardware encoder/metadata adapter.
 A signed Client consent check, Linux receiver/application, desktop/audio/Wacom
 concurrency and the product lifetime gates remain separate acceptance work.
+
+The first built-in Mac camera attempt passed the permission gate but rejected
+the capture format before producing any frames. This is an unresolved physical
+source failure, not a qualification pass. Test build 2 reports the failing setup
+step or the delivered dimensions, pixel format, color metadata or clock check.
+It retains the strict format policy; diagnostic metadata never includes camera
+identifiers or image contents. Retry requires the operator to press Start again.
