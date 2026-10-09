@@ -110,9 +110,8 @@ struct PlankIPadRoot: View {
             }
             .toolbar(hideBars ? .hidden : .visible, for: .navigationBar)
         }
-        // UIKit owns keyboard space for both the viewport and typing preview.
-        // Applying this at the navigation root prevents ancestor avoidance from
-        // subtracting the keyboard height again (including floating transitions).
+        // The native keyboard overlays a stable desktop. Floating/docked mode
+        // changes do not resize the video or introduce app-owned keyboard space.
         .ignoresSafeArea(.keyboard, edges: client.hasActiveDesktopSession ? .bottom : [])
         .statusBarHidden(hideBars)
         .sheet(isPresented: $add) { PlankIPadBookmarkEditor(store: store, client: client, host: .init(name: "", address: "", spatialDisplaySize: PlankIPadDisplayOptions.defaultSize), isNew: true) }

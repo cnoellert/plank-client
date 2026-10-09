@@ -152,30 +152,3 @@ enum PlankIPadSoftwareKeyboard {
         }
     }
 }
-
-// A bounded display echo, not the remote document or an editable composition.
-// It is discarded whenever the keyboard is hidden, loses focus or disconnects.
-struct PlankIPadTypingPreview {
-    private(set) var text = ""
-    mutating func insert(_ value: String) {
-        for character in value {
-            switch character {
-            case "\u{8}", "\u{7f}": key(0x08)
-            case "\u{1b}": clear()
-            case "\r", "\n", "\r\n": text.append("\n")
-            default: text.append(character)
-            }
-        }
-        text = String(text.suffix(160))
-    }
-    mutating func key(_ code: UInt16) {
-        switch code {
-        case 0x08: if !text.isEmpty { text.removeLast() }
-        case 0x0D: insert("\n")
-        case 0x09: insert("\t")
-        case 0x1B: clear()
-        default: break
-        }
-    }
-    mutating func clear() { text = "" }
-}

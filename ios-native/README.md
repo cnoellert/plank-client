@@ -5,6 +5,16 @@ existing native session/media services at their current source paths. Shipping
 Mac and Vision app identities and targets are unchanged. iPadOS 26 and Apple
 Silicon device/simulator are the initial compile scope, not a final OS matrix.
 
+## Current keyboard behavior — build 15
+
+The keyboard icon opens UIKit's native keyboard and sends typing directly to
+the remote application. Esc, Tab and Hide remain in the native assistant bar.
+There is no PLANK typing preview or local text echo. The keyboard overlays the
+stable desktop; floating/docked transitions do not resize video or its input
+mapping. Keyboard presentation with Bluetooth attached remains under iPadOS's
+native controls, whose floating/full-size presentation was already accepted.
+The earlier build notes below retain the history of the removed preview.
+
 ## First slice
 
 One saved workstation, login, one aspect-fit desktop, video/audio, direct finger
@@ -268,3 +278,10 @@ records the next requested feature and its implementation order. It requires a
 negotiated normalized-pen source on both apps; raw Wacom Relay compatibility is
 not assumed. The existing workstation normalized pen path is the intended
 backend, with no new Host package planned.
+
+Build 14 still failed full-size expansion on the device. At the user's request,
+build 15 removes the preview, its text mirror, custom guide/notification layout
+and obsolete preview fixture/checks. Native live input and assistant controls
+are retained. The old keyboard fixture paths in earlier notes are historical;
+they were removed along with the feature. Device keyboard transitions and live
+typing remain the focused acceptance check for this simpler candidate.

@@ -559,3 +559,23 @@ The requested iPad-as-Pencil-tablet feature is scoped in
 [the Pencil sharing plan](ipad-pencil-relay.md). Its negotiated normalized pen
 path is distinct from the existing raw Wacom Relay; no working iPad publisher or
 AVP receiver is claimed yet.
+
+## Build 15 remove typing preview — October 8
+
+The user reported build 14 still displacing the preview when expanding the small
+keyboard and suggested removing it. Build 15 removes the app-owned preview and
+text mirror entirely, together with preview hit regions, tracking constraints,
+keyboard notification correction and their obsolete fixture/checks. The native
+UITextField responder, live software/hardware mapping, Backspace, Esc/Tab/Hide
+assistant and single hardware-key owner remain. There is no extra composition
+field and no Send action. Typed output is visible in the remote application.
+
+UIKit's keyboard overlays the unchanged desktop; the active GeometryReader and
+keyboard safe-area opt-out keep video/input coordinates stable through keyboard
+mode changes. No app-owned preview height or notification rectangle reserves
+space. Thus the removed preview cannot be detached or duplicated on expansion;
+this source fact is not a device keyboard-transition acceptance claim. The
+retained software mapping/input policy checks and fresh device compilation are
+the verification gates before targeted keyboard presentation/typing acceptance.
+Pencil sharing remains the next scoped feature; no Host or transport changes
+are included here.
