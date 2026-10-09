@@ -30,6 +30,14 @@ The earlier build notes below retain the history of the removed preview.
 
 ## First slice
 
+The iPad24 custom-controls revision uses a fullscreen editor with a uniformly
+scaled live-surface preview, six-point edge/neighbor snapping, and separate
+Resize mode. Desktop and Pencil Sharing retain one saved library with separate
+measured preview dimensions. Direct finger holds survive drift; Pencil contact
+over a key goes to the drawing surface. Global cancellation clears both key
+ownership and held appearance. See [shared custom controls](../docs/development/ipad-custom-controls.md)
+for the reported iPad23 defects, local verification and remaining device gates.
+
 Pencil sharing build 19 corrects the hover-to-contact timing epoch in the
 foreground pad. First build 18 / Vision 47 tests passed hover/right-click but
 failed tip/drag on two workstations. See the [Pencil relay record](../docs/development/ipad-pencil-relay.md)

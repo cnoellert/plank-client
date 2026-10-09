@@ -11,6 +11,7 @@ import UIKit
     @Published private(set) var active = false
     @Published private(set) var padSettings = PlankIPadPencilPadSettings.load()
     @Published private(set) var adjustingPad = false
+    @Published private(set) var inputEpoch: UInt64 = 0
     private var controlKeys = PlankControlKeyOwnership()
     var canDraw: Bool { active && !adjustingPad }
     private var listener: NWListener?
@@ -51,7 +52,7 @@ import UIKit
         if offerControlKeys(change.events) { _ = controlKeys.apply(change) }
         else { controlKeys = PlankControlKeyOwnership() }
     }
-    private func retireInput() { pad?.retire(); releaseControls() }
+    private func retireInput() { inputEpoch &+= 1; pad?.retire(); releaseControls() }
     func start() {
         guard !sharing else { return }
         do {
@@ -150,9 +151,18 @@ struct PlankIPadPencilRelayView: View {
                         GeometryReader { geometry in
                             if showingControls {
                                 PlankIPadCustomControlsOverlay(store:customControls,enabled:relay.canDraw,
-                                    begin:relay.beginControl,end:relay.endControl,tap:relay.tapControl,release:relay.releaseControls)
+                                    begin:relay.beginControl,end:relay.endControl,tap:relay.tapControl,release:relay.releaseControls,
+                                    inputEpoch:relay.inputEpoch,
+                                    pencilSurface:{ relay.pad },pencilHover:{ relay.pad?.controlPencilHover($0) },
+                                    pencilSqueeze:{ relay.pad?.controlPencilSqueeze($0,from:$1) })
                                     .frame(width:geometry.size.width,height:geometry.size.height)
                             }
+                            Color.clear
+                                .allowsHitTesting(false)
+                                .onAppear { customControls.reportSurface(size:geometry.size,surface:.pencilSharing) }
+                                .onChange(of:geometry.size) { _, size in
+                                    if !editingControls && !showingOptions { customControls.reportSurface(size:size,surface:.pencilSharing) }
+                                }
                         }
                     }.clipShape(RoundedRectangle(cornerRadius:16)).padding()
                 Text("Keep this pad open while drawing. Squeeze the Pencil for a right-click after lifting the tip.")
@@ -183,15 +193,18 @@ struct PlankIPadPencilRelayView: View {
             .sheet(isPresented:$showingOptions,onDismiss:{ relay.setAdjustingPad(false) }) {
                 PlankIPadPencilPadOptions(relay:relay)
             }
-            .sheet(isPresented:$editingControls,onDismiss:{ relay.setAdjustingPad(false) }) {
-                PlankIPadCustomControlsEditor(store:customControls)
-                    .presentationDetents([.large]).interactiveDismissDisabled()
+            .fullScreenCover(isPresented:$editingControls,onDismiss:{ relay.setAdjustingPad(false) }) {
+                PlankIPadCustomControlsEditor(store:customControls,referenceSurfaceSize:relay.pad?.bounds.size ?? .zero,
+                    surface:.pencilSharing)
+                    .interactiveDismissDisabled()
             }
         }
         .preferredColorScheme(.dark)
         .interactiveDismissDisabled()
         .onAppear { relay.start() }
-        .onDisappear { relay.stop() }
+        // The editor covers the pad while input is deliberately paused. Keep
+        // its authenticated peer; explicit stop/background still retire it.
+        .onDisappear { if !editingControls { relay.stop() } }
         .onChange(of:scenePhase) { _,phase in if phase != .active { relay.stop(); dismiss() } }
     }
 }
@@ -317,6 +330,9 @@ struct PlankIPadPencilPad: UIViewRepresentable {
         cursor.path = UIBezierPath(ovalIn:CGRect(x:point.x-3,y:point.y-3,width:6,height:6)).cgPath; CATransaction.commit()
     }
     @objc private func hovered(_ gesture: UIHoverGestureRecognizer) {
+        controlPencilHover(gesture)
+    }
+    func controlPencilHover(_ gesture: UIHoverGestureRecognizer) {
         guard touch == nil, relay.canDraw, let viewport else { return }
         guard gesture.state == .began || gesture.state == .changed,
               let p = policy.sample(.hover,point:gesture.location(in:self),viewport:viewport,
@@ -358,7 +374,13 @@ struct PlankIPadPencilPad: UIViewRepresentable {
             receivedDowns,acceptedDowns,acceptedMoves,acceptedUps,relay.active ? 1 : 0)
     }
     func pencilInteraction(_ interaction: UIPencilInteraction,didReceiveSqueeze value: UIPencilInteraction.Squeeze) {
-        guard let point = value.hoverPose?.location, let position = viewport?.normalized(point),
+        controlPencilSqueeze(value,from:interaction.view ?? self)
+    }
+    func controlPencilSqueeze(_ value: UIPencilInteraction.Squeeze,from source: UIView) {
+        guard let location = value.hoverPose?.location else { return }
+        // UIPencilHoverPose.location belongs to the interaction's view.
+        let point = source.convert(location,to:self)
+        guard let position = viewport?.normalized(point),
               squeeze.click(ended:value.phase == .ended,timestamp:value.timestamp,enabled:relay.canDraw,
                 touching:policy.touching,heldButtons:false,hasPosition:true) else { return }
         relay.click(x:Float(position.x),y:Float(position.y))

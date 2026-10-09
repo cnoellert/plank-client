@@ -7,8 +7,10 @@ assignable keys/shortcut combinations. The same editor and saved layouts must
 be available in the direct iPad desktop client and Share Apple Pencil. This
 supersedes the proposed five-key-only, palette-confined editor scope.
 
-Installed iPad22/Vision48 remain the current working candidates. This document
-records the accepted design and candidate implementation. New editor and expanded sharing device qualification remain pending.
+Installed iPad23/Vision49 provide the first custom-controls implementation.
+The user's editor/live-placement and simultaneous Pencil/finger feedback is
+recorded below. Revised editor and contact handling still require targeted
+device acceptance.
 
 ## Purpose and visual direction
 
@@ -28,8 +30,10 @@ input paths. Layout geometry must not alter remote coordinate mapping.
 
 - Each control owns its identity, binding, label, width, height and position.
   Moving Space or changing traversal order never changes its size.
-- Drag controls anywhere on the available canvas. Selection exposes resize
-  handles and native width/height adjustments, with alignment guides.
+- Drag controls anywhere on the available canvas. Edges and neighboring
+  controls snap into rows/columns with a six-point gutter and alignment guides.
+  Resize mode exposes corner handles; native width/height adjustments remain
+  available without precise dragging.
 - Each control binds one supported keyboard key with optional Shift, Ctrl,
   Option and Command. Initial actions are **Hold** (down while held, release
   when lifted) or **Tap** (one complete shortcut). Hold does not generate
@@ -43,8 +47,9 @@ input paths. Layout geometry must not alter remote coordinate mapping.
   ends drawing contact. Done saves; Cancel leaves the previous layout intact.
   Working mode fixes control positions and shows held states.
 - Finger and accessibility input can use controls. Pencil never activates a
-  shortcut control. Provide accessible labels, held-state announcements and
-  controls for position/size that do not require precise dragging.
+  shortcut control. A finger hold survives movement outside the key until lift
+  or genuine cancellation. Provide accessible labels, held-state announcements
+  and controls for position/size that do not require precise dragging.
 
 Controls keep at least a 44-point hit area. Point sizes and normalized anchors
 preserve useful sizes across contexts; clamp placement to the current surface.
@@ -149,3 +154,43 @@ controls, cancellation on disable/rotation and layout replacement, and independe
 Space width pass in an isolated simulator fixture. Physical editing gestures and
 changed direct/shared shortcuts remain device gates. Historical input acceptance
 is preserved but does not qualify the new editor or expanded capability.
+
+## Editor and contact revision — iPad24
+
+The user supplied editor/live screenshots and reported that the positions did
+not match, Pencil drawing sometimes illuminated controls, and finger-held
+controls sometimes released while drawing. These are reported failures, not a
+completed custom-controls acceptance.
+
+The editor now fills the screen and previews the last measured live surface.
+Both the canvas and the resolved button rectangles use one uniform scale;
+drag/resize deltas convert back into live points. Saved button sizes and
+normalized centers remain unchanged. Landscape and portrait arrangements use
+their measured surface sizes when available, cached separately for Desktop and
+Pencil Sharing. Six-point edge/neighbor snapping
+supports aligned rows and columns, with resize snapping to neighboring sizes.
+The inspector toggle stays within the preview; separate Resize mode keeps
+corner hit areas from intercepting ordinary movement.
+
+Shortcut ownership now admits actual direct finger contacts only, using a
+snapshot of the binding and touch owner. Pencil contact over a control forwards
+the real touch and coalesced samples to the underlying drawing surface without
+highlighting or pressing the shortcut. Pencil hover and squeeze use that
+surface's coordinates. A finger hold survives drift outside the control;
+lift, genuine cancellation, disable, geometry/layout replacement and teardown
+still release it. Direct-client Pencil cancellation retires the pen alone,
+preserving independently held hardware and custom-control keys. Editing pauses
+sharing input and preserves the authenticated peer; background/explicit stop
+retain their existing retirement behavior.
+
+Global input retirement advances an input epoch in both iPad paths. The overlay
+retires its visible finger/accessibility owners on that same epoch even if its
+bounds and layout are unchanged. Stable refreshes retain the current hold.
+This prevents a blue Held control from outliving a released remote modifier
+after video geometry or remote configuration changes.
+
+The existing version3 protocol, identities, consent, Host and dependency pins
+are unchanged. Vision49 and Mac26 remain matching receivers. Physical Pencil
+and palm cancellation, saved placement on both live contexts, editor entry/exit,
+and final Host release receipt are separate gates. Aggregate contact lifecycle
+counts are bounded; typed text, bindings and positions are not logged by them.

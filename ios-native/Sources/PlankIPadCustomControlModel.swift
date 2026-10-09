@@ -46,6 +46,208 @@ struct PlankControlPlacement: Codable, Equatable, Sendable {
     }
 }
 
+/// The editor is a uniformly scaled view of the actual available control surface.
+/// Point-sized keys are resolved in that surface first, so a small sheet cannot
+/// clamp their centers differently from the live overlay.
+struct PlankControlPreviewGeometry: Equatable, Sendable {
+    let referenceBounds: CGRect
+    let previewFrame: CGRect
+    let scale: CGFloat
+    init(referenceSize: CGSize, availableSize: CGSize, inset: CGFloat = 16) {
+        guard referenceSize.width.isFinite, referenceSize.height.isFinite,
+              availableSize.width.isFinite, availableSize.height.isFinite,
+              referenceSize.width > 0, referenceSize.height > 0,
+              availableSize.width > 0, availableSize.height > 0 else {
+            referenceBounds = .zero; previewFrame = .zero; scale = 1
+            return
+        }
+        let padding = inset.isFinite ? max(0,inset) : 0
+        let availableWidth = max(0,availableSize.width - padding * 2)
+        let availableHeight = max(0,availableSize.height - padding * 2)
+        referenceBounds = CGRect(origin:.zero,size:referenceSize)
+        scale = max(0.000_001,min(availableWidth / referenceSize.width,availableHeight / referenceSize.height))
+        let size = CGSize(width:referenceSize.width * scale,height:referenceSize.height * scale)
+        previewFrame = CGRect(x:(availableSize.width - size.width) / 2,
+                              y:(availableSize.height - size.height) / 2,width:size.width,height:size.height)
+    }
+    /// Coordinates are local to the preview, not its containing editor.
+    func preview(frame: CGRect) -> CGRect {
+        CGRect(x:(frame.minX - referenceBounds.minX) * scale,
+               y:(frame.minY - referenceBounds.minY) * scale,
+               width:frame.width * scale,height:frame.height * scale)
+    }
+    func referenceTranslation(_ translation: CGSize) -> CGSize {
+        CGSize(width:translation.width / scale,height:translation.height / scale)
+    }
+}
+
+/// Center clamping preserves the saved dimensions, including keys wider than a
+/// temporarily small surface. It does not turn a moved key into another size.
+func clampedPlacement(_ placement: PlankControlPlacement, in bounds: CGRect) -> PlankControlPlacement {
+    guard placement.isValid, bounds.minX.isFinite, bounds.minY.isFinite,
+          bounds.width.isFinite, bounds.height.isFinite,
+          bounds.width > 0, bounds.height > 0 else { return placement }
+    let frame = placement.frame(in:bounds)
+    var next = placement
+    next.x = Double((frame.midX - bounds.minX) / bounds.width)
+    next.y = Double((frame.midY - bounds.minY) / bounds.height)
+    return next
+}
+
+/// Snapping is measured in actual surface points, independently of sheet scale.
+/// Only peers near the perpendicular span participate, preventing a distant row
+/// from pulling an unrelated key sideways.
+enum PlankControlSnap {
+    enum Axis: Equatable, Sendable { case vertical, horizontal }
+    enum Kind: Equatable, Sendable { case edge, alignment, gutter, size }
+    struct Guide: Equatable, Sendable {
+        var axis: Axis
+        var position: CGFloat
+        var start: CGFloat
+        var end: CGFloat
+        var kind: Kind
+    }
+    struct Result: Equatable, Sendable {
+        var placement: PlankControlPlacement
+        var guides: [Guide]
+    }
+    private struct Candidate {
+        var delta: CGFloat
+        var guide: Guide
+        var priority: Int
+    }
+    private static func valid(_ frame: CGRect) -> Bool {
+        frame.minX.isFinite && frame.minY.isFinite && frame.width.isFinite && frame.height.isFinite
+            && frame.width > 0 && frame.height > 0
+    }
+    private static func intervalGap(_ a: ClosedRange<CGFloat>, _ b: ClosedRange<CGFloat>) -> CGFloat {
+        max(0,max(a.lowerBound,b.lowerBound) - min(a.upperBound,b.upperBound))
+    }
+    private static func nearest(_ candidates: [Candidate], threshold: CGFloat) -> Candidate? {
+        candidates.filter { $0.delta.isFinite && abs($0.delta) <= threshold }.min {
+            if abs(abs($0.delta) - abs($1.delta)) > 0.000_001 { return abs($0.delta) < abs($1.delta) }
+            if $0.priority != $1.priority { return $0.priority < $1.priority }
+            if $0.guide.position != $1.guide.position { return $0.guide.position < $1.guide.position }
+            if $0.guide.start != $1.guide.start { return $0.guide.start < $1.guide.start }
+            return $0.guide.end < $1.guide.end
+        }
+    }
+    static func move(placement: PlankControlPlacement, in bounds: CGRect, peers: [CGRect],
+                     gutter: CGFloat = 6, threshold: CGFloat = 8) -> Result {
+        guard placement.isValid, valid(bounds) else { return Result(placement:placement,guides:[]) }
+        let gap = gutter.isFinite ? max(0,gutter) : 6
+        let tolerance = threshold.isFinite ? max(0,threshold) : 8
+        var result = clampedPlacement(placement,in:bounds)
+        var frame = result.frame(in:bounds)
+        var x: [Candidate] = [], y: [Candidate] = []
+        func add(_ axis: Axis, target: CGFloat, source: CGFloat, position: CGFloat,
+                 span: ClosedRange<CGFloat>, kind: Kind, priority: Int) {
+            let delta = target - source
+            let shifted = axis == .vertical ? frame.offsetBy(dx:delta,dy:0) : frame.offsetBy(dx:0,dy:delta)
+            guard shifted.minX >= bounds.minX - 0.000_001, shifted.maxX <= bounds.maxX + 0.000_001,
+                  shifted.minY >= bounds.minY - 0.000_001, shifted.maxY <= bounds.maxY + 0.000_001 else { return }
+            let candidate = Candidate(delta:delta,guide:Guide(axis:axis,position:position,
+                start:span.lowerBound,end:span.upperBound,kind:kind),priority:priority)
+            if axis == .vertical { x.append(candidate) } else { y.append(candidate) }
+        }
+        add(.vertical,target:bounds.minX + gap,source:frame.minX,position:bounds.minX + gap,
+            span:bounds.minY...bounds.maxY,kind:.edge,priority:0)
+        add(.vertical,target:bounds.maxX - gap,source:frame.maxX,position:bounds.maxX - gap,
+            span:bounds.minY...bounds.maxY,kind:.edge,priority:0)
+        add(.horizontal,target:bounds.minY + gap,source:frame.minY,position:bounds.minY + gap,
+            span:bounds.minX...bounds.maxX,kind:.edge,priority:0)
+        add(.horizontal,target:bounds.maxY - gap,source:frame.maxY,position:bounds.maxY - gap,
+            span:bounds.minX...bounds.maxX,kind:.edge,priority:0)
+        for peer in peers.filter(valid) {
+            if intervalGap(frame.minY...frame.maxY,peer.minY...peer.maxY) <= gap + tolerance {
+                let span = min(frame.minY,peer.minY)...max(frame.maxY,peer.maxY)
+                add(.vertical,target:peer.maxX + gap,source:frame.minX,position:peer.maxX + gap / 2,
+                    span:span,kind:.gutter,priority:1)
+                add(.vertical,target:peer.minX - gap,source:frame.maxX,position:peer.minX - gap / 2,
+                    span:span,kind:.gutter,priority:1)
+                for (target,source) in [(peer.minX,frame.minX),(peer.maxX,frame.maxX),(peer.midX,frame.midX)] {
+                    add(.vertical,target:target,source:source,position:target,span:span,kind:.alignment,priority:2)
+                }
+            }
+            if intervalGap(frame.minX...frame.maxX,peer.minX...peer.maxX) <= gap + tolerance {
+                let span = min(frame.minX,peer.minX)...max(frame.maxX,peer.maxX)
+                add(.horizontal,target:peer.maxY + gap,source:frame.minY,position:peer.maxY + gap / 2,
+                    span:span,kind:.gutter,priority:1)
+                add(.horizontal,target:peer.minY - gap,source:frame.maxY,position:peer.minY - gap / 2,
+                    span:span,kind:.gutter,priority:1)
+                for (target,source) in [(peer.minY,frame.minY),(peer.maxY,frame.maxY),(peer.midY,frame.midY)] {
+                    add(.horizontal,target:target,source:source,position:target,span:span,kind:.alignment,priority:2)
+                }
+            }
+        }
+        let horizontal = nearest(x,threshold:tolerance), vertical = nearest(y,threshold:tolerance)
+        frame = frame.offsetBy(dx:horizontal?.delta ?? 0,dy:vertical?.delta ?? 0)
+        result.x = Double((frame.midX - bounds.minX) / bounds.width)
+        result.y = Double((frame.midY - bounds.minY) / bounds.height)
+        return Result(placement:result,guides:[horizontal?.guide,vertical?.guide].compactMap { $0 })
+    }
+
+    /// Translation is already in reference-surface points. The dragged corner
+    /// changes size; its diagonally opposite corner remains fixed throughout.
+    static func resize(original: PlankControlPlacement, corner: Int, translation: CGSize,
+                       in bounds: CGRect, peers: [CGRect], gutter: CGFloat = 6,
+                       threshold: CGFloat = 8) -> Result {
+        guard original.isValid, valid(bounds), (0...3).contains(corner),
+              translation.width.isFinite, translation.height.isFinite else {
+            return Result(placement:original,guides:[])
+        }
+        let gap = gutter.isFinite ? max(0,gutter) : 6
+        let tolerance = threshold.isFinite ? max(0,threshold) : 8
+        let initial = original.frame(in:bounds)
+        let left = corner % 2 == 0, top = corner < 2
+        let fixed = CGPoint(x:left ? initial.maxX : initial.minX,y:top ? initial.maxY : initial.minY)
+        let minimum = CGFloat(PlankControlPlacement.minimumDimension)
+        let maximumWidth = min(CGFloat(PlankControlPlacement.maximumWidth),left ? fixed.x - bounds.minX : bounds.maxX - fixed.x)
+        let maximumHeight = min(CGFloat(PlankControlPlacement.maximumHeight),top ? fixed.y - bounds.minY : bounds.maxY - fixed.y)
+        let width = min(max(minimum,initial.width + (left ? -translation.width : translation.width)),max(minimum,maximumWidth))
+        let height = min(max(minimum,initial.height + (top ? -translation.height : translation.height)),max(minimum,maximumHeight))
+        var frame = CGRect(x:left ? fixed.x - width : fixed.x,y:top ? fixed.y - height : fixed.y,width:width,height:height)
+        let moving = CGPoint(x:left ? frame.minX : frame.maxX,y:top ? frame.minY : frame.maxY)
+        var x: [Candidate] = [], y: [Candidate] = []
+        func add(_ axis: Axis, target: CGFloat, position: CGFloat, span: ClosedRange<CGFloat>, kind: Kind, priority: Int) {
+            let dimension = axis == .vertical ? abs(target - fixed.x) : abs(target - fixed.y)
+            let maximum = axis == .vertical ? maximumWidth : maximumHeight
+            let correctSide = axis == .vertical ? (left ? target < fixed.x : target > fixed.x) : (top ? target < fixed.y : target > fixed.y)
+            guard correctSide, dimension >= minimum, dimension <= maximum + 0.000_001 else { return }
+            let candidate = Candidate(delta:target - (axis == .vertical ? moving.x : moving.y),
+                guide:Guide(axis:axis,position:position,start:span.lowerBound,end:span.upperBound,kind:kind),priority:priority)
+            if axis == .vertical { x.append(candidate) } else { y.append(candidate) }
+        }
+        let edgeX = left ? bounds.minX + gap : bounds.maxX - gap
+        let edgeY = top ? bounds.minY + gap : bounds.maxY - gap
+        add(.vertical,target:edgeX,position:edgeX,span:bounds.minY...bounds.maxY,kind:.edge,priority:0)
+        add(.horizontal,target:edgeY,position:edgeY,span:bounds.minX...bounds.maxX,kind:.edge,priority:0)
+        for peer in peers.filter(valid) {
+            if intervalGap(frame.minY...frame.maxY,peer.minY...peer.maxY) <= gap + tolerance {
+                let span = min(frame.minY,peer.minY)...max(frame.maxY,peer.maxY)
+                for target in [peer.minX,peer.maxX] { add(.vertical,target:target,position:target,span:span,kind:.alignment,priority:2) }
+                add(.vertical,target:peer.minX - gap,position:peer.minX - gap / 2,span:span,kind:.gutter,priority:1)
+                add(.vertical,target:peer.maxX + gap,position:peer.maxX + gap / 2,span:span,kind:.gutter,priority:1)
+                let target = fixed.x + (left ? -peer.width : peer.width)
+                add(.vertical,target:target,position:target,span:span,kind:.size,priority:3)
+            }
+            if intervalGap(frame.minX...frame.maxX,peer.minX...peer.maxX) <= gap + tolerance {
+                let span = min(frame.minX,peer.minX)...max(frame.maxX,peer.maxX)
+                for target in [peer.minY,peer.maxY] { add(.horizontal,target:target,position:target,span:span,kind:.alignment,priority:2) }
+                add(.horizontal,target:peer.minY - gap,position:peer.minY - gap / 2,span:span,kind:.gutter,priority:1)
+                add(.horizontal,target:peer.maxY + gap,position:peer.maxY + gap / 2,span:span,kind:.gutter,priority:1)
+                let target = fixed.y + (top ? -peer.height : peer.height)
+                add(.horizontal,target:target,position:target,span:span,kind:.size,priority:3)
+            }
+        }
+        let horizontal = nearest(x,threshold:tolerance), vertical = nearest(y,threshold:tolerance)
+        let cornerX = moving.x + (horizontal?.delta ?? 0), cornerY = moving.y + (vertical?.delta ?? 0)
+        frame = CGRect(x:min(fixed.x,cornerX),y:min(fixed.y,cornerY),width:abs(cornerX - fixed.x),height:abs(cornerY - fixed.y))
+        return Result(placement:PlankControlPlacement(frame:frame,in:bounds),
+                      guides:[horizontal?.guide,vertical?.guide].compactMap { $0 })
+    }
+}
+
 struct PlankCustomControl: Codable, Equatable, Identifiable, Sendable {
     var id: UUID
     var label: String

@@ -25,6 +25,7 @@ struct PlankIPadRoot: View {
     @State private var sharePencil = false
     @State private var showingCustomControls = false
     @State private var editingCustomControls = false
+    @State private var controlWindowSize = CGSize.zero
     @State private var add = false
     @State private var editing: HostBookmark?
     @State private var controls = false
@@ -50,7 +51,10 @@ struct PlankIPadRoot: View {
                                     if showingCustomControls {
                                         PlankIPadCustomControlsOverlay(store:customControls,enabled:router.enabled,
                                             begin:router.beginControl,end:{ _ = router.endControl(owner:$0) },
-                                            tap:router.tapControl,release:{ _ = router.releaseControls() })
+                                            tap:router.tapControl,release:{ _ = router.releaseControls() },inputEpoch:router.inputEpoch,
+                                            pencilSurface:{ router.surface },
+                                            pencilHover:{ router.surface?.controlPencilHover($0) },
+                                            pencilSqueeze:{ router.surface?.controlPencilSqueeze($0,from:$1) })
                                             .frame(width:geometry.size.width,height:geometry.size.height)
                                     }
                                 }
@@ -63,6 +67,10 @@ struct PlankIPadRoot: View {
                                             .background(.black.opacity(0.8)).foregroundStyle(.white)
                                             .allowsHitTesting(false)
                                     }
+                                }
+                                .onAppear { customControls.reportSurface(size:geometry.size) }
+                                .onChange(of:geometry.size) { _, size in
+                                    if !editingCustomControls { customControls.reportSurface(size:size) }
                                 }
                         }
                     }
@@ -140,14 +148,22 @@ struct PlankIPadRoot: View {
             }
             .toolbar(hideBars ? .hidden : .visible, for: .navigationBar)
         }
+        .background {
+            GeometryReader { geometry in
+                Color.clear
+                    .onAppear { controlWindowSize = geometry.size }
+                    .onChange(of:geometry.size) { _, size in controlWindowSize = size }
+            }
+        }
         // The measured docked keyboard frame reserves space within the canvas.
         // SwiftUI must not also shrink the canvas for the same keyboard.
         .ignoresSafeArea(.keyboard, edges: client.hasActiveDesktopSession ? .bottom : [])
         .statusBarHidden(hideBars)
         .fullScreenCover(isPresented: $sharePencil) { PlankIPadPencilRelayView(relay: pencilRelay,customControls:customControls) }
-        .sheet(isPresented:$editingCustomControls) {
-            PlankIPadCustomControlsEditor(store:customControls)
-                .presentationDetents([.large]).interactiveDismissDisabled()
+        .fullScreenCover(isPresented:$editingCustomControls) {
+            PlankIPadCustomControlsEditor(store:customControls,
+                referenceSurfaceSize:customControls.latestSurfaceSize(for:.desktop) ?? controlWindowSize)
+                .interactiveDismissDisabled()
         }
         .sheet(isPresented: $add) { PlankIPadBookmarkEditor(store: store, client: client, host: .init(name: "", address: "", spatialDisplaySize: PlankIPadDisplayOptions.defaultSize), isNew: true) }
         .sheet(item: $editing) { host in PlankIPadBookmarkEditor(store: store, client: client, host: host, isNew: false) }

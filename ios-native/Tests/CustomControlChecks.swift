@@ -4,10 +4,119 @@ import CoreGraphics
 @main enum CustomControlChecks {
     static func main() throws {
         try modelChecks()
+        geometryChecks()
         ownershipChecks()
         failedAdmissionChecks()
         receiverChecks()
-        print("PASS custom controls: bounded saved layouts, legacy migration, independent Space size, clamped geometry, finite bindings, overlapping ownership, physical repeat, combo order, atomic rejection, fail-closed input epochs and stale-change protection")
+        print("PASS custom controls: bounded saved layouts, legacy migration, independent Space size, reference/live preview parity, stable gutter/alignment/size snapping, anchored resizing, finite bindings, overlapping ownership, physical repeat, combo order, atomic rejection, fail-closed input epochs and stale-change protection")
+    }
+    private static func geometryChecks() {
+        func close(_ a: CGFloat, _ b: CGFloat) -> Bool { abs(a - b) < 0.000_01 }
+        func same(_ a: CGRect, _ b: CGRect) -> Bool {
+            close(a.minX,b.minX) && close(a.minY,b.minY) && close(a.width,b.width) && close(a.height,b.height)
+        }
+        // A wide key near an edge is clamped in the actual surface, then scaled.
+        // Resolving its point dimensions directly in the sheet changes its center.
+        for referenceSize in [CGSize(width:1100,height:730),CGSize(width:730,height:1100)] {
+            for available in [CGSize(width:430,height:620),CGSize(width:850,height:450)] {
+                let geometry = PlankControlPreviewGeometry(referenceSize:referenceSize,availableSize:available)
+                let bounds = geometry.referenceBounds
+                precondition(bounds.size == referenceSize && geometry.scale > 0)
+                precondition(geometry.previewFrame.width <= available.width - 32 + 0.000_01)
+                precondition(geometry.previewFrame.height <= available.height - 32 + 0.000_01)
+                precondition(close(geometry.previewFrame.midX,available.width / 2)
+                    && close(geometry.previewFrame.midY,available.height / 2))
+                for center in [0.0,0.02,0.5,0.98,1.0] {
+                    let key = PlankControlPlacement(x:center,y:1-center,width:480,height:160)
+                    let live = key.frame(in:bounds)
+                    let preview = geometry.preview(frame:live)
+                    let decoded = CGRect(x:preview.minX / geometry.scale,y:preview.minY / geometry.scale,
+                        width:preview.width / geometry.scale,height:preview.height / geometry.scale)
+                    precondition(same(live,decoded),"Preview must be the same actual key rectangle at uniform scale")
+                    precondition(close(preview.width,480 * geometry.scale) && close(preview.height,160 * geometry.scale))
+                    let clamped = clampedPlacement(key,in:bounds)
+                    precondition(same(clamped.frame(in:bounds),live) && clamped.width == 480 && clamped.height == 160)
+                }
+                let moved = geometry.referenceTranslation(CGSize(width:geometry.scale * 76,height:geometry.scale * -52))
+                precondition(close(moved.width,76) && close(moved.height,-52))
+            }
+        }
+        let invalid = PlankControlPreviewGeometry(referenceSize:CGSize(width:0,height:CGFloat.nan),availableSize:CGSize(width:400,height:500))
+        precondition(invalid.previewFrame == .zero && invalid.referenceBounds == .zero && invalid.scale == 1)
+        let invalidBounds = CGRect(x:CGFloat.nan,y:0,width:400,height:500)
+        let safe = PlankControlPlacement(x:0.5,y:0.5,width:200,height:52)
+        precondition(clampedPlacement(safe,in:invalidBounds) == safe)
+        precondition(PlankControlSnap.move(placement:safe,in:invalidBounds,peers:[]).placement == safe)
+        let bounds = CGRect(x:10,y:20,width:1000,height:800)
+        let peer = CGRect(x:210,y:220,width:76,height:52)
+        let proposed = PlankControlPlacement(frame:CGRect(x:296,y:224,width:76,height:52),in:bounds)
+        let row = PlankControlSnap.move(placement:proposed,in:bounds,peers:[peer])
+        let rowFrame = row.placement.frame(in:bounds)
+        precondition(same(rowFrame,CGRect(x:292,y:220,width:76,height:52)),"Neighboring buttons snap into a six-point-gutter row")
+        precondition(close(rowFrame.minX - peer.maxX,6) && row.placement.width == proposed.width)
+        precondition(row.guides.count == 2 && row.guides.contains { $0.kind == .gutter })
+        let column = PlankControlSnap.move(placement:PlankControlPlacement(frame:CGRect(x:214,y:281,width:76,height:52),in:bounds),
+                                          in:bounds,peers:[peer])
+        precondition(same(column.placement.frame(in:bounds),CGRect(x:210,y:278,width:76,height:52)),"Aligned columns retain the same gutter")
+        let edge = PlankControlSnap.move(placement:.init(x:0,y:0,width:200,height:52),in:bounds,peers:[])
+        precondition(same(edge.placement.frame(in:bounds),CGRect(x:16,y:26,width:200,height:52)))
+        // An imported or orientation-changed edge placement can retain x=1
+        // while its actual center is clamped half a key-width inside the edge.
+        // A drag starts from that resolved center, so the first inward movement
+        // changes the live frame rather than spending 100 points in a dead zone.
+        let savedEdge = PlankControlPlacement(x:1,y:0.5,width:200,height:52)
+        let resolvedEdge = clampedPlacement(savedEdge,in:bounds)
+        var translatedEdge = resolvedEdge
+        translatedEdge.x -= 2 / Double(bounds.width)
+        let firstInwardMove = PlankControlSnap.move(placement:translatedEdge,in:bounds,peers:[],threshold:0)
+        precondition(close(firstInwardMove.placement.frame(in:bounds).midX,savedEdge.frame(in:bounds).midX - 2),
+                     "An edge-clamped key moves inward from its actual center immediately")
+        var unresolved = savedEdge
+        unresolved.x -= 2 / Double(bounds.width)
+        precondition(same(unresolved.frame(in:bounds),savedEdge.frame(in:bounds)),
+                     "The regression fixture must distinguish the raw normalized anchor from its displayed center")
+        let distant = CGRect(x:310,y:70,width:76,height:52)
+        let free = PlankControlPlacement(frame:CGRect(x:312,y:520,width:76,height:52),in:bounds)
+        let ungrabbed = PlankControlSnap.move(placement:free,in:bounds,peers:[distant])
+        precondition(same(ungrabbed.placement.frame(in:bounds),free.frame(in:bounds)) && ungrabbed.guides.isEmpty,
+                     "A faraway row must not pull the key into a column")
+        let farPeer = CGRect(x:600,y:600,width:76,height:52)
+        let ordered = PlankControlSnap.move(placement:proposed,in:bounds,peers:[peer,farPeer])
+        let reversed = PlankControlSnap.move(placement:proposed,in:bounds,peers:[farPeer,peer])
+        precondition(ordered == reversed,"Peer enumeration must not change snapping")
+        var stable = row
+        for _ in 0..<20 {
+            stable = PlankControlSnap.move(placement:stable.placement,in:bounds,peers:[peer])
+            precondition(same(stable.placement.frame(in:bounds),rowFrame),"Repeated snap may not drift")
+        }
+        let originalFrame = CGRect(x:110,y:120,width:76,height:52)
+        let original = PlankControlPlacement(frame:originalFrame,in:bounds)
+        let equalSizePeer = CGRect(x:192,y:120,width:100,height:52)
+        let resized = PlankControlSnap.resize(original:original,corner:3,translation:CGSize(width:21,height:2),
+                                              in:bounds,peers:[equalSizePeer])
+        precondition(same(resized.placement.frame(in:bounds),CGRect(x:110,y:120,width:100,height:52)),
+                     "Resize can match a neighboring button while keeping the opposite corner fixed")
+        var stableResize = resized
+        for _ in 0..<20 {
+            stableResize = PlankControlSnap.resize(original:stableResize.placement,corner:3,translation:.zero,
+                in:bounds,peers:[equalSizePeer])
+            precondition(same(stableResize.placement.frame(in:bounds),resized.placement.frame(in:bounds)),
+                         "Equal-size resizing cannot drift on repeated zero translations")
+        }
+        for corner in 0...3 {
+            let resize = PlankControlSnap.resize(original:original,corner:corner,translation:CGSize(width:12,height:9),
+                                                 in:bounds,peers:[],threshold:0)
+            let result = resize.placement.frame(in:bounds)
+            precondition(close(corner % 2 == 0 ? result.maxX : result.minX,
+                               corner % 2 == 0 ? originalFrame.maxX : originalFrame.minX))
+            precondition(close(corner < 2 ? result.maxY : result.minY,
+                               corner < 2 ? originalFrame.maxY : originalFrame.minY),"Every resize anchors the diagonally opposite corner")
+        }
+        let longKey = PlankControlPlacement(frame:CGRect(x:380,y:550,width:200,height:52),in:bounds)
+        let smallerPeer = CGRect(x:298,y:550,width:76,height:52)
+        let longMoved = PlankControlSnap.move(placement:longKey,in:bounds,peers:[smallerPeer])
+        precondition(longMoved.placement.width == 200 && longMoved.placement.height == 52,
+                     "Moving a wide key beside a smaller key cannot resize either")
     }
     private static func modelChecks() throws {
         // The accepted mapping table is the authority for the assignable catalog.

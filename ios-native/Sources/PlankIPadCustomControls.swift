@@ -1,10 +1,32 @@
 import SwiftUI
 import UIKit
 
+enum PlankIPadControlSurface: Hashable { case desktop, pencilSharing }
+
 /// One saved library is shared by the direct desktop and Pencil sharing.
 /// Editing stays local until Done; the overlay receives transport closures.
 @MainActor final class PlankIPadCustomControlsStore: ObservableObject {
     @Published private(set) var library: PlankCustomControlLibrary
+    /// Surface geometry is transient. Reporting it must not publish a change
+    /// during UIKit layout or alter the saved arrangement.
+    private var surfaceSizes: [PlankIPadControlSurface: [Bool: CGSize]] = [:]
+    private var latestSurfaceSizes: [PlankIPadControlSurface: CGSize] = [:]
+    func latestSurfaceSize(for surface: PlankIPadControlSurface) -> CGSize? { latestSurfaceSizes[surface] }
+    func reportSurface(size: CGSize, surface: PlankIPadControlSurface = .desktop) {
+        guard Self.usable(size) else { return }
+        surfaceSizes[surface,default:[:]][size.width >= size.height] = size
+        latestSurfaceSizes[surface] = size
+    }
+    func referenceSize(landscape: Bool, fallback: CGSize, surface: PlankIPadControlSurface = .desktop) -> CGSize {
+        if Self.usable(fallback), (fallback.width >= fallback.height) == landscape { return fallback }
+        if let exact = surfaceSizes[surface]?[landscape] { return exact }
+        let available = Self.usable(fallback) ? fallback : (latestSurfaceSizes[surface] ?? CGSize(width:1180,height:820))
+        return (available.width >= available.height) == landscape
+            ? available : CGSize(width:available.height,height:available.width)
+    }
+    private static func usable(_ size: CGSize) -> Bool {
+        size.width.isFinite && size.height.isFinite && size.width > 1 && size.height > 1
+    }
     init(library: PlankCustomControlLibrary = .load()) { self.library = library }
     var selectedLayout: PlankControlLayout { library.selectedLayout }
     func select(id: UUID) {
@@ -26,6 +48,10 @@ struct PlankIPadCustomControlsOverlay: UIViewRepresentable {
     let tap: (PlankControlBinding) -> Bool
     let release: () -> Void
     var supports: (PlankControlBinding) -> Bool = { _ in true }
+    var inputEpoch: UInt64 = 0
+    var pencilSurface: () -> UIView? = { nil }
+    var pencilHover: (UIHoverGestureRecognizer) -> Void = { _ in }
+    var pencilSqueeze: (UIPencilInteraction.Squeeze, UIView) -> Void = { _,_ in }
 
     func makeUIView(context: Context) -> PlankIPadCustomControlsOverlayView {
         let view = PlankIPadCustomControlsOverlayView()
@@ -35,31 +61,52 @@ struct PlankIPadCustomControlsOverlay: UIViewRepresentable {
     func updateUIView(_ view: PlankIPadCustomControlsOverlayView, context: Context) { configure(view) }
     private func configure(_ view: PlankIPadCustomControlsOverlayView) {
         view.configure(layout:store.selectedLayout, enabled:enabled, begin:begin,
-                       end:end, tap:tap, release:release, supports:supports)
+                       end:end, tap:tap, release:release, supports:supports,inputEpoch:inputEpoch,
+                       pencilSurface:pencilSurface,pencilHover:pencilHover,pencilSqueeze:pencilSqueeze)
     }
-    static func dismantleUIView(_ view: PlankIPadCustomControlsOverlayView, coordinator: ()) { view.retire() }
+    static func dismantleUIView(_ view: PlankIPadCustomControlsOverlayView, coordinator: ()) { view.retire(reason:.teardown) }
 }
 
-@MainActor final class PlankIPadCustomControlsOverlayView: UIView {
+@MainActor final class PlankIPadCustomControlsOverlayView: UIView, UIPencilInteractionDelegate {
+    enum RetirementReason: String { case explicit, layout, geometry, disabled, teardown }
     private var layout: PlankControlLayout?
     private var buttons: [UUID: PlankIPadCustomControlButton] = [:]
     private var previousBounds = CGRect.zero
+    private var currentInputEpoch: UInt64?
     private var releaseAction: () -> Void = {}
+    private var hoverAction: (UIHoverGestureRecognizer) -> Void = { _ in }
+    private var squeezeAction: (UIPencilInteraction.Squeeze, UIView) -> Void = { _,_ in }
 
     init() {
         super.init(frame:.zero)
         backgroundColor = .clear
         isMultipleTouchEnabled = true
         isAccessibilityElement = false
+        let hover = UIHoverGestureRecognizer(target:self,action:#selector(hovered(_:)))
+        hover.allowedTouchTypes = [NSNumber(value:UITouch.TouchType.pencil.rawValue)]
+        hover.requiresExclusiveTouchType = false
+        hover.cancelsTouchesInView = false
+        hover.delaysTouchesBegan = false; hover.delaysTouchesEnded = false
+        addGestureRecognizer(hover)
+        let pencil = UIPencilInteraction(); pencil.delegate = self; addInteraction(pencil)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
 
     func configure(layout next: PlankControlLayout, enabled: Bool,
                    begin: @escaping (UUID, PlankControlBinding) -> Bool,
                    end: @escaping (UUID) -> Void, tap: @escaping (PlankControlBinding) -> Bool,
-                   release: @escaping () -> Void, supports: (PlankControlBinding) -> Bool) {
+                   release: @escaping () -> Void, supports: (PlankControlBinding) -> Bool,
+                   inputEpoch: UInt64 = 0,
+                   pencilSurface: @escaping () -> UIView? = { nil },
+                   pencilHover: @escaping (UIHoverGestureRecognizer) -> Void = { _ in },
+                   pencilSqueeze: @escaping (UIPencilInteraction.Squeeze, UIView) -> Void = { _,_ in }) {
+        if currentInputEpoch != inputEpoch {
+            let hadEpoch = currentInputEpoch != nil
+            currentInputEpoch = inputEpoch
+            if hadEpoch { retire(reason:.explicit) }
+        }
         if layout != next {
-            retire()
+            retire(reason:.layout)
             buttons.values.forEach { $0.removeFromSuperview() }
             buttons.removeAll()
             layout = next
@@ -71,9 +118,10 @@ struct PlankIPadCustomControlsOverlay: UIViewRepresentable {
             setNeedsLayout()
         }
         releaseAction = release
+        hoverAction = pencilHover; squeezeAction = pencilSqueeze
         for control in next.controls {
             buttons[control.id]?.configure(enabled:enabled && supports(control.binding),
-                                           begin:begin, end:end, tap:tap)
+                                           begin:begin, end:end, tap:tap,pencilSurface:pencilSurface)
         }
     }
     override func layoutSubviews() {
@@ -81,7 +129,7 @@ struct PlankIPadCustomControlsOverlay: UIViewRepresentable {
         if bounds != previousBounds {
             // A touch owns the binding and geometry where it began. Resizing
             // cannot transfer that ownership to a control under its new frame.
-            retire()
+            retire(reason:.geometry)
             previousBounds = bounds
         }
         guard let layout else { return }
@@ -91,38 +139,49 @@ struct PlankIPadCustomControlsOverlay: UIViewRepresentable {
         }
     }
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-        // Hit-test only controls. The canvas below retains every other touch,
-        // including a new Pencil contact directly over a shortcut control.
-        if plankIsPencilHit(point:point, in:self, event:event) { return nil }
+        // Uncovered canvas points pass through. Over a key, route the actual
+        // delivered UITouch by type; hit-testing can precede event.allTouches
+        // and must not guess a new Pencil contact from nearby touch positions.
         guard let hit = super.hitTest(point, with:event), hit !== self else { return nil }
         return hit
     }
-    func retire() {
-        buttons.values.forEach { $0.retire() }
+    @objc private func hovered(_ gesture: UIHoverGestureRecognizer) { hoverAction(gesture) }
+    func pencilInteraction(_ interaction: UIPencilInteraction,didReceiveSqueeze value: UIPencilInteraction.Squeeze) {
+        squeezeAction(value,self)
+    }
+    func retire(reason: RetirementReason = .explicit) {
+        buttons.values.forEach { $0.retire(reason:reason) }
         releaseAction()
     }
-}
-
-@MainActor private func plankIsPencilHit(point: CGPoint, in view: UIView, event: UIEvent?) -> Bool {
-    event?.allTouches?.contains(where:{ touch in
-        guard touch.type == .pencil, touch.phase == .began else { return false }
-        let location = touch.location(in:view)
-        return abs(location.x - point.x) < 1 && abs(location.y - point.y) < 1
-    }) == true
 }
 
 /// A control can have several finger owners. Every accepted contact snapshots
 /// its binding, and an accessibility hold has a separate owner from fingers.
 @MainActor private final class PlankIPadCustomControlButton: UIView {
-    private struct Contact { let owner: UUID; let binding: PlankControlBinding; let behavior: PlankControlBehavior }
+    private final class PencilContact {
+        let touch: UITouch
+        weak var target: UIView?
+        init(touch: UITouch,target: UIView) { self.touch = touch; self.target = target }
+    }
+    private struct Diagnostics {
+        var accepted = 0, rejected = 0, indirect = 0, pencil = 0, ends = 0, cancels = 0
+        var disabled = 0, layout = 0, geometry = 0, teardown = 0, explicit = 0
+        mutating func increment(_ key: WritableKeyPath<Self,Int>, by count: Int = 1) {
+            self[keyPath:key] = min(1_000_000,self[keyPath:key] + count)
+        }
+    }
     private let control: PlankCustomControl
     private let label = UILabel()
-    private var contacts: [ObjectIdentifier: Contact] = [:]
+    private var contacts = PlankIPadControlContactPolicy<ObjectIdentifier>()
+    private var pencils: [ObjectIdentifier: PencilContact] = [:]
     private var accessibilityOwner: UUID?
     private var enabled = false
     private var beginAction: (UUID, PlankControlBinding) -> Bool = { _,_ in false }
     private var endAction: (UUID) -> Void = { _ in }
     private var tapAction: (PlankControlBinding) -> Bool = { _ in false }
+    private var pencilSurface: () -> UIView? = { nil }
+    private var diagnostics = Diagnostics()
+    private var lastDiagnosticLog = -Double.infinity
 
     init(control: PlankCustomControl) {
         self.control = control
@@ -156,59 +215,114 @@ struct PlankIPadCustomControlsOverlay: UIViewRepresentable {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
     func configure(enabled next: Bool, begin: @escaping (UUID, PlankControlBinding) -> Bool,
-                   end: @escaping (UUID) -> Void, tap: @escaping (PlankControlBinding) -> Bool) {
-        if enabled && !next { retire() }
+                   end: @escaping (UUID) -> Void, tap: @escaping (PlankControlBinding) -> Bool,
+                   pencilSurface: @escaping () -> UIView?) {
+        let wasEnabled = enabled
         enabled = next
+        if wasEnabled && !next { retire(reason:.disabled) }
         beginAction = begin; endAction = end; tapAction = tap
+        self.pencilSurface = pencilSurface
         refresh()
     }
-    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-        if plankIsPencilHit(point:point, in:self, event:event) { return nil }
-        return super.hitTest(point, with:event)
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window == nil { retire(reason:.teardown) }
     }
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard enabled else { return }
-        for touch in touches where touch.type != .pencil {
-            let owner = UUID()
-            let accepted = control.behavior == .tap || beginAction(owner,control.binding)
-            if accepted {
-                contacts[ObjectIdentifier(touch)] = Contact(owner:owner, binding:control.binding, behavior:control.behavior)
+        for touch in touches {
+            if touch.type == .pencil {
+                forwardPencilBegin(touch,event:event)
+                continue
             }
+            guard touch.type == .direct else { diagnostics.increment(\.indirect); continue }
+            guard let contact = contacts.proposal(id:ObjectIdentifier(touch),source:.direct,
+                inside:bounds.contains(touch.location(in:self)),enabled:enabled,
+                binding:control.binding,behavior:control.behavior) else {
+                diagnostics.increment(\.rejected); continue
+            }
+            let accepted = contact.behavior == .tap || beginAction(contact.owner,contact.binding)
+            guard accepted else { diagnostics.increment(\.rejected); continue }
+            guard enabled, contacts.accept(contact) else {
+                // A synchronous transport refusal can retire the view while its
+                // callback is on the stack. Do not resurrect that finger epoch.
+                if contact.behavior == .hold { endAction(contact.owner) }
+                diagnostics.increment(\.rejected); continue
+            }
+            diagnostics.increment(\.accepted)
         }
-        refresh()
+        refresh(); logIfDue()
     }
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
-        for touch in touches where !bounds.contains(touch.location(in:self)) { finish(touch, activate:false) }
+        for touch in touches { forwardPencil(touch,phase:.moved,event:event) }
+        // Real lift/cancel releases holds. Small finger drift outside a key
+        // while painting is not a second synthetic key-up edge.
         refresh()
     }
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        for touch in touches { finish(touch, activate:bounds.contains(touch.location(in:self))) }
-        refresh()
+        for touch in touches {
+            forwardPencil(touch,phase:.ended,event:event)
+            finish(touch, activate:bounds.contains(touch.location(in:self)),cancelled:false)
+        }
+        refresh(); logIfDue()
     }
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
-        for touch in touches { finish(touch,activate:false) }
-        refresh()
+        for touch in touches { forwardPencil(touch,phase:.cancelled,event:event); finish(touch,activate:false,cancelled:true) }
+        refresh(); logIfDue()
     }
-    private func finish(_ touch: UITouch, activate: Bool) {
-        guard let contact = contacts.removeValue(forKey:ObjectIdentifier(touch)) else { return }
+    private func finish(_ touch: UITouch, activate: Bool, cancelled: Bool) {
+        guard let contact = contacts.finish(id:ObjectIdentifier(touch)) else { return }
+        diagnostics.increment(cancelled ? \.cancels : \.ends)
         if contact.behavior == .hold { endAction(contact.owner) }
         else if activate && enabled { _ = tapAction(contact.binding) }
     }
-    func retire() {
-        for contact in contacts.values where contact.behavior == .hold { endAction(contact.owner) }
-        contacts.removeAll()
-        if let owner = accessibilityOwner { endAction(owner) }
-        accessibilityOwner = nil
-        refresh()
+    private func forwardPencilBegin(_ touch: UITouch,event: UIEvent?) {
+        let id = ObjectIdentifier(touch)
+        guard pencils[id] == nil, pencils.count < 8, let target = pencilSurface(), target !== self else { return }
+        pencils[id] = PencilContact(touch:touch,target:target)
+        diagnostics.increment(\.pencil)
+        // Forward immediately so the target can consume the real coalesced
+        // samples in this event and resolve coordinates in its own UIView.
+        target.touchesBegan([touch],with:event)
+    }
+    private func forwardPencil(_ touch: UITouch,phase: UITouch.Phase,event: UIEvent?) {
+        let id = ObjectIdentifier(touch)
+        guard let contact = pencils[id] else { return }
+        if phase == .ended || phase == .cancelled { pencils.removeValue(forKey:id) }
+        guard let target = contact.target else { return }
+        switch phase {
+        case .moved: target.touchesMoved([touch],with:event)
+        case .ended: target.touchesEnded([touch],with:event)
+        case .cancelled: target.touchesCancelled([touch],with:event)
+        default: break
+        }
+    }
+    func retire(reason: PlankIPadCustomControlsOverlayView.RetirementReason = .explicit) {
+        let retired = contacts.retire()
+        let forwarded = Array(pencils.values); pencils.removeAll()
+        let accessibility = accessibilityOwner; accessibilityOwner = nil
+        if !retired.isEmpty || accessibility != nil {
+            switch reason {
+            case .disabled: diagnostics.increment(\.disabled)
+            case .layout: diagnostics.increment(\.layout)
+            case .geometry: diagnostics.increment(\.geometry)
+            case .teardown: diagnostics.increment(\.teardown)
+            case .explicit: diagnostics.increment(\.explicit)
+            }
+        }
+        for contact in forwarded { contact.target?.touchesCancelled([contact.touch],with:nil) }
+        for contact in retired where contact.behavior == .hold { endAction(contact.owner) }
+        if let owner = accessibility { endAction(owner) }
+        refresh(); logIfDue()
     }
     override func accessibilityActivate() -> Bool {
         guard enabled else { return false }
         if control.behavior == .tap { return tapAction(control.binding) }
         if let owner = accessibilityOwner {
-            endAction(owner); accessibilityOwner = nil
+            accessibilityOwner = nil; endAction(owner)
         } else {
             let owner = UUID()
             guard beginAction(owner,control.binding) else { return false }
+            guard enabled else { endAction(owner); return false }
             accessibilityOwner = owner
         }
         refresh()
@@ -216,7 +330,7 @@ struct PlankIPadCustomControlsOverlay: UIViewRepresentable {
         return true
     }
     private func refresh() {
-        let held = accessibilityOwner != nil || contacts.values.contains(where:{ $0.behavior == .hold })
+        let held = accessibilityOwner != nil || contacts.hasHeldContact
         let touched = held || !contacts.isEmpty
         backgroundColor = touched ? .systemBlue : UIColor(white:0.14,alpha:0.94)
         layer.borderColor = (touched ? UIColor.systemBlue : UIColor(white:0.32,alpha:0.8)).cgColor
@@ -226,25 +340,46 @@ struct PlankIPadCustomControlsOverlay: UIViewRepresentable {
         if !enabled { accessibilityTraits.insert(.notEnabled) }
         accessibilityValue = !enabled ? "Unavailable" : (held ? "Held" : "Released")
     }
+    private func logIfDue() {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - lastDiagnosticLog >= 1,
+              diagnostics.accepted + diagnostics.rejected + diagnostics.indirect + diagnostics.pencil > 0 else { return }
+        lastDiagnosticLog = now
+        // Saturating counts only: no positions, key assignments, text, device
+        // identities or comparison codes. Cancellation remains a real release.
+        NSLog("PLANK control contacts accepted=%d rejected=%d indirect=%d pencil=%d ended=%d cancelled=%d disabled=%d layout=%d geometry=%d teardown=%d explicit=%d active=%d",
+            diagnostics.accepted,diagnostics.rejected,diagnostics.indirect,diagnostics.pencil,
+            diagnostics.ends,diagnostics.cancels,diagnostics.disabled,diagnostics.layout,
+            diagnostics.geometry,diagnostics.teardown,diagnostics.explicit,contacts.activeCount)
+    }
 }
 
 /// Draft-based native editor. Its control canvas sends no remote input.
 struct PlankIPadCustomControlsEditor: View {
     @ObservedObject var store: PlankIPadCustomControlsStore
+    private let referenceSurfaceSize: CGSize
+    private let surface: PlankIPadControlSurface
     @Environment(\.dismiss) private var dismiss
     @State private var draft: PlankCustomControlLibrary
     @State private var history: [PlankCustomControlLibrary] = []
     @State private var selectedControlID: UUID?
     @State private var editingLandscape = true
-    @State private var choseInitialOrientation = false
     @State private var inspectorVisible = true
     @State private var narrowInspector = false
     @State private var dragStart: PlankControlPlacement?
     @State private var resizeStart: PlankControlPlacement?
+    @State private var resizeMode = false
     @State private var canvasSize = CGSize.zero
+    @State private var snapGuides: [PlankControlSnap.Guide] = []
 
-    init(store: PlankIPadCustomControlsStore) {
+    init(store: PlankIPadCustomControlsStore, referenceSurfaceSize: CGSize = .zero,
+         surface: PlankIPadControlSurface = .desktop) {
         self.store = store
+        self.referenceSurfaceSize = referenceSurfaceSize
+        self.surface = surface
+        let initialSurface = referenceSurfaceSize.width > 1 && referenceSurfaceSize.height > 1
+            ? referenceSurfaceSize : (store.latestSurfaceSize(for:surface) ?? referenceSurfaceSize)
+        _editingLandscape = State(initialValue:initialSurface.width >= initialSurface.height)
         _draft = State(initialValue:store.library)
         _selectedControlID = State(initialValue:store.selectedLayout.controls.first(where:{ $0.binding.code == 0x20 })?.id
                                    ?? store.selectedLayout.controls.first?.id)
@@ -254,7 +389,7 @@ struct PlankIPadCustomControlsEditor: View {
     private var selectedControl: PlankCustomControl? {
         selectedLayout.controls.first(where:{ $0.id == selectedControlID })
     }
-    private var usesSheetInspector: Bool { previewFrame(in:canvasSize).width < 620 }
+    private var usesSheetInspector: Bool { previewGeometry(in:canvasSize).previewFrame.width < 620 }
     var body: some View {
         NavigationStack {
             VStack(spacing:0) {
@@ -265,16 +400,13 @@ struct PlankIPadCustomControlsEditor: View {
                         canvas(in:geometry.size)
                     }
                     .clipped()
-                    .onAppear {
-                        canvasSize = geometry.size
-                        if !choseInitialOrientation {
-                            editingLandscape = geometry.size.width >= geometry.size.height
-                            choseInitialOrientation = true
-                        }
+                    .onAppear { canvasSize = geometry.size }
+                    .onChange(of:geometry.size) { _,value in
+                        canvasSize = value; dragStart = nil; resizeStart = nil; snapGuides = []
                     }
-                    .onChange(of:geometry.size) { _,value in canvasSize = value; dragStart = nil; resizeStart = nil }
                 }
-                Text("Layouts are shared by iPad Desktop and Pencil Sharing.")
+                Text(resizeMode ? "Drag a corner to resize. Sizes are in screen points."
+                                : "Drag controls to move. Layouts are shared by iPad Desktop and Pencil Sharing.")
                     .font(.footnote).foregroundStyle(.secondary)
                     .padding(.horizontal).padding(.vertical,10)
                     .frame(maxWidth:.infinity).background(.bar)
@@ -301,8 +433,6 @@ struct PlankIPadCustomControlsEditor: View {
             }
         }
         .preferredColorScheme(.dark)
-        .presentationDetents([.large])
-        .presentationDragIndicator(.visible)
     }
 
     private var editorToolbar: some View {
@@ -337,7 +467,14 @@ struct PlankIPadCustomControlsEditor: View {
                 Text("Portrait").tag(false)
             }
             .pickerStyle(.segmented).frame(maxWidth:240)
-            .onChange(of:editingLandscape) { _,_ in dragStart = nil; resizeStart = nil }
+            .onChange(of:editingLandscape) { _,_ in dragStart = nil; resizeStart = nil; snapGuides = [] }
+            Button {
+                resizeMode.toggle(); dragStart = nil; resizeStart = nil; snapGuides = []
+            } label: { Image(systemName:"arrow.up.left.and.arrow.down.right") }
+                .tint(resizeMode ? .blue : .primary)
+                .accessibilityLabel("Resize controls")
+                .accessibilityValue(resizeMode ? "On" : "Off")
+                .accessibilityHint("When on, drag a selected control's corner to resize it. When off, drag controls to move them.")
             Button { addControl() } label: { Image(systemName:"plus") }
                 .accessibilityLabel("Add control")
                 .disabled(selectedLayout.controls.count >= PlankControlLayout.maximumControls)
@@ -354,7 +491,8 @@ struct PlankIPadCustomControlsEditor: View {
     }
 
     @ViewBuilder private func canvas(in available: CGSize) -> some View {
-        let canvas = previewFrame(in:available)
+        let geometry = previewGeometry(in:available)
+        let canvas = geometry.previewFrame
         let bounds = CGRect(origin:.zero,size:canvas.size)
         ZStack(alignment:.topLeading) {
             RoundedRectangle(cornerRadius:16)
@@ -368,31 +506,41 @@ struct PlankIPadCustomControlsEditor: View {
                 }
                 .frame(maxWidth:.infinity,maxHeight:.infinity)
             }
-            if let selected = selectedControl, dragStart != nil {
-                let placement = selected.placement(landscape:editingLandscape)
-                if placement.x == 0.5 {
-                    Path { path in path.move(to:CGPoint(x:bounds.midX,y:0)); path.addLine(to:CGPoint(x:bounds.midX,y:bounds.height)) }
-                        .stroke(Color.blue.opacity(0.7),style:StrokeStyle(lineWidth:1,dash:[4,4]))
-                        .allowsHitTesting(false)
+            ForEach(Array(snapGuides.enumerated()),id:\.offset) { _, guide in
+                Path { path in
+                    if guide.axis == .vertical {
+                        path.move(to:CGPoint(x:guide.position * geometry.scale,y:guide.start * geometry.scale))
+                        path.addLine(to:CGPoint(x:guide.position * geometry.scale,y:guide.end * geometry.scale))
+                    } else {
+                        path.move(to:CGPoint(x:guide.start * geometry.scale,y:guide.position * geometry.scale))
+                        path.addLine(to:CGPoint(x:guide.end * geometry.scale,y:guide.position * geometry.scale))
+                    }
                 }
-                if placement.y == 0.5 {
-                    Path { path in path.move(to:CGPoint(x:0,y:bounds.midY)); path.addLine(to:CGPoint(x:bounds.width,y:bounds.midY)) }
-                        .stroke(Color.blue.opacity(0.7),style:StrokeStyle(lineWidth:1,dash:[4,4]))
-                        .allowsHitTesting(false)
-                }
+                .stroke(Color.blue.opacity(0.8),style:StrokeStyle(lineWidth:1,dash:[4,4]))
+                .allowsHitTesting(false)
             }
             ForEach(selectedLayout.controls) { control in
-                let placement = control.placement(landscape:editingLandscape)
-                let frame = placement.frame(in:bounds)
-                editorControl(control,frame:frame,bounds:bounds)
+                let frame = geometry.preview(frame:control.placement(landscape:editingLandscape).frame(in:geometry.referenceBounds))
+                editorControl(control,frame:frame,geometry:geometry)
             }
             if let selected = selectedControl, inspectorVisible, canvas.width >= 620 {
-                let frame = selected.placement(landscape:editingLandscape).frame(in:bounds)
+                let frame = geometry.preview(frame:selected.placement(landscape:editingLandscape).frame(in:geometry.referenceBounds))
                 let inspectorSize = CGSize(width:min(304,canvas.width - 32),height:min(430,canvas.height - 24))
                 inspector
                     .frame(width:inspectorSize.width,height:inspectorSize.height)
                     .background(.regularMaterial,in:RoundedRectangle(cornerRadius:16))
                     .position(inspectorCenter(beside:frame,size:inspectorSize,bounds:bounds))
+            }
+            if let selected = selectedControl {
+                let frame = geometry.preview(frame:selected.placement(landscape:editingLandscape).frame(in:geometry.referenceBounds))
+                Button {
+                    if usesSheetInspector { narrowInspector = true; inspectorVisible = true }
+                    else { inspectorVisible.toggle() }
+                } label: { Image(systemName:"slider.horizontal.3") }
+                .font(.body).frame(width:44,height:44)
+                .background(.regularMaterial,in:Circle())
+                .position(inspectorToggleCenter(beside:frame,bounds:bounds))
+                .accessibilityLabel("Show control inspector")
             }
         }
         .frame(width:canvas.width,height:canvas.height)
@@ -402,29 +550,23 @@ struct PlankIPadCustomControlsEditor: View {
         .accessibilityLabel(editingLandscape ? "Landscape arrangement" : "Portrait arrangement")
     }
 
-    private func editorControl(_ control: PlankCustomControl,frame: CGRect,bounds: CGRect) -> some View {
+    private func editorControl(_ control: PlankCustomControl,frame: CGRect,
+                               geometry: PlankControlPreviewGeometry) -> some View {
         let selected = selectedControlID == control.id
         return ZStack {
-            RoundedRectangle(cornerRadius:12)
+            RoundedRectangle(cornerRadius:12 * geometry.scale)
                 .fill(selected ? Color.blue.opacity(0.28) : Color(white:0.14))
-                .overlay { RoundedRectangle(cornerRadius:12).stroke(selected ? Color.blue : Color.white.opacity(0.28),lineWidth:selected ? 2 : 1) }
+                .overlay { RoundedRectangle(cornerRadius:12 * geometry.scale).stroke(selected ? Color.blue : Color.white.opacity(0.28),lineWidth:selected ? 2 : 1) }
             Text(control.label.isEmpty ? control.binding.title : control.label)
-                .font(.body.weight(.medium)).lineLimit(2).minimumScaleFactor(0.8)
-                .padding(.horizontal,8).foregroundStyle(.white)
-            if selected {
+                .font(.system(size:UIFont.preferredFont(forTextStyle:.body).pointSize * geometry.scale,weight:.medium))
+                .lineLimit(2).minimumScaleFactor(0.8)
+                .padding(.horizontal,8 * geometry.scale).foregroundStyle(.white)
+            if selected && resizeMode {
                 ForEach(0..<4,id:\.self) { corner in
-                    resizeHandle(control,corner:corner,bounds:bounds)
+                    resizeHandle(control,corner:corner,geometry:geometry)
                         .position(x:corner % 2 == 0 ? 0 : frame.width,
                                   y:corner < 2 ? 0 : frame.height)
                 }
-                Button {
-                    inspectorVisible.toggle()
-                    if usesSheetInspector { narrowInspector = true; inspectorVisible = true }
-                } label: { Image(systemName:"slider.horizontal.3") }
-                .font(.body).frame(width:44,height:44)
-                .background(.regularMaterial,in:Circle())
-                .offset(x:frame.width/2 + 26,y:0)
-                .accessibilityLabel("Show control inspector")
             }
         }
         .frame(width:frame.width,height:frame.height)
@@ -433,44 +575,51 @@ struct PlankIPadCustomControlsEditor: View {
         .onTapGesture { select(control.id) }
         .gesture(DragGesture(minimumDistance:4,coordinateSpace:.named("plank-custom-controls-editor-canvas"))
             .onChanged { value in
+                guard !resizeMode else { return }
                 if dragStart == nil {
                     remember(); select(control.id,showInspector:false)
-                    dragStart = control.placement(landscape:editingLandscape)
+                    dragStart = clampedPlacement(control.placement(landscape:editingLandscape),in:geometry.referenceBounds)
                 }
-                guard var next = dragStart, bounds.width > 0, bounds.height > 0 else { return }
-                next.x += value.translation.width / bounds.width
-                next.y += value.translation.height / bounds.height
-                // Align to the surface center within eight points.
-                if abs(next.x - 0.5) * bounds.width < 8 { next.x = 0.5 }
-                if abs(next.y - 0.5) * bounds.height < 8 { next.y = 0.5 }
-                setPlacement(clamped(next,in:bounds),id:control.id)
+                guard var next = dragStart else { return }
+                let translation = geometry.referenceTranslation(value.translation)
+                let bounds = geometry.referenceBounds
+                next.x = min(max(next.x + translation.width / max(bounds.width,1),0),1)
+                next.y = min(max(next.y + translation.height / max(bounds.height,1),0),1)
+                let result = PlankControlSnap.move(placement:next,in:bounds,peers:peerFrames(excluding:control.id,in:bounds),
+                                                  gutter:6,threshold:8 / max(geometry.scale,0.01))
+                snapGuides = result.guides
+                setPlacement(result.placement,id:control.id)
             }
-            .onEnded { _ in dragStart = nil })
+            .onEnded { _ in dragStart = nil; snapGuides = [] })
         .accessibilityElement(children:.ignore)
         .accessibilityLabel("\(control.label), \(control.binding.title)")
-        .accessibilityHint("Select to edit binding, size and position.")
+        .accessibilityHint(resizeMode ? "Select, then drag a corner to resize. Exact size is also available in the inspector."
+                           : "Drag to move. Select to edit binding, size and position.")
         .accessibilityAddTraits(selected ? [.isButton,.isSelected] : .isButton)
         .accessibilityAction { select(control.id) }
     }
 
-    private func resizeHandle(_ control: PlankCustomControl,corner: Int,bounds: CGRect) -> some View {
-        Circle().fill(.white).frame(width:10,height:10)
+    private func resizeHandle(_ control: PlankCustomControl,corner: Int,
+                              geometry: PlankControlPreviewGeometry) -> some View {
+        Circle().fill(.white).frame(width:max(6,10 * geometry.scale),height:max(6,10 * geometry.scale))
             .frame(width:44,height:44).contentShape(Rectangle())
             .highPriorityGesture(DragGesture(minimumDistance:0,coordinateSpace:.named("plank-custom-controls-editor-canvas"))
                 .onChanged { value in
                     if resizeStart == nil { remember(); resizeStart = control.placement(landscape:editingLandscape) }
                     guard let original = resizeStart else { return }
-                    var next = original
-                    let dx = value.translation.width * (corner % 2 == 0 ? -1 : 1)
-                    let dy = value.translation.height * (corner < 2 ? -1 : 1)
-                    next.width = min(max(original.width + dx,PlankControlPlacement.minimumDimension),PlankControlPlacement.maximumWidth)
-                    next.height = min(max(original.height + dy,PlankControlPlacement.minimumDimension),PlankControlPlacement.maximumHeight)
-                    next.x = original.x + (next.width - original.width) * (corner % 2 == 0 ? -0.5 : 0.5) / max(bounds.width,1)
-                    next.y = original.y + (next.height - original.height) * (corner < 2 ? -0.5 : 0.5) / max(bounds.height,1)
-                    setPlacement(clamped(next,in:bounds),id:control.id)
+                    let bounds = geometry.referenceBounds
+                    let result = PlankControlSnap.resize(original:original,corner:corner,
+                        translation:geometry.referenceTranslation(value.translation),in:bounds,
+                        peers:peerFrames(excluding:control.id,in:bounds),gutter:6,threshold:8 / max(geometry.scale,0.01))
+                    snapGuides = result.guides
+                    setPlacement(result.placement,id:control.id)
                 }
-                .onEnded { _ in resizeStart = nil })
+                .onEnded { _ in resizeStart = nil; snapGuides = [] })
             .accessibilityHidden(true)
+    }
+
+    private func peerFrames(excluding id: UUID,in bounds: CGRect) -> [CGRect] {
+        selectedLayout.controls.filter { $0.id != id }.map { $0.placement(landscape:editingLandscape).frame(in:bounds) }
     }
 
     private var inspector: some View {
@@ -561,8 +710,8 @@ struct PlankIPadCustomControlsEditor: View {
             mutateControl { control in
                 var placement = control.placement(landscape:editingLandscape)
                 placement[keyPath:key] = value
-                let size = previewFrame(in:canvasSize).size
-                control.setPlacement(clamped(placement,in:CGRect(origin:.zero,size:size)),landscape:editingLandscape)
+                let bounds = previewGeometry(in:canvasSize).referenceBounds
+                control.setPlacement(clampedPlacement(placement,in:bounds),landscape:editingLandscape)
             }
         })
     }
@@ -648,27 +797,17 @@ struct PlankIPadCustomControlsEditor: View {
         replacement.id = selectedLayout.id
         replaceDraft(replacement); selectedControlID = nil
     }
-    private func previewFrame(in available: CGSize) -> CGRect {
-        let inset: CGFloat = 16
-        let width = max(available.width - inset*2,44), height = max(available.height - inset*2,44)
-        // Editing the current orientation uses the whole available surface.
-        // The other arrangement previews the same surface with its axes
-        // exchanged, retaining point-sized controls rather than scaling them.
-        let currentRatio = max(width,height) / max(min(width,height),1)
-        let ratio: CGFloat = editingLandscape ? currentRatio : 1/currentRatio
-        let canvasWidth = min(width,height*ratio), canvasHeight = min(height,width/ratio)
-        return CGRect(x:(available.width-canvasWidth)/2,y:(available.height-canvasHeight)/2,
-                      width:canvasWidth,height:canvasHeight)
+    private func previewGeometry(in available: CGSize) -> PlankControlPreviewGeometry {
+        PlankControlPreviewGeometry(referenceSize:store.referenceSize(landscape:editingLandscape,fallback:referenceSurfaceSize,surface:surface),
+                                    availableSize:available,inset:16)
     }
-    private func clamped(_ placement: PlankControlPlacement,in bounds: CGRect) -> PlankControlPlacement {
-        var next = placement
-        next.width = min(max(next.width,44),480)
-        next.height = min(max(next.height,44),240)
-        let halfX = min(next.width,bounds.width) / max(bounds.width*2,1)
-        let halfY = min(next.height,bounds.height) / max(bounds.height*2,1)
-        next.x = min(max(next.x,halfX),1-halfX)
-        next.y = min(max(next.y,halfY),1-halfY)
-        return next
+    private func inspectorToggleCenter(beside frame: CGRect,bounds: CGRect) -> CGPoint {
+        let radius: CGFloat = 22, gap: CGFloat = 8
+        let right = frame.maxX + gap + radius
+        let left = frame.minX - gap - radius
+        let x = right + radius <= bounds.maxX ? right : (left - radius >= bounds.minX ? left : bounds.midX)
+        return CGPoint(x:min(max(x,bounds.minX + radius),max(bounds.minX + radius,bounds.maxX - radius)),
+                       y:min(max(frame.midY,bounds.minY + radius),max(bounds.minY + radius,bounds.maxY - radius)))
     }
     private func inspectorCenter(beside frame: CGRect,size: CGSize,bounds: CGRect) -> CGPoint {
         let gap: CGFloat = 16

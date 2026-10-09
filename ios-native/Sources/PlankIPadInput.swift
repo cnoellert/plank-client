@@ -8,6 +8,7 @@ import GameController
     @Published private(set) var wheelDiagnostics = "Received 0 · sent 0 · blocked 0"
     @Published private(set) var softwareKeyboardPresented = false
     @Published private(set) var heldControlIDs = Set<UUID>()
+    @Published private(set) var inputEpoch: UInt64 = 0
     @Published private(set) var inputFailure: String?
     func updateWheelDiagnostics(_ value: String) { wheelDiagnostics = value }
     var enabled = false {
@@ -139,6 +140,7 @@ import GameController
     }
     func release() {
         guard !isHandlingInputFailure else { return }
+        inputEpoch &+= 1
         pointerMotion.reset()
         retirePencil()
         let releases = held.release()
@@ -371,8 +373,11 @@ struct PlankIPadCanvas: UIViewRepresentable {
     }
     @objc private func reservedSpace() {}
     func pencilInteraction(_ interaction: UIPencilInteraction, didReceiveSqueeze squeeze: UIPencilInteraction.Squeeze) {
+        controlPencilSqueeze(squeeze,from:interaction.view ?? self)
+    }
+    func controlPencilSqueeze(_ squeeze: UIPencilInteraction.Squeeze,from source: UIView) {
         guard let viewport else { return }
-        let position = squeeze.hoverPose?.location
+        let position = squeeze.hoverPose.map { source.convert($0.location,to:self) }
         guard squeezePolicy.click(ended: squeeze.phase == .ended, timestamp: squeeze.timestamp,
             enabled: router.enabled, touching: router.pencilTouching,
             heldButtons: router.hasHeldButtons,
@@ -420,6 +425,9 @@ struct PlankIPadCanvas: UIViewRepresentable {
                            dragging: activeTouch != nil, suppressStationary: true)
     }
     @objc private func pencilHovered(_ gesture: UIHoverGestureRecognizer) {
+        controlPencilHover(gesture)
+    }
+    func controlPencilHover(_ gesture: UIHoverGestureRecognizer) {
         guard activeTouch == nil, let viewport else { return }
         if gesture.state == .began || gesture.state == .changed {
             guard viewport.normalized(gesture.location(in: self)) != nil else {
@@ -523,7 +531,12 @@ struct PlankIPadCanvas: UIViewRepresentable {
     }
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = activeTouch, touches.contains(touch) else { return }
-        router.release()
+        // Cancellation retires this contact's source. Independently held
+        // hardware or artist-control keys retain their real release edge.
+        if touch.type == .pencil { router.retirePencil() }
+        else if touch.type == .indirectPointer { updatePointerButtons(0, fallbackPrimary:false) }
+        else { router.button(1,pressed:false) }
+        clearPointerContact()
     }
     @discardableResult
     private func sendPencil(_ touch: UITouch, phase: PlankNormalizedPen.Phase,
