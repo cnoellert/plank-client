@@ -7,7 +7,7 @@ import Foundation
         var up = move; up.phase = .up; up.pressureOrDistance = 0
         for message: PlankPencilMessage in [.pen(hover),.pen(down),.pen(move),.pen(up),.configuration(width:5120,height:2880,active:true),.rightClick(x:1,y:0),.ping,.pong,.end] {
             let decoded = try PlankPencilMessage.decode(message.encoded()); assert(decoded == message)
-            var wrong = try message.encoded(); wrong[4] = 2
+            var wrong = try message.encoded(); wrong[4] = 1
             rejects { _ = try PlankPencilMessage.decode(wrong) }
             rejects { _ = try PlankPencilMessage.decode(message.encoded() + Data([0])) }
         }
@@ -15,6 +15,26 @@ import Foundation
             var p = down; p.x = invalid; rejects { _ = try PlankPencilMessage.pen(p).encoded() }
         }
         var p = up; p.pressureOrDistance = 1; rejects { _ = try PlankPencilMessage.pen(p).encoded() }
+        for key in PlankPencilModifier.allCases {
+            for pressed in [true,false] {
+                let message = PlankPencilMessage.modifier(key,pressed:pressed)
+                let decoded = try PlankPencilMessage.decode(message.encoded()); assert(decoded == message)
+            }
+        }
+        rejects { _ = try PlankPencilMessage.decode(Data([0x50,0x4c,0x50,0x4e,2,7,0x41,0,1])) }
+        rejects { _ = try PlankPencilMessage.decode(Data([0x50,0x4c,0x50,0x4e,2,7,0x10,0,2])) }
+        let mixed = PlankPencilMailbox()
+        for value: PlankPencilMessage in [.modifier(.shift,pressed:true),.pen(down),.pen(move),.modifier(.control,pressed:true),.pen(move),.pen(up),.modifier(.shift,pressed:false),.modifier(.control,pressed:false)] {
+            assert(mixed.offer(value).accepted)
+        }
+        var mixedValues: [PlankPencilMessage] = []
+        while let value = try mixed.take() { mixedValues.append(value) }
+        assert(mixedValues.count == 8, "Motion coalescing must not cross a modifier edge")
+        var modifiers = PlankPencilModifierState()
+        rejects { try modifiers.accept(.shift,pressed:false) }
+        try modifiers.accept(.shift,pressed:true)
+        rejects { try modifiers.accept(.shift,pressed:true) }
+        assert(modifiers.retire() == [.shift] && modifiers.retire().isEmpty)
         let mailbox = PlankPencilMailbox(limit:4)
         assert(mailbox.offer(.pen(hover)).wake)
         assert(!mailbox.offer(.pen(hover)).wake)
@@ -47,6 +67,7 @@ import Foundation
             assert(sender.offerPencilRelayPen(down)); assert(sender.offerPencilRelayPen(up))
         }
         assert(!sender.offerPencilRelayPen(down))
+        assert(!sender.offerPencilRelayKey(code:0x10,pressed:true,modifiers:1))
         sender.stop(); assert(!sender.offerPencilRelayPen(hover))
 #endif
         print("Pencil relay codec, malformed data, edge ordering, bounded coalescing and fresh-contact checks passed")

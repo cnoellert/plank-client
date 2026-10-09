@@ -15,7 +15,7 @@ int main(void) {
     assert(!memcmp(acode,bcode,13));
     assert(!plank_pencil_crypto_approve(receiver,second,sizeof(second),&m));
     assert(!plank_pencil_crypto_accept_second(sender,second,m));
-    const uint8_t message[]={0x50,0x4c,0x50,0x4e,1,4};
+    const uint8_t message[]={0x50,0x4c,0x50,0x4e,2,4};
     assert(!plank_pencil_crypto_encrypt(sender,message,sizeof(message),cipher,sizeof(cipher),&k));
     assert(!plank_pencil_crypto_decrypt(receiver,cipher,k,plain,sizeof(plain),&m));
     assert(m==sizeof(message) && !memcmp(message,plain,m));
@@ -26,6 +26,13 @@ int main(void) {
     // Empty raw drawing handshake is not this capability, despite reuse of IK.
     PltrNoise raw; assert(!pltr_noise_init(&raw,PLTR_NOISE_INITIATOR,a,pk,2));
     assert(!pltr_noise_write_first(&raw,NULL,0,first,sizeof(first),&n));
+    receiver=plank_pencil_crypto_create(0,b,NULL); assert(receiver);
+    assert(plank_pencil_crypto_accept_first(receiver,first,n)<0);
+    plank_pencil_crypto_destroy(receiver); pltr_noise_clear(&raw);
+    // Version 1's authenticated purpose cannot authorize modifier messages.
+    const uint8_t old_purpose[]="PLANK-NORMALIZED-PEN/1";
+    assert(!pltr_noise_init(&raw,PLTR_NOISE_INITIATOR,a,pk,2));
+    assert(!pltr_noise_write_first(&raw,old_purpose,sizeof(old_purpose)-1,first,sizeof(first),&n));
     receiver=plank_pencil_crypto_create(0,b,NULL); assert(receiver);
     assert(plank_pencil_crypto_accept_first(receiver,first,n)<0);
     plank_pencil_crypto_destroy(receiver); pltr_noise_clear(&raw);

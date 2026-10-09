@@ -674,6 +674,18 @@ Build 20 introduces locally persisted independent edge margins, optional full-pa
 mapping and a dark charcoal sharing surface with adjustable fill shading. It
 retains the accepted aspect-fit default and direct desktop mapping. Geometry
 changes and opening Pad Options retire contact; admission pauses while the
-options are open. Pure geometry, persistence and contact checks pass. Physical
-custom-area mapping and comfort are pending. Vision 47 and Host packages remain
+options are open. Pure geometry, persistence and contact checks pass. The user
+accepted these build 20 options on October 9. Vision 47 and Host packages remained
 unchanged. See [Pencil sharing](ipad-pencil-relay.md) for the current contract.
+
+## Build 21 / Vision 48 floating shortcut candidate — October 9
+
+Finger-held Shift, Ctrl, Option, Command and Space coexist with Pencil drawing
+in a movable sharing-pad overlay. Input edges use the version 2 authenticated
+capability and separate v2 approval accounts, retaining device identity and old
+pen-only consent records. Key ownership merges with the receiver's local keyboard;
+bounded queue admission preserves modifier/pen ordering. Pure ownership/codec
+checks, sanitizer-backed crypto purpose/version/replay checks and a real TCP
+modifier-held pressure-stroke loopback passed. Physical simultaneous input and
+release acceptance are pending. No Host/network/dependency changes. Dimmed image
+overlay remains the next planned feature.

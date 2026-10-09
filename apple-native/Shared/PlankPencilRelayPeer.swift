@@ -33,8 +33,9 @@ final class PlankPencilRelayPeer: @unchecked Sendable {
     private let saveApproval: @Sendable (Data) throws -> Void
     private var configuration: PlankPencilMessage = .configuration(width:1920,height:1200,active:false)
     private var stroke = PlankPencilStrokeState()
+    private var modifiers = PlankPencilModifierState()
     private var active = false
-    private static let prefix = Data([0x50,0x4c,0x50,0x4e,1])
+    private static let prefix = Data([0x50,0x4c,0x50,0x4e,2])
 
     init(connection: NWConnection, privateKey: Data, peerKey: Data? = nil,
          approvalLookup: @escaping @Sendable (Data) throws -> Bool = PlankPencilRelayKeys.approved,
@@ -197,6 +198,9 @@ final class PlankPencilRelayPeer: @unchecked Sendable {
             guard initiator else { throw PlankPencilWireError.invalid }; try stroke.accept(p)
         case .rightClick:
             guard initiator, !stroke.touching else { throw PlankPencilWireError.invalid }
+        case let .modifier(key,pressed):
+            guard initiator else { throw PlankPencilWireError.invalid }
+            try modifiers.accept(key,pressed:pressed)
         case .ping: try secure(.pong); return
         case .pong: return
         case .end: return

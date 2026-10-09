@@ -20,6 +20,7 @@ struct PlankDiscoveredPencilPad: Identifiable, Sendable {
     private var peer: PlankPencilRelayPeer?
     private var generation = UUID(), discoveryID = UUID()
     private var delivered = PlankPencilStrokeState()
+    private var deliveredModifiers = PlankPencilModifierState()
     private var admission = false
     private var chosenPad: PlankDiscoveredPencilPad?
     private var usedDesktop = false
@@ -38,7 +39,7 @@ struct PlankDiscoveredPencilPad: Identifiable, Sendable {
             let found = results.compactMap { result -> PlankDiscoveredPencilPad? in
                 guard case let .service(name,_,_,_) = result.endpoint,
                       case let .bonjour(txt) = result.metadata,
-                      txt["version"] == "1", txt["capability"] == "normalized-pen",
+                      txt["version"] == "2", txt["capability"] == "normalized-pen",
                       let text = txt["key"], let key = PlankPencilRelayKeys.unhex(text) else { return nil }
                 return .init(id:text,name:name,key:key,endpoint:result.endpoint)
             }.sorted { $0.name < $1.name }
@@ -114,18 +115,24 @@ struct PlankDiscoveredPencilPad: Identifiable, Sendable {
                     guard client.sendPencilRelayPen(p) else { throw PlankPencilWireError.overflow }
                 case let .rightClick(x,y):
                     guard !delivered.touching else { continue }
-                    retire()
+                    retireStroke()
                     client.movePointer(x:Int((x*Float(dimensions.width-1)).rounded()),
                         y:Int((y*Float(dimensions.height-1)).rounded()),width:dimensions.width,height:dimensions.height)
                     client.clickMouseButton(number:3)
+                case let .modifier(key,pressed):
+                    try deliveredModifiers.accept(key,pressed:pressed)
+                    guard client.sendPencilRelayModifier(key,pressed:pressed) else { throw PlankPencilWireError.overflow }
                 default: throw PlankPencilWireError.invalid
                 }
             }
         } catch { peer.close(); retire(); status = "Pencil input ended." }
     }
-    private func retire() { for p in delivered.retire() { client?.retirePencilRelayPen(p) } }
+    private func retireStroke() { for p in delivered.retire() { client?.retirePencilRelayPen(p) } }
+    private func retire() {
+        retireStroke(); _ = deliveredModifiers.retire(); client?.retirePencilRelayModifiers()
+    }
     func endDesktop() {
-        retire(); admission = false
+        retire(); client?.resetPencilKeyOwnership(); admission = false
         guard usedDesktop else {
             peer?.configure(width:dimensions.width,height:dimensions.height,active:false)
             return

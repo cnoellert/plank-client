@@ -14,7 +14,7 @@ final class PencilSocketCheck: @unchecked Sendable {
         let down = PlankNormalizedPen(phase:.down,x:0.2,y:0.3,pressureOrDistance:0.7,tilt:0,rotation:0)
         var move = down; move.phase = .move; move.x = 0.9
         var up = move; up.phase = .up; up.pressureOrDistance = 0
-        return [.pen(down),.pen(move),.pen(up)]
+        return [.modifier(.shift,pressed:true),.modifier(.space,pressed:true),.pen(down),.pen(move),.pen(up),.modifier(.space,pressed:false),.modifier(.shift,pressed:false)]
     }
     func run() throws {
         let listener = try NWListener(using:.tcp,on:.any)
@@ -73,5 +73,5 @@ final class PencilSocketCheck: @unchecked Sendable {
     }
 }
 @main struct PencilSocketMain {
-    static func main() throws { try PencilSocketCheck().run(); print("Real loopback IK/physical-consent gate/configuration/ordered pressure stroke passed") }
+    static func main() throws { try PencilSocketCheck().run(); print("Real loopback IK/physical-consent/configuration/ordered modifier-held pressure stroke passed") }
 }

@@ -52,8 +52,30 @@ two axes differently. Percentages follow the current iPad orientation. The visib
 boundary, Pencil contact/hover and squeeze share one mapping. Opening options or
 changing geometry retires contact; drawing is paused while options are open,
 then requires a fresh contact. The direct iPad desktop retains its existing fit.
-Focused geometry, persistence and contact checks pass; physical customization
-and visual comfort remain candidate acceptance gates.
+Focused geometry, persistence and contact checks pass. The user accepted the
+build 20 options on October 9: “The options here worked well on 20.”
+
+### Build 21 / Vision 48 shortcut pad candidate — October 9
+
+The keyboard button in Share Apple Pencil toggles a compact floating shortcut
+pad: Shift, Ctrl, Option, Command and Space. Hold a button with a finger while
+drawing with the Pencil; sliding out or lifting releases it. Drag its header
+to reposition it, or close it to release all pad-owned keys. It does not open
+the system keyboard or require Scribble. Accessibility activation explicitly
+toggles a held key and announces its state. This path still needs physical
+simultaneous finger/Pencil acceptance.
+
+The version 2 authenticated capability adds only allowlisted shortcut key edges.
+It requires updated apps on both ends. Existing private identities and version 1
+approval accounts are retained; version 2 uses a separate approval account and
+requires comparing codes once for the expanded capability. Old authenticated
+version 1 handshakes and records are rejected. No raw Relay approval is reused.
+The receiver merges local keyboard and pad ownership so only the last owner
+releases a key, including Space; local keyboard repeat remains available.
+Modifier flags accompany existing Host key events. Focus, desktop lifetime,
+geometry/options, pad hiding, background and peer failure retire pad ownership.
+Local retirement does not establish final Host receipt. Image overlay is next
+planned work, not implemented by this candidate.
 
 ## Intended use
 
@@ -121,7 +143,7 @@ one active pen owner and one selected remote display.
 ## Development implementation
 
 The iPad pilot's **Share Apple Pencil** opens a foreground pad and advertises
-`_plank-pencil._tcp` with `version=1`, `capability=normalized-pen` and its public
+`_plank-pencil._tcp` with `version=2`, `capability=normalized-pen` and its public
 identity. PLANK Vision Settings has a separate Apple Pencil section. The raw
 Tablet Relay must be Off. The independent capability is deliberately not a
 `pltr-raw-hid` descriptor; legacy raw clients do not discover or decode it.
@@ -132,12 +154,12 @@ on both devices and approving locally on each. The code is the first six bytes
 of the authenticated IK first-message transcript hash, including the initiator
 identity, ephemeral key and pinned advertised responder identity. Discovery
 alone is untrusted. Existing approved identity pairs skip the comparison; a
-changed public identity requires a new comparison. Pins are not shared with
+changed public identity or expanded version 2 capability requires a new comparison. Pins are not shared with
 Setup, Wacom Relay, Mac or another app. One pending/active headset owns the pad.
 
 `apple-native/Shared/PlankPencilCrypto.c` calls the existing pinned relay Noise
 IK implementation without changing it. It authenticates the exact
-`PLANK-NORMALIZED-PEN/1` capability payload in both handshake messages. The
+`PLANK-NORMALIZED-PEN/2` capability payload in both handshake messages. The
 underlying fixed TCP Noise prologue is reused; application purpose is bound in
 the encrypted handshake payload, not a newly claimed prologue. Empty raw-drawing
 handshakes and mismatched purpose/version are rejected. This direct physical
@@ -145,11 +167,12 @@ comparison path does not use Setup-mediated enrollment, which remains the
 existing Wacom registration path.
 
 Records have a two-byte little-endian length, capped at 256 bytes. Handshakes
-start with `PLPN` and byte version 1. Secure application plaintext also starts
-with `PLPN`, version 1 and a one-byte message kind. Configuration carries two
+start with `PLPN` and byte version 2. Secure application plaintext also starts
+with `PLPN`, version 2 and a one-byte message kind. Configuration carries two
 UInt32 display dimensions and one Boolean; pen carries phase, three Float32
 values, UInt8 tilt and UInt16 tilt direction; right-click carries two Float32
-coordinates. All multibyte values are little-endian. Ping, pong and end have
+coordinates. Modifier edges carry an allowlisted UInt16 virtual key and one
+Boolean, with strict press/release ordering. All multibyte values are little-endian. Ping, pong and end have
 no payload. Unknown kinds/versions, trailing bytes, nonfinite or out-of-range
 values, inconsistent contact transitions, authentication failures and replay
 close the peer. Transport nonce ordering comes from the existing Noise codec.

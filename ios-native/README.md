@@ -45,7 +45,16 @@ pad mapping, and a dark charcoal surface with adjustable shading and optional
 warm gray. Settings persist locally. Pad glow adjusts the app's appearance;
 device display brightness remains in Control Center. Opening options pauses
 drawing and retires the current contact. Geometry/persistence checks pass;
-physical customization and comfort await candidate acceptance.
+The user accepted these build 20 options on October 9.
+
+Build 21 / Vision 48 adds a floating shortcut pad to Pencil sharing. Its keyboard
+button toggles finger-held Shift, Ctrl, Option, Command and Space, with a draggable
+header. Closing the pad releases held keys. The version 2 authenticated protocol
+requires both apps and a fresh code comparison for the expanded capability;
+existing identities and pen-only approvals remain preserved. Local keyboard and
+pad ownership merge at the receiver. Source-specific queue/codec/ownership checks
+pass; simultaneous physical finger/Pencil and interruption acceptance are pending.
+The dimmed desktop overlay remains planned.
 
 One saved workstation, login, one aspect-fit desktop, video/audio, direct finger
 mouse emulation, indirect pointer buttons, physical wheel and hardware keyboard.

@@ -5,6 +5,7 @@ enum PlankPencilMessage: Sendable, Equatable {
     case configuration(width: UInt32, height: UInt32, active: Bool)
     case pen(PlankNormalizedPen)
     case rightClick(x: Float, y: Float)
+    case modifier(PlankPencilModifier, pressed: Bool)
     case ping, pong, end
 
     var replaceablePhase: PlankNormalizedPen.Phase? {
@@ -12,7 +13,7 @@ enum PlankPencilMessage: Sendable, Equatable {
         return p.phase
     }
     func encoded() throws -> Data {
-        var out = Data([0x50, 0x4c, 0x50, 0x4e, 1])
+        var out = Data([0x50, 0x4c, 0x50, 0x4e, 2])
         func u32(_ value: UInt32) { for n in 0..<4 { out.append(UInt8(truncatingIfNeeded: value >> (8*n))) } }
         func scalar(_ value: Float) throws {
             guard value.isFinite, (0...1).contains(value) else { throw PlankPencilWireError.invalid }
@@ -33,12 +34,14 @@ enum PlankPencilMessage: Sendable, Equatable {
         case .ping: out.append(4)
         case .pong: out.append(5)
         case .end: out.append(6)
+        case let .modifier(key,pressed):
+            out.append(7); out.append(UInt8(truncatingIfNeeded:key.rawValue)); out.append(UInt8(key.rawValue >> 8)); out.append(pressed ? 1 : 0)
         }
         return out
     }
     static func decode(_ data: Data) throws -> Self {
         let b = Array(data)
-        guard b.count >= 6, b.prefix(5) == [0x50,0x4c,0x50,0x4e,1] else { throw PlankPencilWireError.invalid }
+        guard b.count >= 6, b.prefix(5) == [0x50,0x4c,0x50,0x4e,2] else { throw PlankPencilWireError.invalid }
         func u32(_ i: Int) -> UInt32 { (0..<4).reduce(0) { $0 | UInt32(b[i+$1]) << (8*$1) } }
         let result: Self
         switch (b[5],b.count) {
@@ -53,6 +56,9 @@ enum PlankPencilMessage: Sendable, Equatable {
         case (4,6): result = .ping
         case (5,6): result = .pong
         case (6,6): result = .end
+        case (7,9):
+            guard b[8] <= 1, let key = PlankPencilModifier(rawValue:UInt16(b[6]) | UInt16(b[7]) << 8) else { throw PlankPencilWireError.invalid }
+            result = .modifier(key,pressed:b[8] == 1)
         default: throw PlankPencilWireError.invalid
         }
         _ = try result.encoded() // Same finite/range rules in both directions.

@@ -39,6 +39,8 @@ the remote canvas without providing useful working feedback.
 - Send typing live; the user removed the local text preview after keyboard-layout problems.
 - Keep the Pencil sharing surface dark and quiet beneath the headset; allow
   artists to choose pad margins and mapping without altering their desktop.
+- Keep finger-held shortcut controls compact and movable; they must coexist
+  with Pencil contact and clearly show which keys remain held.
 - Preserve accepted input behavior while refining presentation.
 
 ## Accessibility & Inclusion

@@ -11,6 +11,7 @@ import UIKit
     @Published private(set) var active = false
     @Published private(set) var padSettings = PlankIPadPencilPadSettings.load()
     @Published private(set) var adjustingPad = false
+    @Published private(set) var heldModifiers = Set<PlankPencilModifier>()
     var canDraw: Bool { active && !adjustingPad }
     private var listener: NWListener?
     private var peer: PlankPencilRelayPeer?
@@ -19,19 +20,29 @@ import UIKit
     func setPadSettings(_ value: PlankIPadPencilPadSettings) {
         let next = value.validated
         guard next != padSettings else { return }
-        pad?.retire(); padSettings = next; next.save(); pad?.setNeedsLayout()
+        retireInput(); padSettings = next; next.save(); pad?.setNeedsLayout()
     }
     func setAdjustingPad(_ value: Bool) {
         guard value != adjustingPad else { return }
-        pad?.retire(); adjustingPad = value; pad?.setNeedsLayout()
+        retireInput(); adjustingPad = value; pad?.setNeedsLayout()
     }
+    func setModifier(_ key: PlankPencilModifier, pressed: Bool) {
+        if pressed {
+            guard canDraw, heldModifiers.insert(key).inserted else { return }
+        } else { guard heldModifiers.remove(key) != nil else { return } }
+        if peer?.offer(.modifier(key,pressed:pressed)) != true { peer?.close(); active = false }
+    }
+    func releaseModifiers() {
+        for key in heldModifiers.sorted(by:{ $0.rawValue < $1.rawValue }) { setModifier(key,pressed:false) }
+    }
+    private func retireInput() { pad?.retire(); releaseModifiers() }
     func start() {
         guard !sharing else { return }
         do {
             let key = try PlankPencilRelayKeys.privateKey()
             let publicKey = try PlankPencilRelayKeys.publicKey(key)
             let listener = try NWListener(using:.tcp,on:.any)
-            var txt = NWTXTRecord(); txt["version"] = "1"; txt["capability"] = "normalized-pen"
+            var txt = NWTXTRecord(); txt["version"] = "2"; txt["capability"] = "normalized-pen"
             txt["key"] = PlankPencilRelayKeys.hex(publicKey)
             listener.service = .init(name:UIDevice.current.name + " Pencil",type:"_plank-pencil._tcp",domain:"local.",txtRecord:txt)
             listener.newConnectionLimit = 1
@@ -61,7 +72,7 @@ import UIKit
                     case .ready: self.verification = nil; self.status = "Headset approved. Waiting for an active desktop."
                     case .messagesAvailable: self.drain()
                     case let .ended(reason):
-                        self.pad?.retire(); self.peer = nil; self.active = false
+                        self.retireInput(); self.peer = nil; self.active = false
                         self.listener?.newConnectionLimit = 1
                         self.verification = nil; self.status = reason + ". Select this iPad again on the headset."
                     }
@@ -76,7 +87,7 @@ import UIKit
             while let message = try peer.incoming.take() {
                 guard case let .configuration(w,h,next) = message else { throw PlankPencilWireError.invalid }
                 // Retire the old contact before the pad mapping/admission changes.
-                pad?.retire(); width = Int(w); height = Int(h); active = next
+                retireInput(); width = Int(w); height = Int(h); active = next
                 status = next ? "Connected. Draw in the outlined area." : "Connected. Bring the PLANK desktop into focus on your headset."
                 pad?.setNeedsLayout()
             }
@@ -92,7 +103,7 @@ import UIKit
         if !peer.offer(.rightClick(x:x,y:y)) { peer.close(); active = false }
     }
     func stop() {
-        pad?.retire(); generation = UUID(); peerID = UUID(); active = false; sharing = false
+        retireInput(); generation = UUID(); peerID = UUID(); active = false; sharing = false
         peer?.close(); peer = nil; verification = nil
         listener?.newConnectionHandler = nil; listener?.stateUpdateHandler = nil; listener?.cancel(); listener = nil
         adjustingPad = false; status = "Sharing is off"
@@ -104,6 +115,8 @@ struct PlankIPadPencilRelayView: View {
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dismiss) private var dismiss
     @State private var showingOptions = false
+    @State private var showingModifiers = false
+    @State private var modifierPosition = CGPoint(x:0.25,y:0.8)
     var body: some View {
         NavigationStack {
             VStack(spacing:16) {
@@ -115,7 +128,25 @@ struct PlankIPadPencilRelayView: View {
                         Button("Codes Match — Approve Headset") { relay.approve() }.buttonStyle(.borderedProminent)
                     }
                 }
-                PlankIPadPencilPad(relay:relay).background(.black).clipShape(RoundedRectangle(cornerRadius:16)).padding()
+                PlankIPadPencilPad(relay:relay).background(.black)
+                    .overlay {
+                        GeometryReader { geometry in
+                            if showingModifiers {
+                                let width = min(312.0,geometry.size.width - 32), height = 156.0
+                                PlankIPadModifierPad(relay:relay,onClose:{
+                                    relay.releaseModifiers(); showingModifiers = false
+                                },onMove:{ delta in
+                                    let minX = (width/2 + 16) / geometry.size.width, maxX = 1 - minX
+                                    let minY = (height/2 + 16) / geometry.size.height, maxY = 1 - minY
+                                    modifierPosition.x = min(max(min(max(modifierPosition.x,minX),maxX) + delta.x / geometry.size.width,minX),maxX)
+                                    modifierPosition.y = min(max(min(max(modifierPosition.y,minY),maxY) + delta.y / geometry.size.height,minY),maxY)
+                                })
+                                .frame(width:width,height:height)
+                                .position(x:min(max(geometry.size.width * modifierPosition.x,width/2 + 16),geometry.size.width-width/2-16),
+                                          y:min(max(geometry.size.height * modifierPosition.y,height/2+16),geometry.size.height-height/2-16))
+                            }
+                        }
+                    }.clipShape(RoundedRectangle(cornerRadius:16)).padding()
                 Text("Keep this pad open while drawing. Squeeze the Pencil for a right-click after lifting the tip.")
                     .font(.footnote).foregroundStyle(.secondary).padding(.horizontal)
             }
@@ -124,10 +155,16 @@ struct PlankIPadPencilRelayView: View {
             .background(Color.black.ignoresSafeArea())
             .toolbar {
                 ToolbarItem(placement:.topBarLeading) {
-                    Button {
-                        relay.setAdjustingPad(true); showingOptions = true
-                    } label: { Label("Pad Options",systemImage:"slider.horizontal.3") }
-                    .accessibilityLabel("Pad options: margins, mapping and appearance")
+                    HStack {
+                        Button {
+                            relay.setAdjustingPad(true); showingOptions = true
+                        } label: { Label("Pad Options",systemImage:"slider.horizontal.3") }
+                        .accessibilityLabel("Pad options: margins, mapping and appearance")
+                        Button {
+                            relay.releaseModifiers(); showingModifiers.toggle()
+                        } label: { Label("Shortcut Pad",systemImage:"keyboard") }
+                        .accessibilityLabel(showingModifiers ? "Hide shortcut pad" : "Show shortcut pad")
+                    }
                 }
                 ToolbarItem(placement:.topBarTrailing) { Button("Stop Sharing") { relay.stop(); dismiss() } }
             }
@@ -218,7 +255,8 @@ struct PlankIPadPencilPad: UIViewRepresentable {
     private var viewport: PlankIPadViewport? { relay.padSettings.viewport(bounds:bounds,width:relay.width,height:relay.height) }
     init(relay: PlankIPadPencilRelay) {
         self.relay = relay; super.init(frame:.zero); relay.pad = self
-        isMultipleTouchEnabled = false; backgroundColor = .black
+        // Track Pencil independently when a finger or palm also touches the pad.
+        isMultipleTouchEnabled = true; backgroundColor = .black
         outline.lineWidth = 1; layer.addSublayer(outline)
         layer.addSublayer(cursor)
         let hover = UIHoverGestureRecognizer(target:self,action:#selector(hovered(_:)))
@@ -230,7 +268,7 @@ struct PlankIPadPencilPad: UIViewRepresentable {
     override func layoutSubviews() {
         super.layoutSubviews()
         let rect = viewport?.rect ?? .zero
-        if rect != previous { retire(); previous = rect }
+        if rect != previous { retire(); relay.releaseModifiers(); previous = rect }
         CATransaction.begin(); CATransaction.setDisableActions(true)
         let settings = relay.padSettings, white = settings.fillWhite
         outline.fillColor = (settings.tone == .charcoal ? UIColor(white:white,alpha:1)
@@ -284,7 +322,9 @@ struct PlankIPadPencilPad: UIViewRepresentable {
     override func touchesEnded(_ touches: Set<UITouch>,with event: UIEvent?) {
         guard let touch, touches.contains(touch) else { return }; _ = send(touch,phase:.up); retire()
     }
-    override func touchesCancelled(_ touches: Set<UITouch>,with event: UIEvent?) { retire() }
+    override func touchesCancelled(_ touches: Set<UITouch>,with event: UIEvent?) {
+        guard let touch, touches.contains(touch) else { return }; retire()
+    }
     private func logContactIfDue() {
         let now = ProcessInfo.processInfo.systemUptime
         guard now - lastContactLog >= 1 else { return }

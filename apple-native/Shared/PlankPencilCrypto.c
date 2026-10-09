@@ -5,7 +5,7 @@
 #include <sodium.h>
 struct PlankPencilCrypto { PltrNoise noise; int initiator, stage; char code[13]; };
 int plank_pencil_crypto_public_key(const uint8_t key[32],uint8_t public_key[32]) { return pltr_noise_public_key(key,public_key); }
-static const uint8_t capability[] = "PLANK-NORMALIZED-PEN/1";
+static const uint8_t capability[] = "PLANK-NORMALIZED-PEN/2";
 static int fail(PlankPencilCrypto *c) { if(c) { c->stage=-1; pltr_noise_clear(&c->noise); } return -1; }
 static void code(PlankPencilCrypto *c) { sodium_bin2hex(c->code,13,c->noise.handshake_hash,6); }
 PlankPencilCrypto *plank_pencil_crypto_create(int initiator,const uint8_t key[32],const uint8_t peer[32]) {

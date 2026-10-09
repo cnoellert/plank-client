@@ -124,6 +124,18 @@ private final class PlankTabletControlReceiver: @unchecked Sendable {
 final class PlankCoreClient: ObservableObject {
 #if PLANK_PENCIL_RELAY_RECEIVER
     lazy var pencilRelay = PlankPencilRelayReceiver(client: self)
+    private var pencilKeyOwnership = PlankPencilKeyOwnership()
+    func sendPencilRelayModifier(_ key: PlankPencilModifier, pressed: Bool) -> Bool {
+        guard pencilRelayCanDraw, pencilRelay.ownsPen else { return false }
+        guard let event = pencilKeyOwnership.update(code:key.rawValue,pressed:pressed,source:.pad) else { return true }
+        return inputQueue.offerPencilRelayKey(code:event.code,pressed:event.pressed,modifiers:event.modifiers)
+    }
+    func retirePencilRelayModifiers() {
+        for event in pencilKeyOwnership.retirePad() {
+            inputQueue.append(.key(code:event.code,pressed:event.pressed,modifiers:event.modifiers))
+        }
+    }
+    func resetPencilKeyOwnership() { pencilKeyOwnership = .init() }
     var pencilRelaySourceAllowed: Bool { PlankRelayKeys.relayRegistry().selection == .off }
     var pencilRelayCanDraw: Bool {
         guard pencilRelaySourceAllowed, hostSupportsNormalizedPen, tabletSceneActive,
@@ -1107,7 +1119,12 @@ final class PlankCoreClient: ObservableObject {
 #if PLANK_TABLET_RELAY
         guard tabletInputPolicy.allowsKey(code, pressed: pressed, modifiers: modifiers) else { return }
 #endif
+#if PLANK_PENCIL_RELAY_RECEIVER
+        guard let event = pencilKeyOwnership.update(code:code,pressed:pressed,modifiers:modifiers,source:.local) else { return }
+        inputQueue.append(.key(code:event.code,pressed:event.pressed,modifiers:event.modifiers))
+#else
         inputQueue.append(.key(code: code, pressed: pressed, modifiers: modifiers))
+#endif
     }
 
     func authenticate(username: String, password: String) async {
