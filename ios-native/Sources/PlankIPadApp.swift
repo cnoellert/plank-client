@@ -110,8 +110,8 @@ struct PlankIPadRoot: View {
             }
             .toolbar(hideBars ? .hidden : .visible, for: .navigationBar)
         }
-        // The native keyboard overlays a stable desktop. Floating/docked mode
-        // changes do not resize the video or introduce app-owned keyboard space.
+        // UIKit reserves docked keyboard space once, within the canvas.
+        // SwiftUI must not also shrink the canvas for the same keyboard.
         .ignoresSafeArea(.keyboard, edges: client.hasActiveDesktopSession ? .bottom : [])
         .statusBarHidden(hideBars)
         .sheet(isPresented: $add) { PlankIPadBookmarkEditor(store: store, client: client, host: .init(name: "", address: "", spatialDisplaySize: PlankIPadDisplayOptions.defaultSize), isNew: true) }

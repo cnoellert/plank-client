@@ -125,7 +125,7 @@ struct PlankIPadCanvas: UIViewRepresentable {
     private var wheelReceived = 0, wheelBlocked = 0
     private var wheelVertical = 0, wheelHorizontal = 0
     private var lastWheelLog = 0.0
-    private var previousBounds = CGRect.zero
+    private var previousVideoFrame = CGRect.zero
     private var registered = false
     private var keyboardInput: GCKeyboardInput?
     private var transferringKeyboardFocus = false
@@ -181,8 +181,8 @@ struct PlankIPadCanvas: UIViewRepresentable {
         configureKeyboardAssistant()
         transferringKeyboardFocus = true
         defer { transferringKeyboardFocus = false }
-        // The preview is app-owned, not an accessory reparented by UIKit when
-        // the system keyboard switches between floating and docked modes.
+        // Keep UIKit's native responder and keyboard mode controls. There is
+        // no app-owned preview or custom accessory to reparent on expansion.
         if router.softwareKeyboardPresented {
             keyboardEntry.becomeFirstResponder()
             keyboardEntry.reloadInputViews()
@@ -204,6 +204,7 @@ struct PlankIPadCanvas: UIViewRepresentable {
         backgroundColor = .black
         isMultipleTouchEnabled = true
         addSubview(video)
+        PlankIPadKeyboardViewport.constrain(video, inside: self)
         // A normal text responder lets UIKit supply its keyboard chooser with
         // hardware attached. It stores no document and is not a visible field.
         keyboardEntry.frame = CGRect(x: 0, y: 0, width: 1, height: 1)
@@ -261,8 +262,15 @@ struct PlankIPadCanvas: UIViewRepresentable {
     }
     override func layoutSubviews() {
         super.layoutSubviews()
-        if previousBounds != bounds { router.release(); previousBounds = bounds }
-        video.frame = bounds
+        // The input viewport is the same resized rectangle used by video.
+        // Retire held contact before another sample uses changed geometry.
+        if previousVideoFrame != video.frame {
+            router.release()
+            previousVideoFrame = video.frame
+            NSLog("PLANK iPad viewport canvas=%.0fx%.0f video=%.0fx%.0f keyboardTop=%.0f",
+                bounds.width, bounds.height, video.frame.width, video.frame.height,
+                keyboardLayoutGuide.layoutFrame.minY)
+        }
     }
     func clearContact() {
         clearPointerContact(); keyboardPolicy.reset()

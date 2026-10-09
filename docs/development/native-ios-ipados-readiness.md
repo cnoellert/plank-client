@@ -579,3 +579,22 @@ retained software mapping/input policy checks and fresh device compilation are
 the verification gates before targeted keyboard presentation/typing acceptance.
 Pencil sharing remains the next scoped feature; no Host or transport changes
 are included here.
+
+## Build 16 restore docked keyboard space without preview — October 8
+
+The user reported that build 15's full keyboard covered the desktop and the
+keyboard stayed small on subsequent opens. Removing the preview had also
+removed desktop accommodation. Build 16 restores that accommodation alone:
+the video bottom is constrained to UIKit's own keyboard layout guide, with
+floating-keyboard tracking and hidden bottom safe-area reservation disabled.
+The root remains exempt from SwiftUI keyboard avoidance, so one owner reserves
+space. Input uses the same video rectangle and retires held contact on changes.
+No preview, local echo, custom keyboard accessory or keyboard-frame correction
+is reintroduced. Geometry logs contain only canvas/video dimensions and the
+guide top. Full-size selection remains iPadOS controlled; Apple's floating
+keyboard More → Full action is the targeted device check, not a programmatic
+mode-setting claim. Simulator dock/hide/reopen checks and a fresh device
+compile precede installation; physical expansion and Bluetooth coexistence
+remain user acceptance gates.
+
+The isolated production-helper simulator check passed actual dock/hide/reopen: canvas stays 1074pt; video ends at both guide and keyboard top 757pt when docked/reopened, and restores all 1074pt hidden. Retained input policy checks pass. This is not floating/full-size gesture or physical-device acceptance.

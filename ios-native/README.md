@@ -5,14 +5,17 @@ existing native session/media services at their current source paths. Shipping
 Mac and Vision app identities and targets are unchanged. iPadOS 26 and Apple
 Silicon device/simulator are the initial compile scope, not a final OS matrix.
 
-## Current keyboard behavior — build 15
+## Current keyboard behavior — build 16
 
 The keyboard icon opens UIKit's native keyboard and sends typing directly to
 the remote application. Esc, Tab and Hide remain in the native assistant bar.
-There is no PLANK typing preview or local text echo. The keyboard overlays the
-stable desktop; floating/docked transitions do not resize video or its input
-mapping. Keyboard presentation with Bluetooth attached remains under iPadOS's
-native controls, whose floating/full-size presentation was already accepted.
+There is no PLANK typing preview or local text echo. A docked keyboard reduces
+the visible desktop using UIKit's keyboard layout guide; a floating keyboard
+overlays it without changing its size. Video and input use the same rectangle,
+and resizing retires held input. SwiftUI does not reserve keyboard space again.
+Keyboard presentation with Bluetooth attached remains under iPadOS's native
+controls. On the floating keyboard, use its More button and choose Full to
+request the full-size keyboard; the device transition in build 16 is pending.
 The earlier build notes below retain the history of the removed preview.
 
 ## First slice
