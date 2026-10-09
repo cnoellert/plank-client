@@ -1,7 +1,9 @@
 # iPad Pencil sharing to PLANK Vision
 
-Status: requested October 8, 2026; implementation follows the keyboard docking
-correction. This is a scoped design, not a working Relay or qualified transport.
+Status: development implementation October 8, 2026. Publisher, receiver,
+versioned records and physical comparison approval are implemented. Compilation,
+local protocol checks and physical device acceptance are separate gates.
+This is not yet a qualified drawing transport.
 
 ## Intended use
 
@@ -64,3 +66,58 @@ Pencil test already established zero margins. A working standalone iPad desktop
 Pencil does not qualify iPad-to-AVP forwarding, and the accepted raw Wacom Relay
 checks do not qualify this new source. Initial scope is one approved headset,
 one active pen owner and one selected remote display.
+
+## Development implementation
+
+The iPad pilot's **Share Apple Pencil** opens a foreground pad and advertises
+`_plank-pencil._tcp` with `version=1`, `capability=normalized-pen` and its public
+identity. PLANK Vision Settings has a separate Apple Pencil section. The raw
+Tablet Relay must be Off. The independent capability is deliberately not a
+`pltr-raw-hid` descriptor; legacy raw clients do not discover or decode it.
+
+Both apps use their own device-only, when-unlocked Keychain identity and peer
+pins. Initial connection requires comparing the same twelve hexadecimal digits
+on both devices and approving locally on each. The code is the first six bytes
+of the authenticated IK first-message transcript hash, including the initiator
+identity, ephemeral key and pinned advertised responder identity. Discovery
+alone is untrusted. Existing approved identity pairs skip the comparison; a
+changed public identity requires a new comparison. Pins are not shared with
+Setup, Wacom Relay, Mac or another app. One pending/active headset owns the pad.
+
+`apple-native/Shared/PlankPencilCrypto.c` calls the existing pinned relay Noise
+IK implementation without changing it. It authenticates the exact
+`PLANK-NORMALIZED-PEN/1` capability payload in both handshake messages. The
+underlying fixed TCP Noise prologue is reused; application purpose is bound in
+the encrypted handshake payload, not a newly claimed prologue. Empty raw-drawing
+handshakes and mismatched purpose/version are rejected. This direct physical
+comparison path does not use Setup-mediated enrollment, which remains the
+existing Wacom registration path.
+
+Records have a two-byte little-endian length, capped at 256 bytes. Handshakes
+start with `PLPN` and byte version 1. Secure application plaintext also starts
+with `PLPN`, version 1 and a one-byte message kind. Configuration carries two
+UInt32 display dimensions and one Boolean; pen carries phase, three Float32
+values, UInt8 tilt and UInt16 tilt direction; right-click carries two Float32
+coordinates. All multibyte values are little-endian. Ping, pong and end have
+no payload. Unknown kinds/versions, trailing bytes, nonfinite or out-of-range
+values, inconsistent contact transitions, authentication failures and replay
+close the peer. Transport nonce ordering comes from the existing Noise codec.
+
+The peer serial executor owns crypto and one socket write at a time. Bounded
+incoming/outgoing mailboxes admit before scheduling work, coalesce consecutive
+same-phase motion only, and fail closed on edge overflow. Approval has one
+absolute 60-second deadline; a connected peer has a five-second heartbeat
+limit. The iPad retains actual samples only. Direct iPad desktop input and the
+sharing pad are separate, mutually exclusive surfaces. The receiver requests
+pad geometry from its primary desktop's actual frame dimensions and pauses
+admission outside supported active sessions. Mapping/focus/background changes
+retire contact; a late move cannot start a new stroke. A new tip-down releases
+local mouse buttons, and pointer/buttons/wheel cannot interrupt that stroke.
+Squeeze is a right-click only while the tip is lifted. Rotation ends the old
+contact and requires a fresh stroke.
+
+First acceptance must establish iPad → AVP → workstation drawing, pressure,
+alignment and right-click, followed by focus, rotation, lock and reconnect.
+Compilation, a working direct iPad Pencil or a working raw Wacom Relay does not
+qualify this chain. Bluetooth and background capture remain outside this slice.
+Host sender teardown and final receipt remain the existing upstream gate.

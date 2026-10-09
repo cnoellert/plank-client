@@ -298,3 +298,15 @@ and obsolete preview fixture/checks. Native live input and assistant controls
 are retained. The old keyboard fixture paths in earlier notes are historical;
 they were removed along with the feature. Device keyboard transitions and live
 typing remain the focused acceptance check for this simpler candidate.
+
+## Build 18 Apple Pencil sharing candidate
+
+Share Apple Pencil on the connection screen opens a foreground, aspect-fit pad.
+Choose the iPad in the matching PLANK Vision candidate's Settings → Apple Pencil,
+compare the code and approve on both devices. Keep the raw Tablet Relay Off.
+The iPad pad sends actual normalized Pencil samples and lifted-tip squeeze
+right-click; it does not emulate a Wacom HID device. Closing, backgrounding or
+locking the pad stops sharing. The first link is local network, with separate
+app-owned identity and approvals. See [the contract and acceptance scope](../docs/development/ipad-pencil-relay.md).
+Device drawing acceptance is pending; existing direct desktop input remains a
+separate accepted path.

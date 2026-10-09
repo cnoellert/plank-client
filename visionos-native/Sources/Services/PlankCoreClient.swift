@@ -122,6 +122,23 @@ private final class PlankTabletControlReceiver: @unchecked Sendable {
 
 @MainActor
 final class PlankCoreClient: ObservableObject {
+#if PLANK_PENCIL_RELAY_RECEIVER
+    lazy var pencilRelay = PlankPencilRelayReceiver(client: self)
+    var pencilRelaySourceAllowed: Bool { PlankRelayKeys.relayRegistry().selection == .off }
+    var pencilRelayCanDraw: Bool {
+        guard pencilRelaySourceAllowed, hostSupportsNormalizedPen, tabletSceneActive,
+              !isClosingSession else { return false }
+        if case .streaming = phase { return true }; return false
+    }
+    func sendPencilRelayPen(_ pen: PlankNormalizedPen) {
+        guard pencilRelayCanDraw, pencilRelay.ownsPen else { return }
+        inputQueue.append(.pen(pen))
+    }
+    func retirePencilRelayPen(_ pen: PlankNormalizedPen) {
+        guard pen.phase == .cancel || pen.phase == .leave else { return }
+        inputQueue.append(.pen(pen))
+    }
+#endif
     @Published private(set) var phase: ConnectionPhase = .idle
     @Published private(set) var isClosingSession = false
     @Published private(set) var frameDimensions: PlankFrameDimensions?
@@ -329,6 +346,9 @@ final class PlankCoreClient: ObservableObject {
         let wasActive = tabletSceneActive
         tabletSceneActive = active
         tabletBridge?.setActive(active)
+#if PLANK_PENCIL_RELAY_RECEIVER
+        pencilRelay.sync()
+#endif
 #if PLANK_NATIVE_MAC_WACOM
         if hostSupportsTabletRelay { nativeWacom?.setActive(active) }
 #endif
@@ -403,6 +423,9 @@ final class PlankCoreClient: ObservableObject {
         previousTabletBridge?.close(reason: .sessionReplaced)
         stoppingTabletBridge = previousTabletBridge
         tabletBridge = nil
+#endif
+#if PLANK_PENCIL_RELAY_RECEIVER
+        pencilRelay.endDesktop()
 #endif
         inputQueue.stop()
         inputQueue = PlankInputQueue()
@@ -641,6 +664,9 @@ final class PlankCoreClient: ObservableObject {
                         } else {
                             self.phase = .streaming(identity, activeAuthentication, newest.frameNumber)
                         }
+#if PLANK_PENCIL_RELAY_RECEIVER
+                        self.pencilRelay.sync()
+#endif
                     }
                 }
             } onVideoProgress: { [weak self] progress in
@@ -930,6 +956,9 @@ final class PlankCoreClient: ObservableObject {
         hostSupportsTabletRelay = false
         streamGeneration = UUID()
         let closingGeneration = streamGeneration
+#if PLANK_PENCIL_RELAY_RECEIVER
+        pencilRelay.endDesktop()
+#endif
         inputQueue.stop()
         latestFrame = nil
         remoteCursor = nil
@@ -992,6 +1021,9 @@ final class PlankCoreClient: ObservableObject {
 #endif
 
     func movePointer(x: Int, y: Int, width: Int, height: Int) {
+#if PLANK_PENCIL_RELAY_RECEIVER
+        guard !pencilRelay.strokeActive else { return }
+#endif
 #if PLANK_TABLET_RELAY
         guard !waitingForTablet else { return }
 #endif
@@ -1008,6 +1040,9 @@ final class PlankCoreClient: ObservableObject {
 
     var acceptsNormalizedPen: Bool {
         guard hostSupportsNormalizedPen else { return false }
+#if PLANK_PENCIL_RELAY_RECEIVER
+        guard !pencilRelay.ownsPen else { return false }
+#endif
 #if PLANK_TABLET_RELAY
         // A selected raw Relay owns the Host tablet backend. Never alternate
         // that backend with normalized Pencil reports.
@@ -1026,6 +1061,9 @@ final class PlankCoreClient: ObservableObject {
     }
 
     func setMouseButton(number: UInt8, pressed: Bool) {
+#if PLANK_PENCIL_RELAY_RECEIVER
+        guard !pressed || !pencilRelay.strokeActive else { return }
+#endif
 #if PLANK_TABLET_RELAY
         guard tabletInputPolicy.allowsMouseButton(number, pressed: pressed) else { return }
 #endif
@@ -1042,6 +1080,9 @@ final class PlankCoreClient: ObservableObject {
     }
 
     func scroll(vertical: Int16, horizontal: Int16 = 0) {
+#if PLANK_PENCIL_RELAY_RECEIVER
+        guard !pencilRelay.strokeActive else { return }
+#endif
 #if PLANK_TABLET_RELAY
         guard !waitingForTablet else { return }
 #endif
@@ -1154,6 +1195,9 @@ final class PlankCoreClient: ObservableObject {
         hostSupportsTabletRelay = false
         streamGeneration = UUID()
         let closingGeneration = streamGeneration
+#if PLANK_PENCIL_RELAY_RECEIVER
+        pencilRelay.endDesktop()
+#endif
         inputQueue.stop()
         httpClient = nil
         lastIdentity = nil

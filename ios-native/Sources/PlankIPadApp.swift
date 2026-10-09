@@ -20,6 +20,8 @@ struct PlankIPadRoot: View {
     @ObservedObject var router: PlankIPadInputRouter
     @Environment(\.scenePhase) private var scenePhase
     @State private var selectedID: UUID?
+    @StateObject private var pencilRelay = PlankIPadPencilRelay()
+    @State private var sharePencil = false
     @State private var add = false
     @State private var editing: HostBookmark?
     @State private var controls = false
@@ -69,6 +71,9 @@ struct PlankIPadRoot: View {
                 } else {
                     ScrollView {
                         VStack(spacing: 20) {
+                            Button { sharePencil = true } label: {
+                                Label("Share Apple Pencil", systemImage: "pencil.tip.crop.circle")
+                            }.buttonStyle(.bordered).disabled(busy)
                             if store.hosts.isEmpty {
                                 ContentUnavailableView("Add a workstation", systemImage: "desktopcomputer",
                                     description: Text("Connect to your PLANK desktop."))
@@ -114,6 +119,7 @@ struct PlankIPadRoot: View {
         // SwiftUI must not also shrink the canvas for the same keyboard.
         .ignoresSafeArea(.keyboard, edges: client.hasActiveDesktopSession ? .bottom : [])
         .statusBarHidden(hideBars)
+        .fullScreenCover(isPresented: $sharePencil) { PlankIPadPencilRelayView(relay: pencilRelay) }
         .sheet(isPresented: $add) { PlankIPadBookmarkEditor(store: store, client: client, host: .init(name: "", address: "", spatialDisplaySize: PlankIPadDisplayOptions.defaultSize), isNew: true) }
         .sheet(item: $editing) { host in PlankIPadBookmarkEditor(store: store, client: client, host: host, isNew: false) }
         .sheet(isPresented: $controls) { PlankIPadControls(client: client, router: router) }
@@ -123,7 +129,7 @@ struct PlankIPadRoot: View {
         .onChange(of: client.phase) { _, _ in updateAdmission() }
         .onChange(of: scenePhase) { _, phase in
             updateAdmission()
-            if phase == .background { password = ""; disconnect() }
+            if phase == .background { pencilRelay.stop(); password = ""; disconnect() }
         }
     }
     @ViewBuilder private func connection(_ host: HostBookmark) -> some View {

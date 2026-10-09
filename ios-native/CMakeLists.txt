@@ -4,7 +4,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     message(FATAL_ERROR "Use an iOS device or simulator SDK")
 endif()
 set(CMAKE_Swift_LANGUAGE_VERSION 6)
-set(PLANK_IPAD_BUILD_NUMBER "17" CACHE STRING "Separate iPad pilot build")
+set(PLANK_IPAD_BUILD_NUMBER "18" CACHE STRING "Separate iPad pilot build")
 set(VISION "${CMAKE_CURRENT_SOURCE_DIR}/../visionos-native")
 foreach(required PLANK_TRANSPORT_DIR PLANK_FFMPEG_DIR PLANK_OPUS_DIR PLANK_RELAY_SOURCE_DIR PLANK_RELAY_SODIUM_PREFIX)
     if(NOT ${required})
@@ -26,7 +26,14 @@ add_executable(PlankIPad MACOSX_BUNDLE
     Sources/PlankIPadApp.swift Sources/PlankIPadInput.swift
     Sources/PlankIPadInputPolicy.swift Sources/PlankIPadVideo.swift
     Sources/PlankIPadKeys.swift Sources/PlankIPadKeyboardViewport.swift ${VISION}/PrivacyInfo.xcprivacy)
-target_sources(PlankIPad PRIVATE Sources/PlankIPadDisplayOptions.swift Sources/PlankIPadPencilPolicy.swift)
+target_sources(PlankIPad PRIVATE Sources/PlankIPadDisplayOptions.swift Sources/PlankIPadPencilPolicy.swift
+    Sources/PlankIPadPencilRelay.swift
+    ../apple-native/Shared/PlankPencilRelayWire.swift
+    ../apple-native/Shared/PlankPencilRelayKeys.swift
+    ../apple-native/Shared/PlankPencilRelayPeer.swift
+    ../apple-native/Shared/PlankPencilCrypto.c)
+target_include_directories(PlankIPad PRIVATE ../apple-native/Shared)
+target_compile_definitions(PlankIPad PRIVATE PLANK_PENCIL_RELAY=1)
 set_source_files_properties(${VISION}/PrivacyInfo.xcprivacy PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 if(CMAKE_OSX_SYSROOT MATCHES "iphonesimulator")
     set(rust_target "aarch64-apple-ios-sim")

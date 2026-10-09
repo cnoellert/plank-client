@@ -138,7 +138,16 @@ if(PLANK_RELAY_SOURCE_DIR)
     target_compile_definitions(PlankVision PRIVATE PLANK_TABLET_RELAY=1)
     target_compile_options(PlankVision PRIVATE
         "$<$<COMPILE_LANGUAGE:Swift>:-DPLANK_TABLET_RELAY>")
+    target_compile_definitions(PlankVision PRIVATE PLANK_PENCIL_RELAY=1)
+    target_compile_options(PlankVision PRIVATE "$<$<COMPILE_LANGUAGE:Swift>:-DPLANK_PENCIL_RELAY_RECEIVER>")
+    target_include_directories(PlankVision PRIVATE ../apple-native/Shared)
     target_sources(PlankVision PRIVATE
+        ../apple-native/Shared/PlankPencilCrypto.c
+        ../apple-native/Shared/PlankPencilRelayWire.swift
+        ../apple-native/Shared/PlankPencilRelayKeys.swift
+        ../apple-native/Shared/PlankPencilRelayPeer.swift
+        Sources/Services/PlankPencilRelayReceiver.swift
+        Sources/Views/PlankPencilRelaySettings.swift
         Sources/Models/PlankDrawingHandoff.swift
         Sources/Models/DrawingRegistrationRequest.swift
         Sources/Models/DrawingRegistrationReceipt.swift
