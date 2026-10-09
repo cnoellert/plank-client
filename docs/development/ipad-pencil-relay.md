@@ -19,12 +19,18 @@ iPad 19 validates a fresh contact on a temporary policy, retires old hover, then
 commits and emits leave before down. Invalid/margin starts preserve prior state;
 duplicate active downs and stale motion remain rejected. Aggregate contact
 counts are logged at most once per second, without coordinates or identities.
-Physical correction is pending. A read-only Flame03 check also found the
+The user reports iPad 19 working well on the requested Flame03 tap/held-drag
+test. The correlated Host capture contains balanced tip presses/releases and
+varying pressure; publisher counters also show accepted downs, moves and ups.
+This accepts the targeted contact correction, not the complete interruption
+or latency qualification. A read-only Flame03 check also found the
 normalized `PLANK Wacom Tablet` using Pressure Recalibration=1 despite Host
 1.1.030; its packaged policy currently targets the raw mirror's udev tag.
-That is a distinct possible Host-side cause, not evidence that this publisher
-fix alone resolves the reported failure. No Host configuration/package change
-is included. Lag and video decoder recovery remain separate observations.
+The successful targeted test required no Host configuration/package change.
+The normalized pressure-policy distinction remains recorded for investigation
+if another failure needs it; this pass does not require changing it. Lag and
+video decoder recovery remain separate observations. New-source reconnect,
+rotation/focus and lock/background qualification remain pending.
 
 ## Intended use
 

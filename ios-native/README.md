@@ -34,7 +34,9 @@ Pencil sharing build 19 corrects the hover-to-contact timing epoch in the
 foreground pad. First build 18 / Vision 47 tests passed hover/right-click but
 failed tip/drag on two workstations. See the [Pencil relay record](../docs/development/ipad-pencil-relay.md)
 for the reproduced publisher defect and separate normalized-Host pressure-policy
-observation. Physical tip/drag acceptance remains pending.
+observation. On October 9 the user reports the requested build 19 tap/drag test
+working well on Flame03; correlated Host events show tip edges and pressure.
+Reconnect/interruption and latency qualification remain separate gates.
 
 One saved workstation, login, one aspect-fit desktop, video/audio, direct finger
 mouse emulation, indirect pointer buttons, physical wheel and hardware keyboard.
