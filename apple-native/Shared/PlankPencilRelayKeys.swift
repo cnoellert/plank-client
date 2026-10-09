@@ -33,6 +33,7 @@ enum PlankPencilRelayKeys {
         let data = Data(key); try write(data,account:"private"); return data
     }
     static func publicKey(_ privateKey: Data) throws -> Data {
+        guard privateKey.count == 32 else { throw PlankPencilWireError.invalid }
         var key = [UInt8](repeating:0,count:32)
         let result = privateKey.withUnsafeBytes { plank_pencil_crypto_public_key($0.bindMemory(to:UInt8.self).baseAddress,&key) }
         guard result == 0 else { throw PlankPencilWireError.crypto }; return Data(key)

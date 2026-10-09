@@ -130,9 +130,9 @@ final class PlankCoreClient: ObservableObject {
               !isClosingSession else { return false }
         if case .streaming = phase { return true }; return false
     }
-    func sendPencilRelayPen(_ pen: PlankNormalizedPen) {
-        guard pencilRelayCanDraw, pencilRelay.ownsPen else { return }
-        inputQueue.append(.pen(pen))
+    func sendPencilRelayPen(_ pen: PlankNormalizedPen) -> Bool {
+        guard pencilRelayCanDraw, pencilRelay.ownsPen else { return false }
+        return inputQueue.offerPencilRelayPen(pen)
     }
     func retirePencilRelayPen(_ pen: PlankNormalizedPen) {
         guard pen.phase == .cancel || pen.phase == .leave else { return }

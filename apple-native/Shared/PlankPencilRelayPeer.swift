@@ -40,6 +40,7 @@ final class PlankPencilRelayPeer: @unchecked Sendable {
          approvalLookup: @escaping @Sendable (Data) throws -> Bool = PlankPencilRelayKeys.approved,
          saveApproval: @escaping @Sendable (Data) throws -> Void = PlankPencilRelayKeys.approve,
          event: @escaping @Sendable (PlankPencilPeerEvent) -> Void) throws {
+        guard privateKey.count == 32, peerKey == nil || peerKey?.count == 32 else { throw PlankPencilWireError.invalid }
         initiator = peerKey != nil; self.connection = connection; self.event = event
         self.peerKey = peerKey ?? Data()
         self.approvalLookup = approvalLookup; self.saveApproval = saveApproval

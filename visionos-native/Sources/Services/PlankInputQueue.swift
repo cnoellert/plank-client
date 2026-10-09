@@ -100,6 +100,29 @@ final class PlankInputQueue: @unchecked Sendable {
     }
 #endif
 
+#if PLANK_PENCIL_RELAY_RECEIVER
+    // New source-specific admission: do not expand the shared sender queue
+    // indefinitely if the workstation stops accepting input. Terminal release
+    // requests remain the existing upstream sender-lifetime boundary.
+    func offerPencilRelayPen(_ pen: PlankNormalizedPen) -> Bool {
+        lock.lock()
+        guard !stopped else { lock.unlock(); return false }
+        let shouldWake = events.isEmpty
+        if (pen.phase == .move || pen.phase == .hover),
+           case let .pen(previous)? = events.last, previous.phase == pen.phase {
+            events[events.count-1] = .pen(pen)
+        } else {
+            guard events.count < 256 else { lock.unlock(); return false }
+            if shouldWake { oldestEnqueueTime = DispatchTime.now().uptimeNanoseconds }
+            events.append(.pen(pen))
+        }
+        highWaterDepth = max(highWaterDepth,events.count)
+        lock.unlock()
+        if shouldWake { wakeupContinuation.yield(()) }
+        return true
+    }
+#endif
+
     func drain() -> [PlankInputEvent] {
         lock.lock()
         let drained = events

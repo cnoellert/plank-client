@@ -105,7 +105,10 @@ close the peer. Transport nonce ordering comes from the existing Noise codec.
 
 The peer serial executor owns crypto and one socket write at a time. Bounded
 incoming/outgoing mailboxes admit before scheduling work, coalesce consecutive
-same-phase motion only, and fail closed on edge overflow. Approval has one
+same-phase motion only, and fail closed on edge overflow. The receiver also uses
+a bounded, coalescing source-specific admission method at the workstation input
+queue; refusal closes and retires the Pencil source. This does not change other
+input sources or establish final Host receipt. Approval has one
 absolute 60-second deadline; a connected peer has a five-second heartbeat
 limit. The iPad retains actual samples only. Direct iPad desktop input and the
 sharing pad are separate, mutually exclusive surfaces. The receiver requests

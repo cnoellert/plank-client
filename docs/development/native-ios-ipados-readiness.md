@@ -648,3 +648,20 @@ fix. The bottom shortcuts bar can also occur with a hardware keyboard and was
 not sufficient proof by itself. Accept the user's repeated-open result; do not
 repeat the accepted mouse, wheel, pressure or typing qualification. The
 separate geometry cycle is not independently established by this setting test.
+
+## Build 18 Pencil sharing candidate — October 8
+
+The foreground Share Apple Pencil pad and matching Vision build 47 receiver
+are implemented using an independent normalized-pen capability. Both sides
+require initial physical transcript-code comparison, store app-owned approvals,
+and reuse the pinned relay Noise IK implementation. The pad follows negotiated
+primary-display aspect ratio; actual pressure/hover/tilt samples and lifted-tip
+squeeze use the existing normalized pen and mouse paths. Rotation, focus,
+background and sharing stop retire contact; fresh down is required after pause.
+Wacom/raw Relay selection excludes this source. Input mailboxes and receiver
+submission are bounded and coalesce consecutive motion only.
+
+Pure policy, sanitizer-backed authentication/replay checks and a real loopback
+consent/configuration/pressure-stroke test passed. Device drawing and interruption
+acceptance remain pending. Dependency/recipe pins and Host packages are unchanged.
+The detailed contract is [iPad Pencil sharing](ipad-pencil-relay.md).

@@ -37,6 +37,18 @@ import Foundation
         assert(state.retire().isEmpty)
         rejects { try state.accept(move) } // Retired contact requires a fresh down.
         try state.accept(down); try state.accept(up)
+#if PLANK_PENCIL_RELAY_RECEIVER
+        let sender = PlankInputQueue()
+        assert(sender.offerPencilRelayPen(down))
+        for _ in 0..<10_000 { assert(sender.offerPencilRelayPen(move)) }
+        assert(sender.offerPencilRelayPen(up))
+        assert(sender.drain().count == 3)
+        for _ in 0..<128 {
+            assert(sender.offerPencilRelayPen(down)); assert(sender.offerPencilRelayPen(up))
+        }
+        assert(!sender.offerPencilRelayPen(down))
+        sender.stop(); assert(!sender.offerPencilRelayPen(hover))
+#endif
         print("Pencil relay codec, malformed data, edge ordering, bounded coalescing and fresh-contact checks passed")
     }
     static func rejects(_ operation: () throws -> Void) {

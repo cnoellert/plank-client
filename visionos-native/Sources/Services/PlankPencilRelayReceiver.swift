@@ -102,7 +102,8 @@ struct PlankDiscoveredPencilPad: Identifiable, Sendable {
                     if p.phase == .down {
                         for button: UInt8 in [1,2,3] { client.setMouseButton(number:button,pressed:false) }
                     }
-                    try delivered.accept(p); client.sendPencilRelayPen(p)
+                    try delivered.accept(p)
+                    guard client.sendPencilRelayPen(p) else { throw PlankPencilWireError.overflow }
                 case let .rightClick(x,y):
                     guard !delivered.touching else { continue }
                     retire()
