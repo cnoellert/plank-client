@@ -110,7 +110,7 @@ struct PlankIPadRoot: View {
             }
             .toolbar(hideBars ? .hidden : .visible, for: .navigationBar)
         }
-        // UIKit reserves docked keyboard space once, within the canvas.
+        // The measured docked keyboard frame reserves space within the canvas.
         // SwiftUI must not also shrink the canvas for the same keyboard.
         .ignoresSafeArea(.keyboard, edges: client.hasActiveDesktopSession ? .bottom : [])
         .statusBarHidden(hideBars)

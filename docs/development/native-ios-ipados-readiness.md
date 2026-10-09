@@ -598,3 +598,29 @@ compile precede installation; physical expansion and Bluetooth coexistence
 remain user acceptance gates.
 
 The isolated production-helper simulator check passed actual dock/hide/reopen: canvas stays 1074pt; video ends at both guide and keyboard top 757pt when docked/reopened, and restores all 1074pt hidden. Retained input policy checks pass. This is not floating/full-size gesture or physical-device acceptance.
+
+## Build 17 absolute keyboard intersection — October 8
+
+The user reports build 16 now expands, but floating-to-full makes the desktop
+too small; hide/reopen restores it. Device geometry logs show a stable 746pt
+canvas while the guide goes from 334pt on a normal full opening to 172pt after
+the floating transition. The logs do not contain the corresponding notification
+frame, so they establish inconsistent reservation, not its exact UIKit cause.
+
+Build 17 replaces guide constraints with the public keyboard end-frame report,
+filtered to the canvas window's screen and converted into canvas coordinates.
+Only full-width bottom-intersecting keyboards reduce the video. The rectangle
+is calculated from current canvas bounds on each layout, never the previous
+video height or accumulated keyboard deltas. There is no fallback to the guide.
+Floating/hide restores the full canvas; resizing continues to retire contact
+and the input mapper uses the same video rectangle. Diagnostics record both
+reported-frame and guide geometry for the next physical transition. Preview,
+custom accessory and local text echo remain removed.
+
+The isolated fixture exercises actual dock/hide/reopen plus synthetic floating,
+expanded, repeated-expanded and guide/report disagreement. Those injections
+test conversion and nonaccumulation, not iPadOS floating gesture acceptance.
+Physical transition acceptance remains pending. No Host, dependency or network
+change is included.
+
+Verification: actual simulator dock/hide/reopen passed 757→1074→757pt. Synthetic floating restores1074pt; expanded/repeated-expanded both797pt despite guide757pt; restored report returns757pt. Direct checks cover an already-reduced owner and repeated absolute reports. This verifies the reservation correction under injected disagreement, not the physical iPad gesture.

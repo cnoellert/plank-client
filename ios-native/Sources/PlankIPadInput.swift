@@ -126,6 +126,7 @@ struct PlankIPadCanvas: UIViewRepresentable {
     private var wheelVertical = 0, wheelHorizontal = 0
     private var lastWheelLog = 0.0
     private var previousVideoFrame = CGRect.zero
+    private lazy var keyboardViewport = PlankIPadKeyboardViewport(canvas: self)
     private var registered = false
     private var keyboardInput: GCKeyboardInput?
     private var transferringKeyboardFocus = false
@@ -204,7 +205,6 @@ struct PlankIPadCanvas: UIViewRepresentable {
         backgroundColor = .black
         isMultipleTouchEnabled = true
         addSubview(video)
-        PlankIPadKeyboardViewport.constrain(video, inside: self)
         // A normal text responder lets UIKit supply its keyboard chooser with
         // hardware attached. It stores no document and is not a visible field.
         keyboardEntry.frame = CGRect(x: 0, y: 0, width: 1, height: 1)
@@ -240,6 +240,7 @@ struct PlankIPadCanvas: UIViewRepresentable {
     override func didMoveToWindow() {
         super.didMoveToWindow()
         if window == nil { stop(); return }
+        keyboardViewport.start()
         guard !registered else { return }
         router.surface = self
         registered = true
@@ -262,14 +263,17 @@ struct PlankIPadCanvas: UIViewRepresentable {
     }
     override func layoutSubviews() {
         super.layoutSubviews()
+        video.frame = keyboardViewport.videoFrame
         // The input viewport is the same resized rectangle used by video.
         // Retire held contact before another sample uses changed geometry.
         if previousVideoFrame != video.frame {
             router.release()
             previousVideoFrame = video.frame
-            NSLog("PLANK iPad viewport canvas=%.0fx%.0f video=%.0fx%.0f keyboardTop=%.0f",
+            NSLog("PLANK iPad viewport canvas=%.0fx%.0f video=%.0fx%.0f guideTop=%.0f reportedTop=%.0f reportedWidth=%.0f",
                 bounds.width, bounds.height, video.frame.width, video.frame.height,
-                keyboardLayoutGuide.layoutFrame.minY)
+                keyboardLayoutGuide.layoutFrame.minY,
+                keyboardViewport.reportedFrame?.minY ?? -1,
+                keyboardViewport.reportedFrame?.width ?? 0)
         }
     }
     func clearContact() {
@@ -343,6 +347,7 @@ struct PlankIPadCanvas: UIViewRepresentable {
         router.release()
     }
     func stop() {
+        keyboardViewport.stop()
         router.setSoftwareKeyboardPresented(false)
         router.release()
         NotificationCenter.default.removeObserver(self)
