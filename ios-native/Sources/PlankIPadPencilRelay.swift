@@ -293,7 +293,7 @@ struct PlankIPadPencilPad: UIViewRepresentable {
         outline.opacity = relay.canDraw ? 1 : 0.4; CATransaction.commit()
         // Geometry only, never stroke positions: distinguish local remapping
         // from a downstream workstation/application transform on the next run.
-        let signature = "mode=\(settings.mapping.rawValue) bounds=\(NSStringFromCGRect(bounds)) area=\(NSStringFromCGRect(rect)) desktop=\(relay.width)x\(relay.height)"
+        let signature = "mode=\(settings.mapping.rawValue) bounds=\(bounds) area=\(rect) desktop=\(relay.width)x\(relay.height)"
         if signature != mappingSignature {
             mappingSignature = signature
             NSLog("PLANK Pencil pad mapping %@",signature)
