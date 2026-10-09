@@ -105,6 +105,11 @@ local remapping from downstream workstation/application mapping. No coordinate
 compensation or Host change is made without that evidence. Image overlay remains
 planned after these controls; it is not implemented.
 
+Build22 from `40029d7` is installed under the user's disconnected authorization.
+Independent device inventories verify version22 and its exact executable path.
+Vision48 stays installed. Saved order and outlined-corner desktop reach remain
+the next targeted device checks; the margin issue is not claimed fixed.
+
 ## Intended use
 
 ### Mac receiver extension
