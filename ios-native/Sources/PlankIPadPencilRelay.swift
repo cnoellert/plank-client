@@ -11,7 +11,7 @@ import UIKit
     @Published private(set) var active = false
     @Published private(set) var padSettings = PlankIPadPencilPadSettings.load()
     @Published private(set) var adjustingPad = false
-    @Published private(set) var heldModifiers = Set<PlankPencilModifier>()
+    private var controlKeys = PlankControlKeyOwnership()
     var canDraw: Bool { active && !adjustingPad }
     private var listener: NWListener?
     private var peer: PlankPencilRelayPeer?
@@ -26,23 +26,39 @@ import UIKit
         guard value != adjustingPad else { return }
         retireInput(); adjustingPad = value; pad?.setNeedsLayout()
     }
-    func setModifier(_ key: PlankPencilModifier, pressed: Bool) {
-        if pressed {
-            guard canDraw, heldModifiers.insert(key).inserted else { return }
-        } else { guard heldModifiers.remove(key) != nil else { return } }
-        if peer?.offer(.modifier(key,pressed:pressed)) != true { peer?.close(); active = false }
+    private func offerControlKeys(_ events: [PlankControlKeyEvent]) -> Bool {
+        guard !events.isEmpty else { return true }
+        guard let peer, peer.offer(.keys(events.map {
+            PlankPencilKeyEvent(code:$0.code,pressed:$0.pressed,modifiers:$0.modifiers)
+        })) else { peer?.close(); active = false; return false }
+        return true
     }
-    func releaseModifiers() {
-        for key in heldModifiers.sorted(by:{ $0.rawValue < $1.rawValue }) { setModifier(key,pressed:false) }
+    func beginControl(owner: UUID,binding: PlankControlBinding) -> Bool {
+        guard canDraw, let change = controlKeys.previewBegin(owner:.control(owner),binding:binding),
+              offerControlKeys(change.events) else { return false }
+        return controlKeys.apply(change)
     }
-    private func retireInput() { pad?.retire(); releaseModifiers() }
+    func endControl(owner: UUID) {
+        guard let change = controlKeys.previewEnd(owner:.control(owner)), offerControlKeys(change.events) else { return }
+        _ = controlKeys.apply(change)
+    }
+    func tapControl(binding: PlankControlBinding) -> Bool {
+        guard canDraw, let change = controlKeys.previewTap(binding:binding), offerControlKeys(change.events) else { return false }
+        return controlKeys.apply(change)
+    }
+    func releaseControls() {
+        guard let change = controlKeys.previewRetireControls() else { return }
+        if offerControlKeys(change.events) { _ = controlKeys.apply(change) }
+        else { controlKeys = PlankControlKeyOwnership() }
+    }
+    private func retireInput() { pad?.retire(); releaseControls() }
     func start() {
         guard !sharing else { return }
         do {
             let key = try PlankPencilRelayKeys.privateKey()
             let publicKey = try PlankPencilRelayKeys.publicKey(key)
             let listener = try NWListener(using:.tcp,on:.any)
-            var txt = NWTXTRecord(); txt["version"] = "2"; txt["capability"] = "normalized-pen"
+            var txt = NWTXTRecord(); txt["version"] = PlankPencilProtocol.version; txt["capability"] = PlankPencilProtocol.capability
             txt["key"] = PlankPencilRelayKeys.hex(publicKey)
             listener.service = .init(name:UIDevice.current.name + " Pencil",type:"_plank-pencil._tcp",domain:"local.",txtRecord:txt)
             listener.newConnectionLimit = 1
@@ -112,11 +128,12 @@ import UIKit
 
 struct PlankIPadPencilRelayView: View {
     @ObservedObject var relay: PlankIPadPencilRelay
+    @ObservedObject var customControls: PlankIPadCustomControlsStore
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dismiss) private var dismiss
     @State private var showingOptions = false
-    @State private var showingModifiers = false
-    @State private var modifierPosition = CGPoint(x:0.25,y:0.8)
+    @State private var showingControls = false
+    @State private var editingControls = false
     var body: some View {
         NavigationStack {
             VStack(spacing:16) {
@@ -131,19 +148,10 @@ struct PlankIPadPencilRelayView: View {
                 PlankIPadPencilPad(relay:relay).background(.black)
                     .overlay {
                         GeometryReader { geometry in
-                            if showingModifiers {
-                                let width = min(312.0,geometry.size.width - 32), height = 164.0
-                                PlankIPadModifierPad(relay:relay,onClose:{
-                                    relay.releaseModifiers(); showingModifiers = false
-                                },onMove:{ delta in
-                                    let minX = (width/2 + 16) / geometry.size.width, maxX = 1 - minX
-                                    let minY = (height/2 + 16) / geometry.size.height, maxY = 1 - minY
-                                    modifierPosition.x = min(max(min(max(modifierPosition.x,minX),maxX) + delta.x / geometry.size.width,minX),maxX)
-                                    modifierPosition.y = min(max(min(max(modifierPosition.y,minY),maxY) + delta.y / geometry.size.height,minY),maxY)
-                                })
-                                .frame(width:width,height:height)
-                                .position(x:min(max(geometry.size.width * modifierPosition.x,width/2 + 16),geometry.size.width-width/2-16),
-                                          y:min(max(geometry.size.height * modifierPosition.y,height/2+16),geometry.size.height-height/2-16))
+                            if showingControls {
+                                PlankIPadCustomControlsOverlay(store:customControls,enabled:relay.canDraw,
+                                    begin:relay.beginControl,end:relay.endControl,tap:relay.tapControl,release:relay.releaseControls)
+                                    .frame(width:geometry.size.width,height:geometry.size.height)
                             }
                         }
                     }.clipShape(RoundedRectangle(cornerRadius:16)).padding()
@@ -160,16 +168,24 @@ struct PlankIPadPencilRelayView: View {
                             relay.setAdjustingPad(true); showingOptions = true
                         } label: { Label("Pad Options",systemImage:"slider.horizontal.3") }
                         .accessibilityLabel("Pad options: margins, mapping and appearance")
-                        Button {
-                            relay.releaseModifiers(); showingModifiers.toggle()
-                        } label: { Label("Shortcut Pad",systemImage:"keyboard") }
-                        .accessibilityLabel(showingModifiers ? "Hide shortcut pad" : "Show shortcut pad")
+                        Menu {
+                            Button(showingControls ? "Hide Controls" : "Show Controls") {
+                                relay.releaseControls(); showingControls.toggle()
+                            }
+                            Button("Edit Controls…") {
+                                relay.setAdjustingPad(true); editingControls = true
+                            }
+                        } label: { Label("Custom Controls",systemImage:"rectangle.grid.2x2") }
                     }
                 }
                 ToolbarItem(placement:.topBarTrailing) { Button("Stop Sharing") { relay.stop(); dismiss() } }
             }
             .sheet(isPresented:$showingOptions,onDismiss:{ relay.setAdjustingPad(false) }) {
                 PlankIPadPencilPadOptions(relay:relay)
+            }
+            .sheet(isPresented:$editingControls,onDismiss:{ relay.setAdjustingPad(false) }) {
+                PlankIPadCustomControlsEditor(store:customControls)
+                    .presentationDetents([.large]).interactiveDismissDisabled()
             }
         }
         .preferredColorScheme(.dark)
@@ -200,13 +216,6 @@ struct PlankIPadPencilPadOptions: View {
                 .accessibilityValue(Text(relay.padSettings[keyPath:key],format:.percent.precision(.fractionLength(0))))
         }
     }
-    private func moveShortcut(_ key: PlankPencilModifier,by offset: Int) {
-        var next = relay.padSettings
-        guard let index = next.shortcutOrder.firstIndex(of:key.rawValue),
-              next.shortcutOrder.indices.contains(index + offset) else { return }
-        next.shortcutOrder.swapAt(index,index + offset)
-        relay.setPadSettings(next)
-    }
     var body: some View {
         NavigationStack {
             Form {
@@ -224,24 +233,6 @@ struct PlankIPadPencilPadOptions: View {
                     margin("Top",\.top); margin("Bottom",\.bottom)
                 } header: { Text("Margins") } footer: {
                     Text("Percent of the pad on each edge. Preferences follow the iPad’s current orientation.")
-                }
-                Section {
-                    ForEach(relay.padSettings.shortcuts,id:\.rawValue) { key in
-                        HStack {
-                            Text(key.accessibilityTitle)
-                            Spacer()
-                            Button { moveShortcut(key,by:-1) } label: {
-                                Image(systemName:"chevron.up").frame(width:44,height:44)
-                            }.accessibilityLabel("Move \(key.accessibilityTitle) earlier")
-                                .disabled(relay.padSettings.shortcuts.first == key)
-                            Button { moveShortcut(key,by:1) } label: {
-                                Image(systemName:"chevron.down").frame(width:44,height:44)
-                            }.accessibilityLabel("Move \(key.accessibilityTitle) later")
-                                .disabled(relay.padSettings.shortcuts.last == key)
-                        }.buttonStyle(.borderless)
-                    }
-                } header: { Text("Shortcut order") } footer: {
-                    Text("Use the arrows to arrange the keys. The first four run left to right; the last fills the bottom row.")
                 }
                 Section {
                     Picker("Tone",selection:binding(\.tone)) {
@@ -294,7 +285,7 @@ struct PlankIPadPencilPad: UIViewRepresentable {
     override func layoutSubviews() {
         super.layoutSubviews()
         let rect = viewport?.rect ?? .zero
-        if rect != previous { retire(); relay.releaseModifiers(); previous = rect }
+        if rect != previous { retire(); relay.releaseControls(); previous = rect }
         CATransaction.begin(); CATransaction.setDisableActions(true)
         let settings = relay.padSettings, white = settings.fillWhite
         outline.fillColor = (settings.tone == .charcoal ? UIColor(white:white,alpha:1)

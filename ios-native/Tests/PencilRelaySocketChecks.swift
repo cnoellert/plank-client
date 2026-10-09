@@ -14,7 +14,14 @@ final class PencilSocketCheck: @unchecked Sendable {
         let down = PlankNormalizedPen(phase:.down,x:0.2,y:0.3,pressureOrDistance:0.7,tilt:0,rotation:0)
         var move = down; move.phase = .move; move.x = 0.9
         var up = move; up.phase = .up; up.pressureOrDistance = 0
-        return [.modifier(.shift,pressed:true),.modifier(.space,pressed:true),.pen(down),.pen(move),.pen(up),.modifier(.space,pressed:false),.modifier(.shift,pressed:false)]
+        let maximumDown = PlankControlKeyCatalog.entries.prefix(48).map { PlankPencilKeyEvent(code:$0.code,pressed:true) }
+        let maximumUp = maximumDown.reversed().map { PlankPencilKeyEvent(code:$0.code,pressed:false) }
+        return [.keys([.init(code:0x10,pressed:true,modifiers:1),.init(code:0x20,pressed:true,modifiers:1)]),
+            .pen(down),.pen(move),.pen(up),
+            .keys([.init(code:0x20,pressed:false,modifiers:1),.init(code:0x10,pressed:false)]),
+            .keys([.init(code:0x11,pressed:true,modifiers:2),.init(code:0x5A,pressed:true,modifiers:2),
+                .init(code:0x5A,pressed:false,modifiers:2),.init(code:0x11,pressed:false)]),
+            .keys(maximumDown),.keys(maximumUp)]
     }
     func run() throws {
         let listener = try NWListener(using:.tcp,on:.any)
@@ -29,6 +36,7 @@ final class PencilSocketCheck: @unchecked Sendable {
             if case .ready = state, let port = listener.port {
                 do {
                     let key = try PlankPencilRelayKeys.publicKey(self.b)
+                    assert(PlankPencilRelayKeys.approvalAccount(key) == "peer-v3-" + PlankPencilRelayKeys.hex(key))
                     let peer = try PlankPencilRelayPeer(connection:NWConnection(host:"127.0.0.1",port:port,using:.tcp),
                         privateKey:self.a,peerKey:key,approvalLookup: { _ in false },saveApproval: { _ in self.lock.lock(); self.clientSaved = true; self.lock.unlock() }) { event in self.handle(event,server:false) }
                     self.lock.lock(); self.client = peer; self.lock.unlock(); peer.start()
@@ -57,7 +65,14 @@ final class PencilSocketCheck: @unchecked Sendable {
                 while let message = try! server?.incoming.take() {
                     guard case .configuration = message else { fatalError("Wrong direction") }
                     lock.lock(); let shouldSend = !sent; sent = true; lock.unlock()
-                    if shouldSend { for value in expected { assert(server!.offer(value)) } }
+                    if shouldSend {
+                        assert(!server!.offer(.keys([])))
+                        assert(!server!.offer(.keys([.init(code:0xFFFF,pressed:true)])))
+                        assert(!server!.offer(.keys(Array(repeating:.init(code:0x41,pressed:true),count:49))))
+                        // Invalid admission leaves the authenticated peer alive
+                        // and does not enqueue a valid prefix of the batch.
+                        for value in expected { assert(server!.offer(value)) }
+                    }
                 }
             } else {
                 while let message = try! client?.incoming.take() {
@@ -73,5 +88,5 @@ final class PencilSocketCheck: @unchecked Sendable {
     }
 }
 @main struct PencilSocketMain {
-    static func main() throws { try PencilSocketCheck().run(); print("Real loopback IK/physical-consent/configuration/ordered modifier-held pressure stroke passed") }
+    static func main() throws { try PencilSocketCheck().run(); print("Real loopback IK/physical-consent/configuration/ordered generic-key batches + modifier-held pressure stroke passed") }
 }

@@ -103,6 +103,27 @@ final class PlankInputQueue: @unchecked Sendable {
     }
 #endif
 
+    // Controls submit one ordered chord, including every modifier transition.
+    // Capacity is reserved for the complete batch under one lock; a refused
+    // batch adds no partial key state to the sender queue.
+    func offerControlKeys(_ batch: [PlankControlKeyEvent]) -> Bool {
+        guard batch.count <= 256,
+              batch.allSatisfy({ PlankControlKeyCatalog.supports($0.code) && $0.modifiers <= 15 }) else { return false }
+        lock.lock()
+        guard !stopped else { lock.unlock(); return false }
+        // Adding/removing a duplicate owner may need no Host edge. Existing
+        // unrelated traffic cannot reject that ownership-only transaction.
+        guard !batch.isEmpty else { lock.unlock(); return true }
+        guard events.count <= 256 - batch.count else { lock.unlock(); return false }
+        let shouldWake = events.isEmpty
+        if shouldWake { oldestEnqueueTime = DispatchTime.now().uptimeNanoseconds }
+        events.append(contentsOf:batch.map { .key(code:$0.code,pressed:$0.pressed,modifiers:$0.modifiers) })
+        highWaterDepth = max(highWaterDepth,events.count)
+        lock.unlock()
+        if shouldWake { wakeupContinuation.yield(()) }
+        return true
+    }
+
 #if PLANK_PENCIL_RELAY_RECEIVER
     // Squeeze positions and clicks together, without presenting the parked
     // physical Mac mouse as the active pointer. Refuse the whole gesture if
@@ -124,15 +145,7 @@ final class PlankInputQueue: @unchecked Sendable {
         return true
     }
     func offerPencilRelayKey(code: UInt16, pressed: Bool, modifiers: UInt8) -> Bool {
-        lock.lock()
-        guard !stopped, events.count < 256 else { lock.unlock(); return false }
-        let shouldWake = events.isEmpty
-        if shouldWake { oldestEnqueueTime = DispatchTime.now().uptimeNanoseconds }
-        events.append(.key(code:code,pressed:pressed,modifiers:modifiers))
-        highWaterDepth = max(highWaterDepth,events.count)
-        lock.unlock()
-        if shouldWake { wakeupContinuation.yield(()) }
-        return true
+        offerControlKeys([.init(code:code,pressed:pressed,modifiers:modifiers)])
     }
     // New source-specific admission: do not expand the shared sender queue
     // indefinitely if the workstation stops accepting input. Terminal release

@@ -1,6 +1,7 @@
 import Foundation
 
-// A consented pad may hold only these shortcut keys, never arbitrary text.
+// Original five-key pad preferences and their legacy migration vocabulary.
+// Expanded consented bindings use PlankControlKeyCatalog separately.
 enum PlankPencilModifier: UInt16, CaseIterable, Sendable {
     case shift = 0x10, control = 0x11, option = 0x12, command = 0x5B, space = 0x20
     var title: String {
@@ -36,7 +37,7 @@ struct PlankPencilKeyOwnership {
         return PlankPencilModifier(rawValue:code)?.mask ?? 0
     }
     mutating func update(code: UInt16, pressed: Bool, modifiers: UInt8 = 0, source: Source) -> Event? {
-        let tracked = PlankPencilModifier(rawValue:code) != nil || code == 0x5C
+        let tracked = PlankControlKeyCatalog.supports(code)
         let previous = owners[code] ?? []
         var next = previous
         if tracked {
@@ -67,7 +68,10 @@ struct PlankPencilKeyOwnership {
         return next.isEmpty && (previous.contains(source) || (source == .local && previous.isEmpty)) ? event : nil
     }
     mutating func retirePad() -> [Event] {
-        owners.keys.sorted().filter { owners[$0]?.contains(.pad) == true }.compactMap {
+        owners.keys.sorted {
+            let left = Self.mask($0), right = Self.mask($1)
+            return left == right ? $0 < $1 : (left == 0 || (right != 0 && left > right))
+        }.filter { owners[$0]?.contains(.pad) == true }.compactMap {
             update(code:$0,pressed:false,source:.pad)
         }
     }

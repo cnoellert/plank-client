@@ -126,9 +126,19 @@ final class PlankCoreClient: ObservableObject {
     lazy var pencilRelay = PlankPencilRelayReceiver(client: self)
     private var pencilKeyOwnership = PlankPencilKeyOwnership()
     func sendPencilRelayModifier(_ key: PlankPencilModifier, pressed: Bool) -> Bool {
-        guard pencilRelayCanDraw, pencilRelay.ownsPen else { return false }
-        guard let event = pencilKeyOwnership.update(code:key.rawValue,pressed:pressed,source:.pad) else { return true }
-        return inputQueue.offerPencilRelayKey(code:event.code,pressed:event.pressed,modifiers:event.modifiers)
+        sendPencilRelayKeys([.init(code:key.rawValue,pressed:pressed)])
+    }
+    func sendPencilRelayKeys(_ batch: [PlankPencilKeyEvent]) -> Bool {
+        guard pencilRelayCanDraw, pencilRelay.ownsPen,
+              (try? PlankPencilMessage.keys(batch).encoded()) != nil else { return false }
+        // Publish the ledger only after every ordered edge has queue capacity.
+        var next = pencilKeyOwnership
+        let events = batch.compactMap { edge -> PlankControlKeyEvent? in
+            guard let value = next.update(code:edge.code,pressed:edge.pressed,modifiers:edge.modifiers,source:.pad) else { return nil }
+            return .init(code:value.code,pressed:value.pressed,modifiers:value.modifiers)
+        }
+        guard inputQueue.offerControlKeys(events) else { return false }
+        pencilKeyOwnership = next; return true
     }
     func retirePencilRelayModifiers() {
         for event in pencilKeyOwnership.retirePad() {
@@ -1147,6 +1157,20 @@ final class PlankCoreClient: ObservableObject {
 #endif
         guard let data = text.data(using: .utf8), !data.isEmpty else { return }
         inputQueue.append(.text(data))
+    }
+
+    // Transport-neutral atomic sink for direct iPad controls. The action
+    // ledger is committed by its owner only if this complete batch is admitted.
+    func offerControlKeys(_ batch: [PlankControlKeyEvent]) -> Bool {
+#if PLANK_TABLET_RELAY
+        var policy = tabletInputPolicy
+        guard batch.allSatisfy({ policy.allowsKey($0.code,pressed:$0.pressed,modifiers:$0.modifiers) }) else { return false }
+#endif
+        guard inputQueue.offerControlKeys(batch) else { return false }
+#if PLANK_TABLET_RELAY
+        tabletInputPolicy = policy
+#endif
+        return true
     }
 
     func pressKey(code: UInt16, modifiers: UInt8 = 0) {

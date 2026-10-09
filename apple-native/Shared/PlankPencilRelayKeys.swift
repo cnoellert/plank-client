@@ -49,9 +49,9 @@ enum PlankPencilRelayKeys {
         }
         guard bytes.contains(where: { $0 != 0 }) else { return nil }; return Data(bytes)
     }
-    // Keep existing identity and v1 pen-only approvals intact. Modifier-capable
-    // v2 requires its own comparison once, rather than broadening an old pin.
-    static func approvalAccount(_ key: Data) -> String { "peer-v2-" + hex(key) }
+    // Keep the existing identity and v1/v2 approval records intact. Generic key
+    // batches require a separate v3 comparison, never a broadened old pin.
+    static func approvalAccount(_ key: Data) -> String { "peer-v3-" + hex(key) }
     static func approved(_ key: Data) throws -> Bool { try read(approvalAccount(key)) == key }
     static func approve(_ key: Data) throws {
         guard key.count == 32 else { throw PlankPencilWireError.invalid }

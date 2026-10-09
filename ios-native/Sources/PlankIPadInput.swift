@@ -7,6 +7,8 @@ import GameController
     let client: PlankCoreClient
     @Published private(set) var wheelDiagnostics = "Received 0 · sent 0 · blocked 0"
     @Published private(set) var softwareKeyboardPresented = false
+    @Published private(set) var heldControlIDs = Set<UUID>()
+    @Published private(set) var inputFailure: String?
     func updateWheelDiagnostics(_ value: String) { wheelDiagnostics = value }
     var enabled = false {
         didSet {
@@ -14,16 +16,38 @@ import GameController
                 setSoftwareKeyboardPresented(false)
                 surface?.publishWheelDiagnostics(); release()
             }
-            else if !oldValue { surface?.resumeKeyboard() }
+            else if !oldValue, !isHandlingInputFailure { keySession.reopen(); surface?.resumeKeyboard() }
         }
     }
     private var held = PlankIPadHeldInput()
+    private var keySession = PlankControlKeySession()
+    private var isHandlingInputFailure = false
     private var pointerMotion = PlankIPadPointerMotion()
     private(set) var pointerMoves = 0, stationaryPointerCallbacks = 0
     private var pencil = PlankIPadPencilPolicy()
     var pencilTouching: Bool { pencil.touching }
     var hasHeldButtons: Bool { !held.buttons.isEmpty }
     init(client: PlankCoreClient) { self.client = client }
+    func clearInputFailure() { inputFailure = nil }
+    private func admitKeys(_ change: PlankControlKeyOwnership.Change) -> Bool {
+        guard !isHandlingInputFailure else { return false }
+        let accepted = keySession.admit(change,offer:client.offerControlKeys) { [self] retirement in
+            // One bounded attempt to retire existing keys, then invalidate the
+            // connection. Do not continue with uncertain Host key ownership.
+            isHandlingInputFailure = true
+            defer { isHandlingInputFailure = false }
+            inputFailure = "Keyboard input stopped responding. The desktop was disconnected; reconnect to continue."
+            pointerMotion.reset()
+            retirePencil()
+            for button in held.releaseButtons() { client.setMouseButton(number:button,pressed:false) }
+            if !retirement.isEmpty { _ = client.offerControlKeys(retirement) }
+            client.reset()
+            enabled = false
+            surface?.clearContact()
+        }
+        heldControlIDs = keySession.ownership.controlOwners
+        return accepted
+    }
     func setSoftwareKeyboardPresented(_ presented: Bool) {
         let next = presented && enabled
         guard next != softwareKeyboardPresented else { return }
@@ -34,15 +58,16 @@ import GameController
     func softwareText(_ text: String) {
         guard enabled, softwareKeyboardPresented else { return }
         for command in PlankIPadSoftwareKeyboard.commands(for: text) {
+            guard enabled else { break }
             switch command {
-            case let .key(code, modifiers): client.pressKey(code: code, modifiers: modifiers)
+            case let .key(code, modifiers): _ = tapControl(binding:.init(code:code,modifiers:modifiers))
             case let .text(value): client.sendText(value)
             }
         }
     }
     func softwareKey(_ code: UInt16) {
         guard enabled, softwareKeyboardPresented else { return }
-        client.pressKey(code: code)
+        _ = tapControl(binding:.init(code:code))
     }
     func pointer(_ point: CGPoint, viewport: PlankIPadViewport, dragging: Bool,
                  suppressStationary: Bool = false) -> Bool {
@@ -84,15 +109,41 @@ import GameController
         client.setMouseButton(number: number, pressed: pressed)
     }
     func key(_ code: UInt16, pressed: Bool, modifiers: UInt8) {
-        guard (!pressed || enabled), held.key(code, pressed: pressed, modifiers: modifiers) else { return }
-        client.sendKey(code: code, pressed: pressed, modifiers: modifiers)
+        guard !isHandlingInputFailure, (!pressed || enabled),
+              let change = keySession.ownership.previewHardware(code:code,pressed:pressed,modifiers:modifiers) else { return }
+        _ = admitKeys(change)
+    }
+    @discardableResult
+    func beginControl(owner: UUID, binding: PlankControlBinding) -> Bool {
+        guard !isHandlingInputFailure, enabled,
+              let change = keySession.ownership.previewBegin(owner:.control(owner),binding:binding) else { return false }
+        return admitKeys(change)
+    }
+    @discardableResult
+    func endControl(owner: UUID) -> Bool {
+        guard !isHandlingInputFailure,
+              let change = keySession.ownership.previewEnd(owner:.control(owner)) else { return false }
+        return admitKeys(change)
+    }
+    @discardableResult
+    func tapControl(binding: PlankControlBinding) -> Bool {
+        guard !isHandlingInputFailure, enabled,
+              let change = keySession.ownership.previewTap(binding:binding) else { return false }
+        return admitKeys(change)
+    }
+    @discardableResult
+    func releaseControls() -> Bool {
+        guard !isHandlingInputFailure else { return false }
+        guard let change = keySession.ownership.previewRetireControls() else { return true }
+        return admitKeys(change)
     }
     func release() {
+        guard !isHandlingInputFailure else { return }
         pointerMotion.reset()
         retirePencil()
         let releases = held.release()
         for number in releases.buttons { client.setMouseButton(number: number, pressed: false) }
-        for (code, modifiers) in releases.keys { client.sendKey(code: code, pressed: false, modifiers: modifiers) }
+        if let change = keySession.ownership.previewRetireAll() { _ = admitKeys(change) }
         surface?.clearContact()
     }
 }

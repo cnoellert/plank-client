@@ -21,7 +21,10 @@ struct PlankIPadRoot: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var selectedID: UUID?
     @StateObject private var pencilRelay = PlankIPadPencilRelay()
+    @StateObject private var customControls = PlankIPadCustomControlsStore()
     @State private var sharePencil = false
+    @State private var showingCustomControls = false
+    @State private var editingCustomControls = false
     @State private var add = false
     @State private var editing: HostBookmark?
     @State private var controls = false
@@ -43,6 +46,14 @@ struct PlankIPadRoot: View {
                         GeometryReader { geometry in
                             PlankIPadCanvas(client: client, router: router, functionKeyMode: KeyboardFunctionKeyMode(rawValue: keyboardMode) ?? .pc)
                                 .frame(width: geometry.size.width, height: geometry.size.height)
+                                .overlay {
+                                    if showingCustomControls {
+                                        PlankIPadCustomControlsOverlay(store:customControls,enabled:router.enabled,
+                                            begin:router.beginControl,end:{ _ = router.endControl(owner:$0) },
+                                            tap:router.tapControl,release:{ _ = router.releaseControls() })
+                                            .frame(width:geometry.size.width,height:geometry.size.height)
+                                    }
+                                }
                                 .overlay(alignment: .topLeading) {
                                     if client.videoDiagnosticsEnabled {
                                         VStack(alignment: .leading, spacing: 2) {
@@ -71,8 +82,14 @@ struct PlankIPadRoot: View {
                 } else {
                     ScrollView {
                         VStack(spacing: 20) {
+                            if let message = router.inputFailure {
+                                Text(message).foregroundStyle(.orange).multilineTextAlignment(.center)
+                            }
                             Button { sharePencil = true } label: {
                                 Label("Share Apple Pencil", systemImage: "pencil.tip.crop.circle")
+                            }.buttonStyle(.bordered).disabled(busy)
+                            Button { editingCustomControls = true } label: {
+                                Label("Custom Controls",systemImage:"rectangle.grid.2x2")
                             }.buttonStyle(.bordered).disabled(busy)
                             if store.hosts.isEmpty {
                                 ContentUnavailableView("Add a workstation", systemImage: "desktopcomputer",
@@ -104,6 +121,14 @@ struct PlankIPadRoot: View {
                             Label(router.softwareKeyboardPresented ? "Hide Keyboard" : "Show Keyboard", systemImage: "keyboard")
                         }
                         Button { controls = true } label: { Label("Session Controls", systemImage: "slider.horizontal.3") }
+                        Menu {
+                            Button(showingCustomControls ? "Hide Controls" : "Show Controls") {
+                                router.releaseControls(); showingCustomControls.toggle()
+                            }
+                            Button("Edit Controls…") {
+                                router.release(); editingCustomControls = true
+                            }
+                        } label: { Label("Custom Controls",systemImage:"rectangle.grid.2x2") }
                         Button { setToolbarVisible(false) } label: { Label("Hide Toolbar", systemImage: "chevron.up") }
                         Button("Disconnect") { disconnect() }.disabled(client.isClosingSession)
                     }
@@ -119,13 +144,18 @@ struct PlankIPadRoot: View {
         // SwiftUI must not also shrink the canvas for the same keyboard.
         .ignoresSafeArea(.keyboard, edges: client.hasActiveDesktopSession ? .bottom : [])
         .statusBarHidden(hideBars)
-        .fullScreenCover(isPresented: $sharePencil) { PlankIPadPencilRelayView(relay: pencilRelay) }
+        .fullScreenCover(isPresented: $sharePencil) { PlankIPadPencilRelayView(relay: pencilRelay,customControls:customControls) }
+        .sheet(isPresented:$editingCustomControls) {
+            PlankIPadCustomControlsEditor(store:customControls)
+                .presentationDetents([.large]).interactiveDismissDisabled()
+        }
         .sheet(isPresented: $add) { PlankIPadBookmarkEditor(store: store, client: client, host: .init(name: "", address: "", spatialDisplaySize: PlankIPadDisplayOptions.defaultSize), isNew: true) }
         .sheet(item: $editing) { host in PlankIPadBookmarkEditor(store: store, client: client, host: host, isNew: false) }
         .sheet(isPresented: $controls) { PlankIPadControls(client: client, router: router) }
         .onAppear { selectedID = store.hosts.first?.id; updateAdmission() }
         .onChange(of: store.hosts) { _, hosts in if selectedID == nil { selectedID = hosts.first?.id } }
         .onChange(of: controls) { _, _ in updateAdmission() }
+        .onChange(of: editingCustomControls) { _, _ in updateAdmission() }
         .onChange(of: client.phase) { _, _ in updateAdmission() }
         .onChange(of: scenePhase) { _, phase in
             updateAdmission()
@@ -151,6 +181,7 @@ struct PlankIPadRoot: View {
     }
     private func connect(_ host: HostBookmark) {
         password = ""
+        router.clearInputFailure()
         router.enabled = false
         Task { await client.reset()?.value; await client.connect(to: host) }
     }
@@ -184,7 +215,7 @@ struct PlankIPadRoot: View {
         let foreground = scenePhase == .active
         let streaming: Bool
         if case .streaming = client.phase { streaming = true } else { streaming = false }
-        router.enabled = foreground && streaming && !controls
+        router.enabled = foreground && streaming && !controls && !editingCustomControls
         client.setTabletActive(foreground && client.hasActiveDesktopSession)
         PlankAudioOutput.shared.setSceneActive(foreground)
     }

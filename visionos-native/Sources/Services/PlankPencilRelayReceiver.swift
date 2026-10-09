@@ -21,7 +21,7 @@ struct PlankDiscoveredPencilPad: Identifiable, Sendable {
     private var peer: PlankPencilRelayPeer?
     private var generation = UUID(), discoveryID = UUID()
     private var delivered = PlankPencilStrokeState()
-    private var deliveredModifiers = PlankPencilModifierState()
+    private var deliveredKeys = PlankPencilKeyState()
     private var admission = false
     private var chosenPad: PlankDiscoveredPencilPad?
     private var usedDesktop = false
@@ -41,7 +41,7 @@ struct PlankDiscoveredPencilPad: Identifiable, Sendable {
             let found = results.compactMap { result -> PlankDiscoveredPencilPad? in
                 guard case let .service(name,_,_,_) = result.endpoint,
                       case let .bonjour(txt) = result.metadata,
-                      txt["version"] == "2", txt["capability"] == "normalized-pen",
+                      txt["version"] == PlankPencilProtocol.version, txt["capability"] == PlankPencilProtocol.capability,
                       let text = txt["key"], let key = PlankPencilRelayKeys.unhex(text) else { return nil }
                 return .init(id:text,name:name,key:key,endpoint:result.endpoint)
             }.sorted { $0.name < $1.name }
@@ -127,16 +127,30 @@ struct PlankDiscoveredPencilPad: Identifiable, Sendable {
                         throw PlankPencilWireError.overflow
                     }
                 case let .modifier(key,pressed):
-                    try deliveredModifiers.accept(key,pressed:pressed)
-                    guard client.sendPencilRelayModifier(key,pressed:pressed) else { throw PlankPencilWireError.overflow }
+                    try deliverKeys([.init(code:key.rawValue,pressed:pressed)],to:client)
+                case let .keys(events):
+                    try deliverKeys(events,to:client)
                 default: throw PlankPencilWireError.invalid
                 }
             }
         } catch { peer.close(); retire(); status = "Pencil input ended." }
     }
+    private func deliverKeys(_ batch: [PlankPencilKeyEvent], to client: PlankCoreClient) throws {
+        // The authenticated peer already checked balanced edges. Ups from a
+        // down received while unfocused have no delivered owner to release.
+        var next = deliveredKeys
+        var accepted: [PlankPencilKeyEvent] = []
+        for edge in batch {
+            if !edge.pressed, !next.held.contains(edge.code) { continue }
+            try next.accept([edge]); accepted.append(edge)
+        }
+        guard !accepted.isEmpty else { return }
+        guard client.sendPencilRelayKeys(accepted) else { throw PlankPencilWireError.overflow }
+        deliveredKeys = next
+    }
     private func retireStroke() { for p in delivered.retire() { client?.retirePencilRelayPen(p) } }
     private func retire() {
-        retireStroke(); _ = deliveredModifiers.retire(); client?.retirePencilRelayModifiers()
+        retireStroke(); _ = deliveredKeys.retire(); client?.retirePencilRelayModifiers()
     }
     func endDesktop() {
         retire(); client?.resetPencilKeyOwnership(); admission = false

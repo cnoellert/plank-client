@@ -21,8 +21,40 @@ import Foundation
                 let decoded = try PlankPencilMessage.decode(message.encoded()); assert(decoded == message)
             }
         }
-        rejects { _ = try PlankPencilMessage.decode(Data([0x50,0x4c,0x50,0x4e,2,7,0x41,0,1])) }
-        rejects { _ = try PlankPencilMessage.decode(Data([0x50,0x4c,0x50,0x4e,2,7,0x10,0,2])) }
+        rejects { _ = try PlankPencilMessage.decode(Data([0x50,0x4c,0x50,0x4e,3,7,0x41,0,1])) }
+        rejects { _ = try PlankPencilMessage.decode(Data([0x50,0x4c,0x50,0x4e,3,7,0x10,0,2])) }
+        // Generic key chords are one ordered frame; never fall back to only
+        // their supported modifiers when a trigger or count is invalid.
+        let chord: [PlankPencilKeyEvent] = [.init(code:0x11,pressed:true,modifiers:2),.init(code:0x5A,pressed:true,modifiers:2),
+            .init(code:0x5A,pressed:false,modifiers:2),.init(code:0x11,pressed:false,modifiers:0)]
+        let decodedChord = try PlankPencilMessage.decode(PlankPencilMessage.keys(chord).encoded()); assert(decodedChord == .keys(chord))
+        rejects { _ = try PlankPencilMessage.keys([]).encoded() }
+        rejects { _ = try PlankPencilMessage.keys([.init(code:0xFFFF,pressed:true)]).encoded() }
+        rejects { _ = try PlankPencilMessage.keys([.init(code:0x41,pressed:true,modifiers:16)]).encoded() }
+        rejects { _ = try PlankPencilMessage.keys(Array(repeating:chord[0],count:49)).encoded() }
+        var malformed = try PlankPencilMessage.keys(chord).encoded(); malformed[9] = 2
+        rejects { _ = try PlankPencilMessage.decode(malformed) }
+        var generic = PlankPencilKeyState()
+        try generic.accept(chord); assert(generic.held.isEmpty)
+        try generic.accept([.init(code:0x41,pressed:true)])
+        rejects { try generic.accept([.init(code:0x42,pressed:true),.init(code:0x41,pressed:true)]) }
+        assert(generic.held == [0x41], "A rejected tail must not commit the earlier key")
+        rejects { try generic.accept([.init(code:0x41,pressed:false),.init(code:0x42,pressed:false)]) }
+        assert(generic.held == [0x41], "A rejected release tail must not commit any release")
+        assert(generic.retire() == [.init(code:0x41,pressed:false)] && generic.held.isEmpty)
+        try generic.accept([.init(code:0x11,pressed:true,modifiers:2),.init(code:0x10,pressed:true,modifiers:3),.init(code:0x5A,pressed:true,modifiers:3)])
+        let cancelled = generic.retire()
+        assert(cancelled.first == .init(code:0x5A,pressed:false,modifiers:3))
+        assert(cancelled.last?.modifiers == 0 && generic.held.isEmpty)
+        let maximumBatch = PlankControlKeyCatalog.entries.prefix(48).map { PlankPencilKeyEvent(code:$0.code,pressed:true) }
+        let maximumMessage = PlankPencilMessage.keys(maximumBatch)
+        let maximumDecoded = try PlankPencilMessage.decode(maximumMessage.encoded())
+        let maximumSize = try maximumMessage.encoded().count
+        assert(maximumDecoded == maximumMessage && maximumSize == 199)
+        let keyMailbox = PlankPencilMailbox(limit:1)
+        assert(keyMailbox.offer(.keys(chord)).accepted)
+        assert(!keyMailbox.offer(.keys(chord)).accepted)
+        rejects { _ = try keyMailbox.take() }
         let mixed = PlankPencilMailbox()
         for value: PlankPencilMessage in [.modifier(.shift,pressed:true),.pen(down),.pen(move),.modifier(.control,pressed:true),.pen(move),.pen(up),.modifier(.shift,pressed:false),.modifier(.control,pressed:false)] {
             assert(mixed.offer(value).accepted)
@@ -57,6 +89,26 @@ import Foundation
         assert(state.retire().isEmpty)
         rejects { try state.accept(move) } // Retired contact requires a fresh down.
         try state.accept(down); try state.accept(up)
+        let atomicSender = PlankInputQueue()
+        let queueChord = chord.map { PlankControlKeyEvent(code:$0.code,pressed:$0.pressed,modifiers:$0.modifiers) }
+        for _ in 0..<255 { atomicSender.append(.key(code:0x41,pressed:true,modifiers:0)) }
+        assert(!atomicSender.offerControlKeys(queueChord))
+        assert(atomicSender.drain().count == 255, "Rejected chord cannot enqueue a prefix")
+        assert(atomicSender.offerControlKeys(queueChord))
+        let admitted = atomicSender.drain().compactMap { event -> PlankControlKeyEvent? in
+            guard case let .key(code,pressed,modifiers) = event else { return nil }
+            return .init(code:code,pressed:pressed,modifiers:modifiers)
+        }
+        assert(admitted == queueChord)
+        let completeKeyboard = PlankControlKeyCatalog.entries.map { PlankControlKeyEvent(code:$0.code,pressed:false) }
+        assert(completeKeyboard.count > PlankPencilProtocol.maximumKeyEdges)
+        assert(atomicSender.offerControlKeys(completeKeyboard), "Direct cleanup may retire more keys than a sharing frame")
+        assert(atomicSender.drain().count == completeKeyboard.count)
+        for _ in 0..<257 { atomicSender.append(.key(code:0x41,pressed:true,modifiers:0)) }
+        assert(atomicSender.offerControlKeys([]), "An ownership-only transaction requires no queue capacity")
+        assert(!atomicSender.offerControlKeys([.init(code:0x41,pressed:false)]))
+        assert(atomicSender.drain().count == 257)
+        atomicSender.stop(); assert(!atomicSender.offerControlKeys(queueChord) && !atomicSender.offerControlKeys([]))
 #if PLANK_PENCIL_RELAY_RECEIVER
         let sender = PlankInputQueue()
         assert(sender.offerPencilRelayPen(down))

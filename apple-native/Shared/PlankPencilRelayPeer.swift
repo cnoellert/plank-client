@@ -33,9 +33,9 @@ final class PlankPencilRelayPeer: @unchecked Sendable {
     private let saveApproval: @Sendable (Data) throws -> Void
     private var configuration: PlankPencilMessage = .configuration(width:1920,height:1200,active:false)
     private var stroke = PlankPencilStrokeState()
-    private var modifiers = PlankPencilModifierState()
+    private var keys = PlankPencilKeyState()
     private var active = false
-    private static let prefix = Data([0x50,0x4c,0x50,0x4e,2])
+    private static let prefix = Data([0x50,0x4c,0x50,0x4e,PlankPencilProtocol.wireVersion])
 
     init(connection: NWConnection, privateKey: Data, peerKey: Data? = nil,
          approvalLookup: @escaping @Sendable (Data) throws -> Bool = PlankPencilRelayKeys.approved,
@@ -102,6 +102,9 @@ final class PlankPencilRelayPeer: @unchecked Sendable {
         }
     }
     @discardableResult func offer(_ message: PlankPencilMessage) -> Bool {
+        // The caller commits key ownership only after this admission. Reject
+        // malformed or oversized batches before the asynchronous encoder runs.
+        guard (try? message.encoded()) != nil else { return false }
         let result = outgoing.offer(message)
         if result.wake { queue.async { [self] in pump() } }
         return result.accepted
@@ -173,7 +176,7 @@ final class PlankPencilRelayPeer: @unchecked Sendable {
             secondReceived = true; try completeInitiator(); return
         }
         guard stage >= 2 else { throw PlankPencilWireError.invalid }
-        var plain = [UInt8](repeating:0,count:64), count = 0
+        var plain = [UInt8](repeating:0,count:224), count = 0
         let r = body.withUnsafeBytes { plank_pencil_crypto_decrypt(crypto,$0.bindMemory(to:UInt8.self).baseAddress,$0.count,&plain,plain.count,&count) }
         guard r == 0 else { throw PlankPencilWireError.crypto }
         let message = try PlankPencilMessage.decode(Data(plain.prefix(count)))
@@ -200,7 +203,10 @@ final class PlankPencilRelayPeer: @unchecked Sendable {
             guard initiator, !stroke.touching else { throw PlankPencilWireError.invalid }
         case let .modifier(key,pressed):
             guard initiator else { throw PlankPencilWireError.invalid }
-            try modifiers.accept(key,pressed:pressed)
+            try keys.accept([.init(code:key.rawValue,pressed:pressed)])
+        case let .keys(events):
+            guard initiator else { throw PlankPencilWireError.invalid }
+            try keys.accept(events)
         case .ping: try secure(.pong); return
         case .pong: return
         case .end: return

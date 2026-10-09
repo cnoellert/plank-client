@@ -115,6 +115,21 @@ independently sized, assignable controls, available in both the direct iPad
 client and Pencil sharing. See [the shared controls design brief](ipad-custom-controls.md).
 This is the next design scope; build22 still uses the fixed slot layout.
 
+## Custom controls candidate — October 9
+
+The user selected the bottom editor sketch: freely placed and independently
+sized keys with a compact neighboring inspector. **Custom Controls** now opens
+the same saved library/editor from the direct iPad desktop and Pencil sharing.
+The fixed slot palette and up/down ordering UI are superseded in the new source;
+the legacy order imports once without changing pad margins, tone or consent.
+Keys can hold or tap a supported key with optional Shift/Ctrl/Option/Command.
+
+The new source uses version3 `normalized-pen-keys` and matching iPad/AVP/Mac
+candidates. Existing identities and old approval accounts stay stored, but the
+expanded capability requires a fresh comparison approval. New local component
+evidence does not supersede installed22/48 physical acceptance. See
+[shared controls](ipad-custom-controls.md) for editing, ownership and device gates.
+
 ## Intended use
 
 ### Mac receiver extension
@@ -202,7 +217,7 @@ one active pen owner and one selected remote display.
 ## Development implementation
 
 The iPad pilot's **Share Apple Pencil** opens a foreground pad and advertises
-`_plank-pencil._tcp` with `version=2`, `capability=normalized-pen` and its public
+`_plank-pencil._tcp` with `version=3`, `capability=normalized-pen-keys` and its public
 identity. PLANK Vision Settings has a separate Apple Pencil section. The raw
 Tablet Relay must be Off. The independent capability is deliberately not a
 `pltr-raw-hid` descriptor; legacy raw clients do not discover or decode it.
@@ -213,12 +228,12 @@ on both devices and approving locally on each. The code is the first six bytes
 of the authenticated IK first-message transcript hash, including the initiator
 identity, ephemeral key and pinned advertised responder identity. Discovery
 alone is untrusted. Existing approved identity pairs skip the comparison; a
-changed public identity or expanded version 2 capability requires a new comparison. Pins are not shared with
+changed public identity or expanded version3 capability requires a new comparison. Pins are not shared with
 Setup, Wacom Relay, Mac or another app. One pending/active headset owns the pad.
 
 `apple-native/Shared/PlankPencilCrypto.c` calls the existing pinned relay Noise
 IK implementation without changing it. It authenticates the exact
-`PLANK-NORMALIZED-PEN/2` capability payload in both handshake messages. The
+`PLANK-NORMALIZED-PEN-KEYS/3` capability payload in both handshake messages. The
 underlying fixed TCP Noise prologue is reused; application purpose is bound in
 the encrypted handshake payload, not a newly claimed prologue. Empty raw-drawing
 handshakes and mismatched purpose/version are rejected. This direct physical
@@ -226,12 +241,14 @@ comparison path does not use Setup-mediated enrollment, which remains the
 existing Wacom registration path.
 
 Records have a two-byte little-endian length, capped at 256 bytes. Handshakes
-start with `PLPN` and byte version 2. Secure application plaintext also starts
-with `PLPN`, version 2 and a one-byte message kind. Configuration carries two
+start with `PLPN` and byte version3. Secure application plaintext also starts
+with `PLPN`, version3 and a one-byte message kind. Configuration carries two
 UInt32 display dimensions and one Boolean; pen carries phase, three Float32
 values, UInt8 tilt and UInt16 tilt direction; right-click carries two Float32
 coordinates. Modifier edges carry an allowlisted UInt16 virtual key and one
-Boolean, with strict press/release ordering. All multibyte values are little-endian. Ping, pong and end have
+Boolean, with strict press/release ordering. Generic key batches add a one-byte
+count and up to48 ordered code/pressed/modifier entries; masks and codes are
+validated against the finite key catalog. All multibyte values are little-endian. Ping, pong and end have
 no payload. Unknown kinds/versions, trailing bytes, nonfinite or out-of-range
 values, inconsistent contact transitions, authentication failures and replay
 close the peer. Transport nonce ordering comes from the existing Noise codec.
