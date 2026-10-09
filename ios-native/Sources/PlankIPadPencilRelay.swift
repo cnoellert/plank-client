@@ -200,6 +200,13 @@ struct PlankIPadPencilPadOptions: View {
                 .accessibilityValue(Text(relay.padSettings[keyPath:key],format:.percent.precision(.fractionLength(0))))
         }
     }
+    private func moveShortcut(_ key: PlankPencilModifier,by offset: Int) {
+        var next = relay.padSettings
+        guard let index = next.shortcutOrder.firstIndex(of:key.rawValue),
+              next.shortcutOrder.indices.contains(index + offset) else { return }
+        next.shortcutOrder.swapAt(index,index + offset)
+        relay.setPadSettings(next)
+    }
     var body: some View {
         NavigationStack {
             Form {
@@ -220,17 +227,22 @@ struct PlankIPadPencilPadOptions: View {
                 }
                 Section {
                     ForEach(relay.padSettings.shortcuts,id:\.rawValue) { key in
-                        Text(key.accessibilityTitle)
-                    }
-                    .onMove { offsets, destination in
-                        var next = relay.padSettings
-                        next.shortcutOrder.move(fromOffsets:offsets,toOffset:destination)
-                        relay.setPadSettings(next)
+                        HStack {
+                            Text(key.accessibilityTitle)
+                            Spacer()
+                            Button { moveShortcut(key,by:-1) } label: {
+                                Image(systemName:"chevron.up").frame(width:44,height:44)
+                            }.accessibilityLabel("Move \(key.accessibilityTitle) earlier")
+                                .disabled(relay.padSettings.shortcuts.first == key)
+                            Button { moveShortcut(key,by:1) } label: {
+                                Image(systemName:"chevron.down").frame(width:44,height:44)
+                            }.accessibilityLabel("Move \(key.accessibilityTitle) later")
+                                .disabled(relay.padSettings.shortcuts.last == key)
+                        }.buttonStyle(.borderless)
                     }
                 } header: { Text("Shortcut order") } footer: {
-                    Text("Drag to arrange the keys. The first four run left to right; the last fills the bottom row.")
+                    Text("Use the arrows to arrange the keys. The first four run left to right; the last fills the bottom row.")
                 }
-                .environment(\.editMode,.constant(.active))
                 Section {
                     Picker("Tone",selection:binding(\.tone)) {
                         ForEach(PlankIPadPencilPadSettings.Tone.allCases,id:\.self) { Text($0.title).tag($0) }

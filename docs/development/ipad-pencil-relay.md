@@ -90,7 +90,7 @@ a separate candidate using the same version2 wire and approval boundary.
 
 ## Build 22 shortcut ordering and margin investigation
 
-Pad Options now provides native reorder handles for all five shortcut keys.
+Pad Options now provides up/down ordering controls for all five shortcut keys.
 The first four fill the palette's top row; the last fills its bottom row.
 Order persists locally, with existing margin/mapping/appearance settings
 preserved. Reordering retires held input before replacing controls.
