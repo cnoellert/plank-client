@@ -254,3 +254,17 @@ xcrun clang -O1 -DPLANK_NATIVE_TRANSPORT=1 -I "$PLANK_TRANSPORT_DIR/include" \
 Orientation follows Apple's [azimuth definition](https://developer.apple.com/documentation/uikit/uitouch/azimuthangle(in:))
 and the existing Host virtual-pen convention, with four cardinal-direction
 fixtures. Host observation of tilt is still required.
+
+## Follow-up keyboard and Pencil sharing
+
+Build 13 improved floating presentation, but on-device expansion still displaced
+the full-size preview. Build 14 uses the public keyboard notification frame,
+converted from the matching screen into canvas coordinates, for docked preview
+and viewport layout. Floating placement retains the tracking guide. Simulator
+fallback checks do not qualify the hardware-attached expansion gesture.
+
+[iPad Pencil sharing to PLANK Vision](../docs/development/ipad-pencil-relay.md)
+records the next requested feature and its implementation order. It requires a
+negotiated normalized-pen source on both apps; raw Wacom Relay compatibility is
+not assumed. The existing workstation normalized pen path is the intended
+backend, with no new Host package planned.

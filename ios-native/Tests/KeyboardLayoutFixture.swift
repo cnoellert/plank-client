@@ -37,13 +37,23 @@ struct FixtureCanvas: UIViewRepresentable {
         super.didMoveToWindow()
         guard window != nil, !started else{return}; started=true
         DispatchQueue.main.asyncAfter(deadline:.now()+1){ self.keyboard.setPresented(true); self.entry.becomeFirstResponder() }
-        for (time,name) in [(3.0,"docked"),(7.0,"hidden"),(11.0,"reopened"),(15.0,"stable"),(23.0,"landscape-request"),(29.0,"portrait-request")] {
+        for (time,name) in [(3.0,"docked"),(7.0,"hidden"),(11.0,"reopened"),(15.0,"stable"),(18.0,"synthetic-frame-guide-mismatch"),(23.0,"restored-system-frame")] {
             DispatchQueue.main.asyncAfter(deadline:.now()+time){ self.record(name) }
         }
         DispatchQueue.main.asyncAfter(deadline:.now()+5){ self.entry.resignFirstResponder(); self.keyboard.setPresented(false) }
         DispatchQueue.main.asyncAfter(deadline:.now()+9){ self.keyboard.setPresented(true); self.entry.becomeFirstResponder() }
-        DispatchQueue.main.asyncAfter(deadline:.now()+20){ self.window?.windowScene?.requestGeometryUpdate(.iOS(interfaceOrientations:.landscapeLeft)) }
-        DispatchQueue.main.asyncAfter(deadline:.now()+26){ self.window?.windowScene?.requestGeometryUpdate(.iOS(interfaceOrientations:.portrait)) }
+        // Fault injection: the notification reports a different docked frame
+        // while the real system keyboard/guide stays put. This is not gesture
+        // acceptance; it verifies the authoritative-frame fallback explicitly.
+        DispatchQueue.main.asyncAfter(deadline:.now()+16){
+            guard let window=self.window else{return}
+            let original=window.screen.coordinateSpace.convert(self.actualKeyboard,from:self)
+            var changed=original; changed.origin.y += 40; changed.size.height -= 40
+            NotificationCenter.default.post(name:UIResponder.keyboardDidChangeFrameNotification,object:window.screen,userInfo:[UIResponder.keyboardFrameEndUserInfoKey:changed])
+            DispatchQueue.main.asyncAfter(deadline:.now()+4){
+                NotificationCenter.default.post(name:UIResponder.keyboardDidChangeFrameNotification,object:window.screen,userInfo:[UIResponder.keyboardFrameEndUserInfoKey:original])
+            }
+        }
     }
     @objc func keyboardChanged(_ notification:Notification) {
         guard let screenRect=notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? CGRect,let window else{return}

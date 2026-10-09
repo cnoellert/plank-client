@@ -533,3 +533,29 @@ simulator dimensions, so rotation remains unqualified. There was no Simulator
 GUI available for floating gestures. These checks are not acceptance of floating/full-size gestures or Bluetooth keyboard
 coexistence on iPadOS 26.5; those remain targeted device gates. No Host, dependency
 pin, network setting or app identity change is included.
+
+## Build 14 docked keyboard frame correction — October 8
+
+The user accepted the floating keyboard improvement in build 13, but screenshots
+still place the full-size preview across the desktop after expansion. The guide
+position appears inconsistent with the visible docked keyboard; no geometry log
+from that device establishes the precise UIKit cause yet.
+
+Build 14 observes public keyboard frame notifications from the canvas window's
+screen, converts them into canvas coordinates, and uses the intersecting docked
+frame for both preview position and viewport space. This is a measured frame,
+not a fixed device-height offset. Floating positioning still uses the accepted
+tracking guide. Stronger docked constraints override stale floating constraints;
+hiding/floating releases the override. Multiple screens are filtered by the
+notification's UIScreen, with the canvas screen as the legacy fallback. Geometry
+logging records mode only, never typed text or Pencil coordinates.
+
+The simulator fixture retains actual open/hide/reopen checks and adds an
+explicit synthetic notification/guide disagreement. That fault injection tests
+the authoritative-frame fallback; it is not an on-device expand gesture pass.
+Device docking/rotation and typing coexistence remain targeted gates.
+
+The requested iPad-as-Pencil-tablet feature is scoped in
+[the Pencil sharing plan](ipad-pencil-relay.md). Its negotiated normalized pen
+path is distinct from the existing raw Wacom Relay; no working iPad publisher or
+AVP receiver is claimed yet.
