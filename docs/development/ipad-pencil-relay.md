@@ -77,6 +77,14 @@ geometry/options, pad hiding, background and peer failure retire pad ownership.
 Local retirement does not establish final Host receipt. Image overlay is next
 planned work, not implemented by this candidate.
 
+## October 9 installed shortcut candidates
+
+iPad21 and Vision48 from `0eac6ba` are installed and their executable paths
+independently verified. The simultaneous finger-held shortcut/Pencil check is
+requested and pending; installed builds do not establish this acceptance.
+Build20 margins, mapping and charcoal appearance are accepted. Mac build25 is
+a separate candidate using the same version2 wire and approval boundary.
+
 ## Intended use
 
 ### Mac receiver extension
