@@ -624,3 +624,27 @@ Physical transition acceptance remains pending. No Host, dependency or network
 change is included.
 
 Verification: actual simulator dock/hide/reopen passed 757→1074→757pt. Synthetic floating restores1074pt; expanded/repeated-expanded both797pt despite guide757pt; restored report returns757pt. Direct checks cover an already-reduced owner and repeated absolute reports. This verifies the reservation correction under injected disagreement, not the physical iPad gesture.
+
+## Keyboard mode diagnosis and accepted setup — October 8
+
+The user reported build 17 opening full once and then only showing a small
+keyboard without a Full action. A controlled comparison established that this
+happened while the Pencil was in hand; putting it down and reopening once or
+twice restored the normal keyboard. The next comparison left Bluetooth
+connected, turned off Settings → Apple Pencil → Scribble, and reopened the
+keyboard twice while holding the Pencil. The user confirmed: “That works!”
+
+The Scribble setting is therefore the verified cause/control for the reported
+Pencil-dependent mode on this device. Its internal UIKit state transition was
+not measured. The accepted setup is Scribble off for full-size typing with
+Pencil in use. No additional application build or change was needed for this
+resolution. PLANK's normalized Pencil drawing does not use Scribble.
+Apple documents the setting in [Enter text with Scribble](https://support.apple.com/en-ph/guide/ipad/-ipad355ab2a7/ipados).
+
+Public UIScribbleInteraction allows rejecting local handwriting, while its
+expected-Pencil flag is readonly. That opt-out has no documented guarantee of
+forcing a full-size system keyboard, so it was not shipped as a speculative
+fix. The bottom shortcuts bar can also occur with a hardware keyboard and was
+not sufficient proof by itself. Accept the user's repeated-open result; do not
+repeat the accepted mouse, wheel, pressure or typing qualification. The
+separate geometry cycle is not independently established by this setting test.

@@ -11,16 +11,21 @@ The keyboard icon opens UIKit's native keyboard and sends typing directly to
 the remote application. Esc, Tab and Hide remain in the native assistant bar.
 There is no PLANK typing preview or local text echo. A docked keyboard reduces
 the visible desktop using UIKit's screen-frame report converted to the canvas;
-a floating keyboard
-overlays it without changing its size. Video and input use the same rectangle,
+a floating keyboard overlays it without changing its size. Video and input use the same rectangle,
 and resizing retires held input. SwiftUI does not reserve keyboard space again.
 The video height is derived from the current canvas and keyboard intersection,
 never from the previous video height or a separate guide reservation.
 Keyboard presentation with Bluetooth attached remains under iPadOS's native
-controls. On the floating keyboard, use its More button and choose Full to
-request the full-size keyboard. The user reports expansion works in build 16,
-but float-to-full reserves too much desktop space until hide/reopen; build 17's
-correction still requires that physical transition check.
+controls. For full-size typing while holding the Pencil, the tested setup is
+**Settings → Apple Pencil → Scribble off**. On October 8 the user confirmed
+this resolves the small-only keyboard state on build 17, with Bluetooth still
+connected. Putting the Pencil down also restored normal presentation after
+one or two opens. Scribble controls local handwriting-to-text; PLANK's remote
+Pencil drawing uses its separate normalized pen path and does not depend on it.
+Ordinary floating keyboards support More → Full, but that action was missing
+in the user's Pencil-related state. Do not rely on it as that state's workaround.
+This acceptance covers the controlled repeated-open check, not an independently
+recorded floating/full-size geometry cycle.
 The earlier build notes below retain the history of the removed preview.
 
 ## First slice
