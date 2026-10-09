@@ -117,9 +117,9 @@ struct PlankDiscoveredPencilPad: Identifiable, Sendable {
                 case let .rightClick(x,y):
                     guard !delivered.touching else { continue }
                     retireStroke()
-                    client.movePointer(x:Int((x*Float(dimensions.width-1)).rounded()),
-                        y:Int((y*Float(dimensions.height-1)).rounded()),width:dimensions.width,height:dimensions.height)
-                    client.clickMouseButton(number:3)
+                    guard client.sendPencilRelayRightClick(x:x,y:y,width:dimensions.width,height:dimensions.height) else {
+                        throw PlankPencilWireError.overflow
+                    }
                 case let .modifier(key,pressed):
                     try deliveredModifiers.accept(key,pressed:pressed)
                     guard client.sendPencilRelayModifier(key,pressed:pressed) else { throw PlankPencilWireError.overflow }

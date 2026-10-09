@@ -104,6 +104,25 @@ final class PlankInputQueue: @unchecked Sendable {
 #endif
 
 #if PLANK_PENCIL_RELAY_RECEIVER
+    // Squeeze positions and clicks together, without presenting the parked
+    // physical Mac mouse as the active pointer. Refuse the whole gesture if
+    // there is insufficient room for both button edges.
+    func offerPencilRelayRightClick(x: UInt16, y: UInt16, maximumX: UInt16, maximumY: UInt16) -> Bool {
+        lock.lock()
+        guard !stopped, events.count <= 253 else { lock.unlock(); return false }
+        let shouldWake = events.isEmpty
+        if shouldWake { oldestEnqueueTime = DispatchTime.now().uptimeNanoseconds }
+        events.append(.pointer(x:x,y:y,maximumX:maximumX,maximumY:maximumY))
+        events.append(.button(number:3,pressed:true))
+        events.append(.button(number:3,pressed:false))
+#if PLANK_NATIVE_MAC_WACOM
+        mouseOwnsPointer = false
+#endif
+        highWaterDepth = max(highWaterDepth,events.count)
+        lock.unlock()
+        if shouldWake { wakeupContinuation.yield(()) }
+        return true
+    }
     func offerPencilRelayKey(code: UInt16, pressed: Bool, modifiers: UInt8) -> Bool {
         lock.lock()
         guard !stopped, events.count < 256 else { lock.unlock(); return false }

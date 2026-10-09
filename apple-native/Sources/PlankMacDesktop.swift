@@ -102,7 +102,9 @@ struct PlankMacDesktop: View {
             }
             Toggle("Show statistics", isOn: Binding(get: { client.videoDiagnosticsEnabled }, set: { client.setVideoDiagnosticsEnabled($0) }))
             Divider()
-            Text(client.tabletPreflightSummary).font(.caption)
+            if PlankMacTabletSource.saved != .pencil {
+                Text(client.tabletPreflightSummary).font(.caption)
+            }
             Text("Tablet: \(PlankMacTabletSource.saved.title)").font(.caption).foregroundStyle(.secondary)
             if PlankMacTabletSource.saved == .pencil {
                 PlankPencilRelaySettings(receiver: client.pencilRelay)

@@ -172,6 +172,15 @@ final class PlankCoreClient: ObservableObject {
         guard pencilRelayCanDraw, pencilRelay.ownsPen else { return false }
         return inputQueue.offerPencilRelayPen(pen)
     }
+    func sendPencilRelayRightClick(x: Float, y: Float, width: Int, height: Int) -> Bool {
+        guard pencilRelayCanDraw, pencilRelay.ownsPen, !pencilRelay.strokeActive,
+              width > 1, height > 1, x.isFinite, y.isFinite,
+              (0...1).contains(x), (0...1).contains(y) else { return false }
+        return inputQueue.offerPencilRelayRightClick(
+            x:UInt16(clamping:Int((x * Float(width-1)).rounded())),
+            y:UInt16(clamping:Int((y * Float(height-1)).rounded())),
+            maximumX:UInt16(clamping:width-1),maximumY:UInt16(clamping:height-1))
+    }
     func retirePencilRelayPen(_ pen: PlankNormalizedPen) {
         guard pen.phase == .cancel || pen.phase == .leave else { return }
         inputQueue.append(.pen(pen))

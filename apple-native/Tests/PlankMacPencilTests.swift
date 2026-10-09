@@ -33,7 +33,17 @@ import Foundation
         queue.append(.pen(.init(phase:.leave,x:0,y:0,pressureOrDistance:0,tilt:0,rotation:0)))
         assert(queue.nativeMouseOwnsPointer, "Retiring a pen cannot steal presentation from an active mouse")
         _ = queue.drain()
+        assert(queue.offerPencilRelayRightClick(x:30,y:40,maximumX:100,maximumY:100))
+        assert(!queue.nativeMouseOwnsPointer, "Pencil squeeze retains the remote pen cursor")
+        let click = queue.drain()
+        assert(click.count == 3)
+        if case let .pointer(x,y,_,_) = click[0] { assert(x == 30 && y == 40) } else { assertionFailure() }
+        if case let .button(number,pressed) = click[1] { assert(number == 3 && pressed) } else { assertionFailure() }
+        if case let .button(number,pressed) = click[2] { assert(number == 3 && !pressed) } else { assertionFailure() }
+        queue.append(.pointer(x:20,y:30,maximumX:100,maximumY:100)); _ = queue.drain()
         for _ in 0..<256 { assert(queue.offerPencilRelayKey(code:0x10,pressed:true,modifiers:1)) }
+        assert(!queue.offerPencilRelayRightClick(x:30,y:40,maximumX:100,maximumY:100))
+        assert(queue.diagnostics.depth == 256, "Refused squeeze cannot queue only its button-down edge")
         assert(!queue.offerPencilRelayPen(down))
         assert(queue.nativeMouseOwnsPointer, "Refused Pencil input cannot claim a cursor")
         queue.stop()
