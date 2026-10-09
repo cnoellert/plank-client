@@ -137,3 +137,7 @@ failure. A real TCP loopback fixture with injected in-memory consent storage
 passed two-sided comparison, no durable approval before comparison, configuration
 acknowledgment and ordered down/move/up pressure delivery. These tests do not
 qualify the physical iPad, AVP, Keychain entitlement or workstation drawing.
+Each desktop lifetime retires its peer generation. The selected iPad can reconnect
+on the next supported desktop with its existing verified identity; callbacks from
+the previous peer cannot enter that desktop. An unexpected network failure
+requires selecting the pad again rather than creating an unbounded retry loop.

@@ -21,8 +21,10 @@ struct PlankDiscoveredPencilPad: Identifiable, Sendable {
     private var generation = UUID(), discoveryID = UUID()
     private var delivered = PlankPencilStrokeState()
     private var admission = false
+    private var chosenPad: PlankDiscoveredPencilPad?
+    private var usedDesktop = false
     private var dimensions = PlankFrameDimensions(width:1920,height:1200)
-    var ownsPen: Bool { peer != nil }
+    var ownsPen: Bool { chosenPad != nil }
     var strokeActive: Bool { delivered.touching }
     init(client: PlankCoreClient) { self.client = client }
     func discover() {
@@ -55,6 +57,7 @@ struct PlankDiscoveredPencilPad: Identifiable, Sendable {
     func connect(_ pad: PlankDiscoveredPencilPad) {
         guard let client, client.pencilRelaySourceAllowed else { status = "Turn Tablet Relay off before choosing an iPad Pencil."; return }
         disconnect()
+        chosenPad = pad
         do {
             let key = try PlankPencilRelayKeys.privateKey()
             let connection = NWConnection(to:pad.endpoint,using:.tcp)
@@ -67,7 +70,7 @@ struct PlankDiscoveredPencilPad: Identifiable, Sendable {
                     case .ready: self.connected = true; self.verification = nil; self.status = "Pencil connected"; self.sync()
                     case .messagesAvailable: self.drain()
                     case let .ended(reason):
-                        self.retire(); self.peer = nil; self.admission = false; self.connected = false
+                        self.retire(); self.peer = nil; self.chosenPad = nil; self.usedDesktop = false; self.admission = false; self.connected = false
                         self.verification = nil; self.selectedName = nil; self.status = reason
                     }
                 }
@@ -77,12 +80,17 @@ struct PlankDiscoveredPencilPad: Identifiable, Sendable {
     }
     func approve() { guard verification != nil else { return }; verification = nil; peer?.approve(); status = "Waiting for iPad approval…" }
     func sync() {
-        guard let client, let peer else { return }
+        guard let client else { return }
+        guard let peer else {
+            if client.pencilRelayCanDraw, let chosenPad { connect(chosenPad) }
+            return
+        }
         let nextDimensions = client.frameDimensions ?? .init(width:1920,height:1200)
         let nextAdmission = connected && client.pencilRelayCanDraw
         guard admission != nextAdmission || dimensions != nextDimensions else { return }
         retire()
         admission = nextAdmission; dimensions = nextDimensions
+        if admission { usedDesktop = true }
         peer.configure(width:dimensions.width,height:dimensions.height,active:admission)
         if connected {
             status = admission ? "Pencil connected · \(dimensions.width) × \(dimensions.height)" :
@@ -116,9 +124,21 @@ struct PlankDiscoveredPencilPad: Identifiable, Sendable {
         } catch { peer.close(); retire(); status = "Pencil input ended." }
     }
     private func retire() { for p in delivered.retire() { client?.retirePencilRelayPen(p) } }
-    func endDesktop() { retire(); admission = false; peer?.configure(width:dimensions.width,height:dimensions.height,active:false) }
+    func endDesktop() {
+        retire(); admission = false
+        guard usedDesktop else {
+            peer?.configure(width:dimensions.width,height:dimensions.height,active:false)
+            return
+        }
+        // Each desktop lifetime gets a fresh cryptographic peer generation.
+        // Late events from the previous stream cannot enter the next desktop.
+        generation = UUID(); peer?.close(); peer = nil; connected = false
+        verification = nil; usedDesktop = false
+        status = "Pencil selected; waiting for the next supported desktop."
+    }
     func disconnect() {
         retire(); generation = UUID(); peer?.close(); peer = nil; admission = false
+        chosenPad = nil; usedDesktop = false
         connected = false; selectedName = nil; verification = nil; status = "Pencil sharing is off"
     }
 }
