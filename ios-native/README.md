@@ -37,6 +37,11 @@ measured preview dimensions. Direct finger holds survive drift; Pencil contact
 over a key goes to the drawing surface. Global cancellation clears both key
 ownership and held appearance. See [shared custom controls](../docs/development/ipad-custom-controls.md)
 for the reported iPad23 defects, local verification and remaining device gates.
+The user reports iPad24 working considerably better in both direct desktop and
+AVP sharing, with intermittent button releases still open. iPad25 changes the
+grid icon to one-tap Show/Hide Controls; long-press opens Edit Controls. The grid
+button stays available beside the restore button when the desktop toolbar is
+hidden. This does not add a physical keyboard shortcut or live image overlay.
 
 Pencil sharing build 19 corrects the hover-to-contact timing epoch in the
 foreground pad. First build 18 / Vision 47 tests passed hover/right-click but

@@ -78,12 +78,17 @@ struct PlankIPadRoot: View {
                     .ignoresSafeArea(.container, edges: hideBars ? [.top, .bottom] : [])
                     .overlay(alignment: .topTrailing) {
                         if hideBars {
-                            Button { setToolbarVisible(true) } label: {
-                                Image(systemName: "chevron.down")
-                                    .frame(width: 44, height: 44)
-                                    .background(.regularMaterial, in: Circle())
+                            HStack(spacing:8) {
+                                PlankIPadControlsVisibilityButton(visible:showingCustomControls,
+                                    toggle:toggleCustomControls,edit:editCustomControls)
+                                    .background(.regularMaterial,in:Circle())
+                                Button { setToolbarVisible(true) } label: {
+                                    Image(systemName: "chevron.down")
+                                        .frame(width: 44, height: 44)
+                                        .background(.regularMaterial, in: Circle())
+                                }
+                                .accessibilityLabel("Show session toolbar")
                             }
-                            .accessibilityLabel("Show session toolbar")
                             .padding(12)
                         }
                     }
@@ -129,14 +134,8 @@ struct PlankIPadRoot: View {
                             Label(router.softwareKeyboardPresented ? "Hide Keyboard" : "Show Keyboard", systemImage: "keyboard")
                         }
                         Button { controls = true } label: { Label("Session Controls", systemImage: "slider.horizontal.3") }
-                        Menu {
-                            Button(showingCustomControls ? "Hide Controls" : "Show Controls") {
-                                router.releaseControls(); showingCustomControls.toggle()
-                            }
-                            Button("Edit Controls…") {
-                                router.release(); editingCustomControls = true
-                            }
-                        } label: { Label("Custom Controls",systemImage:"rectangle.grid.2x2") }
+                        PlankIPadControlsVisibilityButton(visible:showingCustomControls,
+                            toggle:toggleCustomControls,edit:editCustomControls)
                         Button { setToolbarVisible(false) } label: { Label("Hide Toolbar", systemImage: "chevron.up") }
                         Button("Disconnect") { disconnect() }.disabled(client.isClosingSession)
                     }
@@ -216,6 +215,12 @@ struct PlankIPadRoot: View {
         client.setTabletActive(false)
         controls = false
         client.reset()
+    }
+    private func toggleCustomControls() {
+        router.releaseControls(); showingCustomControls.toggle()
+    }
+    private func editCustomControls() {
+        router.release(); editingCustomControls = true
     }
     private func setToolbarVisible(_ visible: Bool) {
         // A local control changes the canvas bounds. Retire held input before

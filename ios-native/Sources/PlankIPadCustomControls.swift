@@ -3,6 +3,27 @@ import UIKit
 
 enum PlankIPadControlSurface: Hashable { case desktop, pencilSharing }
 
+/// Fast local visibility control; the editor remains in its native context menu.
+struct PlankIPadControlsVisibilityButton: View {
+    let visible: Bool
+    let toggle: () -> Void
+    let edit: () -> Void
+    var body: some View {
+        Button(action:toggle) {
+            Label(visible ? "Hide Controls" : "Show Controls",
+                  systemImage:visible ? "rectangle.grid.2x2.fill" : "rectangle.grid.2x2")
+                .labelStyle(.iconOnly)
+                .frame(minWidth:44,minHeight:44)
+        }
+        .accessibilityLabel(visible ? "Hide artist controls" : "Show artist controls")
+        .accessibilityValue(visible ? "Visible" : "Hidden")
+        .contextMenu {
+            Button("Edit Controls…",systemImage:"pencil",action:edit)
+        }
+        .accessibilityAction(named:Text("Edit controls"),edit)
+    }
+}
+
 /// One saved library is shared by the direct desktop and Pencil sharing.
 /// Editing stays local until Done; the overlay receives transport closures.
 @MainActor final class PlankIPadCustomControlsStore: ObservableObject {
@@ -170,6 +191,51 @@ struct PlankIPadCustomControlsOverlay: UIViewRepresentable {
             self[keyPath:key] = min(1_000_000,self[keyPath:key] + count)
         }
     }
+    /// Public recognizer state at cancellation is correlation, not UIKit's
+    /// cancellation reason. Sets bound inspection and never leave this view.
+    private struct CancellationRecognizers {
+        static let limit = 64
+        private var seen = Set<ObjectIdentifier>()
+        var recognizedCanceling = 0
+        var possibleCanceling = 0
+        var exclusiveRecognized = 0
+        var categoryMask = 0
+        var stateMask = 0
+        var truncated = false
+        var count: Int { seen.count }
+
+        mutating func inspect(_ recognizer: UIGestureRecognizer) {
+            let id = ObjectIdentifier(recognizer)
+            guard !seen.contains(id) else { return }
+            guard seen.count < Self.limit else { truncated = true; return }
+            seen.insert(id)
+            guard recognizer.isEnabled, recognizer.cancelsTouchesInView else { return }
+            if recognizer.state == .possible { possibleCanceling += 1; return }
+            guard recognizer.state == .began || recognizer.state == .changed || recognizer.state == .ended else { return }
+            recognizedCanceling += 1
+            if recognizer.requiresExclusiveTouchType { exclusiveRecognized += 1 }
+            stateMask |= 1 << recognizer.state.rawValue
+            // Public base classes only: no private class or arbitrary name.
+            switch recognizer {
+            case is UIScreenEdgePanGestureRecognizer: categoryMask |= 1
+            case is UIPanGestureRecognizer: categoryMask |= 2
+            case is UIPinchGestureRecognizer: categoryMask |= 4
+            case is UIRotationGestureRecognizer: categoryMask |= 8
+            case is UITapGestureRecognizer: categoryMask |= 16
+            case is UILongPressGestureRecognizer: categoryMask |= 32
+            case is UISwipeGestureRecognizer: categoryMask |= 64
+            case is UIHoverGestureRecognizer: categoryMask |= 128
+            default: categoryMask |= 256
+            }
+        }
+    }
+    private struct CancellationDiagnostics {
+        var callbacks = 0, owners = 0, withPencil = 0, withTouchRecognizer = 0, withAncestorRecognizer = 0
+        var lastLog = -Double.infinity
+        mutating func increment(_ key: WritableKeyPath<Self,Int>, by count: Int = 1) {
+            self[keyPath:key] = min(1_000_000,self[keyPath:key] + count)
+        }
+    }
     private let control: PlankCustomControl
     private let label = UILabel()
     private var contacts = PlankIPadControlContactPolicy<ObjectIdentifier>()
@@ -181,6 +247,7 @@ struct PlankIPadCustomControlsOverlay: UIViewRepresentable {
     private var tapAction: (PlankControlBinding) -> Bool = { _ in false }
     private var pencilSurface: () -> UIView? = { nil }
     private var diagnostics = Diagnostics()
+    private var cancellationDiagnostics = CancellationDiagnostics()
     private var lastDiagnosticLog = -Double.infinity
 
     init(control: PlankCustomControl) {
@@ -266,8 +333,81 @@ struct PlankIPadCustomControlsOverlay: UIViewRepresentable {
         refresh(); logIfDue()
     }
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        let cancellationLog = recordCancellationContext(touches,event:event)
         for touch in touches { forwardPencil(touch,phase:.cancelled,event:event); finish(touch,activate:false,cancelled:true) }
-        refresh(); logIfDue()
+        refresh(); cancellationLog?(); logIfDue()
+    }
+    private func recordCancellationContext(_ touches: Set<UITouch>,event: UIEvent?) -> (() -> Void)? {
+        // Inspect only real callbacks that will cancel an admitted finger owner;
+        // forwarded Pencil retirement and explicit view retirement stay separate.
+        var owners = 0, held = 0
+        var touchRecognizers = CancellationRecognizers()
+        let touchLimit = 32, ancestorLimit = 16
+        var truncated = touches.count > touchLimit
+        for touch in touches.prefix(touchLimit) {
+            guard touch.type == .direct, let contact = contacts.movement(id:ObjectIdentifier(touch)) else { continue }
+            owners += 1
+            if contact.behavior == .hold { held += 1 }
+            if let recognizers = touch.gestureRecognizers {
+                if recognizers.count > CancellationRecognizers.limit { truncated = true }
+                for recognizer in recognizers.prefix(CancellationRecognizers.limit) {
+                    touchRecognizers.inspect(recognizer)
+                }
+            }
+        }
+        guard owners > 0 else { return nil }
+        let eventTouches = event?.allTouches
+        var pencilActive = 0, pencilCancelled = 0, pencilTotal = 0
+        if let eventTouches {
+            if eventTouches.count > touchLimit { truncated = true }
+            for touch in eventTouches.prefix(touchLimit) where touch.type == .pencil {
+                pencilTotal += 1
+                if touch.phase == .began || touch.phase == .moved || touch.phase == .stationary { pencilActive += 1 }
+                if touch.phase == .cancelled { pencilCancelled += 1 }
+            }
+        }
+        var ancestorRecognizers = CancellationRecognizers()
+        var view: UIView? = self
+        var depth = 0
+        while let current = view, depth < ancestorLimit {
+            if let recognizers = current.gestureRecognizers {
+                if recognizers.count > CancellationRecognizers.limit { truncated = true }
+                for recognizer in recognizers.prefix(CancellationRecognizers.limit) {
+                    ancestorRecognizers.inspect(recognizer)
+                }
+            }
+            depth += 1; view = current.superview
+        }
+        truncated = truncated || view != nil || touchRecognizers.truncated || ancestorRecognizers.truncated
+        cancellationDiagnostics.increment(\.callbacks)
+        cancellationDiagnostics.increment(\.owners,by:owners)
+        if pencilActive > 0 { cancellationDiagnostics.increment(\.withPencil) }
+        if touchRecognizers.recognizedCanceling > 0 { cancellationDiagnostics.increment(\.withTouchRecognizer) }
+        if ancestorRecognizers.recognizedCanceling > 0 { cancellationDiagnostics.increment(\.withAncestorRecognizer) }
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - cancellationDiagnostics.lastLog >= 1 else { return nil }
+        cancellationDiagnostics.lastLog = now
+        let sceneActive: Int
+        if let scene = window?.windowScene { sceneActive = scene.activationState == .foregroundActive ? 1 : 0 }
+        else { sceneActive = -1 }
+        // Bounded anonymous totals and a current callback snapshot only. No
+        // binding, text, coordinates, identity, recognizer names or touch arrays.
+        // Missing event Pencil/recognizer state cannot prove OS palm rejection.
+        let summary = cancellationDiagnostics
+        let eventKnown = eventTouches == nil ? 0 : 1
+        // Snapshot before ownership changes; emit only after key release. The
+        // ready log retains no UITouch, UIView or UIGestureRecognizer objects.
+        return {
+            NSLog("PLANK control cancellation callbacks=%d ownersTotal=%d pencilConcurrent=%d touchGestureConcurrent=%d ancestorGestureConcurrent=%d owners=%d held=%d eventKnown=%d eventPencilTotal=%d eventPencilActive=%d eventPencilCancelled=%d touchRecognizers=%d touchRecognizedCanceling=%d touchPossibleCanceling=%d touchExclusive=%d touchCategoryMask=%d touchStateMask=%d ancestorRecognizers=%d ancestorRecognizedCanceling=%d ancestorPossibleCanceling=%d ancestorExclusive=%d ancestorCategoryMask=%d ancestorStateMask=%d sceneActive=%d truncated=%d",
+                summary.callbacks,summary.owners,summary.withPencil,
+                summary.withTouchRecognizer,summary.withAncestorRecognizer,
+                owners,held,eventKnown,pencilTotal,pencilActive,pencilCancelled,
+                touchRecognizers.count,touchRecognizers.recognizedCanceling,touchRecognizers.possibleCanceling,
+                touchRecognizers.exclusiveRecognized,touchRecognizers.categoryMask,touchRecognizers.stateMask,
+                ancestorRecognizers.count,ancestorRecognizers.recognizedCanceling,ancestorRecognizers.possibleCanceling,
+                ancestorRecognizers.exclusiveRecognized,ancestorRecognizers.categoryMask,ancestorRecognizers.stateMask,
+                sceneActive,truncated ? 1 : 0)
+        }
     }
     private func finish(_ touch: UITouch, activate: Bool, cancelled: Bool) {
         guard let contact = contacts.finish(id:ObjectIdentifier(touch)) else { return }

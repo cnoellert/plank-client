@@ -178,14 +178,9 @@ struct PlankIPadPencilRelayView: View {
                             relay.setAdjustingPad(true); showingOptions = true
                         } label: { Label("Pad Options",systemImage:"slider.horizontal.3") }
                         .accessibilityLabel("Pad options: margins, mapping and appearance")
-                        Menu {
-                            Button(showingControls ? "Hide Controls" : "Show Controls") {
-                                relay.releaseControls(); showingControls.toggle()
-                            }
-                            Button("Edit Controls…") {
-                                relay.setAdjustingPad(true); editingControls = true
-                            }
-                        } label: { Label("Custom Controls",systemImage:"rectangle.grid.2x2") }
+                        PlankIPadControlsVisibilityButton(visible:showingControls,
+                            toggle:{ relay.releaseControls(); showingControls.toggle() },
+                            edit:{ relay.setAdjustingPad(true); editingControls = true })
                     }
                 }
                 ToolbarItem(placement:.topBarTrailing) { Button("Stop Sharing") { relay.stop(); dismiss() } }

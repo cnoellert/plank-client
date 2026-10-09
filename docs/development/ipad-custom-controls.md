@@ -7,10 +7,11 @@ assignable keys/shortcut combinations. The same editor and saved layouts must
 be available in the direct iPad desktop client and Share Apple Pencil. This
 supersedes the proposed five-key-only, palette-confined editor scope.
 
-Installed iPad23/Vision49 provide the first custom-controls implementation.
-The user's editor/live-placement and simultaneous Pencil/finger feedback is
-recorded below. Revised editor and contact handling still require targeted
-device acceptance.
+Installed iPad24/Vision49 provide the revised custom controls. On October 9 the
+user tested both Pencil sharing to AVP and the direct iPad desktop, reporting
+that placement and operation work considerably better. Intermittent button
+releases remain unresolved; this feedback does not qualify all interruption
+or final Host release gates.
 
 ## Purpose and visual direction
 
@@ -78,7 +79,7 @@ Use one transport-neutral layout store, editor, overlay and action controller.
 Direct desktop and Pencil sharing supply different sinks for the same key
 edges; the renderer must not own transport or workstation policy.
 
-The installed layout uses slot-dependent widths: indexes0–3 share an equal
+The earlier five-key layout used slot-dependent widths: indexes0–3 shared an equal
 row and index4 fills the lower row. Its position is transient SwiftUI State.
 Import the existing sanitized key order when migrating, and preserve margin,
 tone and consent settings. Stable per-control IDs own independent geometry.
@@ -194,3 +195,30 @@ are unchanged. Vision49 and Mac26 remain matching receivers. Physical Pencil
 and palm cancellation, saved placement on both live contexts, editor entry/exit,
 and final Host release receipt are separate gates. Aggregate contact lifecycle
 counts are bounded; typed text, bindings and positions are not logged by them.
+
+## Follow-up — quick visibility and remaining cancellations
+
+The user accepted the improved controls in both contexts, with intermittent
+held-button releases still reported. The retained sharing log includes real
+UIKit cancellation of admitted direct contacts, without layout, geometry or
+explicit retirement. The later direct-client segment contains no corresponding
+recorded cancellation. Palm rejection and a system/ancestor gesture remain
+possible causes, not established diagnoses. A genuine cancellation continues
+to release the hold; silently latching the modifier would change its contract.
+
+Candidate iPad25 makes the grid icon a one-tap Show/Hide Controls button in both contexts.
+The direct desktop retains it beside the toolbar restore button when bars are
+hidden. Long-press the grid icon for Edit Controls, also exposed as an
+accessibility action. Hiding controls releases their owners. No physical
+keyboard shortcut is assigned by this slice.
+
+On real admitted finger cancellation, bounded diagnostics record concurrent
+Pencil contacts, public touch/ancestor recognizer categories and states, and
+scene activity. These are correlations, not an OS cancellation reason. Counts
+are saturated and logging is rate limited; no text, binding, touch identity or
+coordinates are logged. Cancellation still releases the key normally.
+
+The next image feature is separately planned in
+[live image and magnification](ipad-live-image.md): adjustable image intensity,
+Fit and true pixel magnification, with a shared image/input mapping. It is not
+implemented by the visibility change.
