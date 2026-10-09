@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PlankPencilRelaySettings: View {
     @ObservedObject var receiver: PlankPencilRelayReceiver
+    @State private var discoveryOwner = UUID()
     var body: some View {
         Section("Apple Pencil") {
             Text("On your iPad, open PLANK and choose Share Apple Pencil. Keep both devices on a reachable local network.")
@@ -21,7 +22,7 @@ struct PlankPencilRelaySettings: View {
                 Button("Reject",role:.cancel) { receiver.disconnect() }
             }
         }
-        .onAppear { receiver.discover() }
-        .onDisappear { receiver.stopDiscovery() }
+        .onAppear { receiver.discover(owner: discoveryOwner) }
+        .onDisappear { receiver.stopDiscovery(owner: discoveryOwner) }
     }
 }

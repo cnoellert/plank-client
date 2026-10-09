@@ -17,6 +17,7 @@ struct PlankDiscoveredPencilPad: Identifiable, Sendable {
     @Published private(set) var connected = false
     private weak var client: PlankCoreClient?
     private var browser: NWBrowser?
+    private var discoveryOwners = Set<UUID>()
     private var peer: PlankPencilRelayPeer?
     private var generation = UUID(), discoveryID = UUID()
     private var delivered = PlankPencilStrokeState()
@@ -28,7 +29,8 @@ struct PlankDiscoveredPencilPad: Identifiable, Sendable {
     var ownsPen: Bool { chosenPad != nil }
     var strokeActive: Bool { delivered.touching }
     init(client: PlankCoreClient) { self.client = client }
-    func discover() {
+    func discover(owner: UUID) {
+        discoveryOwners.insert(owner)
         guard browser == nil else { return }
         let parameters = NWParameters.tcp; parameters.includePeerToPeer = true
         let next = NWBrowser(for:.bonjourWithTXTRecord(type:"_plank-pencil._tcp",domain:"local."),using:parameters)
@@ -54,7 +56,11 @@ struct PlankDiscoveredPencilPad: Identifiable, Sendable {
         } }
         browser = next; next.start(queue:.main)
     }
-    func stopDiscovery() { discoveryID = UUID(); browser?.cancel(); browser = nil; pads = [] }
+    func stopDiscovery(owner: UUID) {
+        discoveryOwners.remove(owner)
+        guard discoveryOwners.isEmpty else { return }
+        discoveryID = UUID(); browser?.cancel(); browser = nil; pads = []
+    }
     func connect(_ pad: PlankDiscoveredPencilPad) {
         guard let client else { return }
         guard client.pencilRelaySourceAllowed else { status = client.pencilRelaySourceMessage; return }
