@@ -110,6 +110,11 @@ Independent device inventories verify version22 and its exact executable path.
 Vision48 stays installed. Saved order and outlined-corner desktop reach remain
 the next targeted device checks; the margin issue is not claimed fixed.
 
+The user subsequently confirmed a full editor for freely positioned,
+independently sized, assignable controls, available in both the direct iPad
+client and Pencil sharing. See [the shared controls design brief](ipad-custom-controls.md).
+This is the next design scope; build22 still uses the fixed slot layout.
+
 ## Intended use
 
 ### Mac receiver extension
