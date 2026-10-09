@@ -29,8 +29,11 @@ normalized `PLANK Wacom Tablet` using Pressure Recalibration=1 despite Host
 The successful targeted test required no Host configuration/package change.
 The normalized pressure-policy distinction remains recorded for investigation
 if another failure needs it; this pass does not require changing it. Lag and
-video decoder recovery remain separate observations. New-source reconnect,
-rotation/focus and lock/background qualification remain pending.
+video decoder recovery remain separate observations. The user subsequently
+confirmed desktop disconnect/reconnect recovery with the iPad sharing pad kept
+open, on iPad 19 / Vision 47. Accept that new-source reconnect check without
+repeating it. Rotation/focus, lock/background and held-contact final release
+qualification remain pending.
 
 ## Intended use
 
