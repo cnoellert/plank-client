@@ -5,6 +5,27 @@ versioned records and physical comparison approval are implemented. Compilation,
 local protocol checks and physical device acceptance are separate gates.
 This is not yet a qualified drawing transport.
 
+### First device result and contact correction — October 9
+
+The user reports hover and squeeze right-click working on iPad 18 / Vision 47,
+but tip clicks and dragging failing on Flame01 and Flame03, with some lag.
+These are partial results, not drawing acceptance. The sharing pad omitted the
+hover retirement performed by the accepted direct iPad contact path. A production
+policy reproduction shows hover stamped at callback delivery can exceed a fresh
+touch's acquisition timestamp: down is rejected, no touch is retained, and its
+move/up events are ignored while hover continues working.
+
+iPad 19 validates a fresh contact on a temporary policy, retires old hover, then
+commits and emits leave before down. Invalid/margin starts preserve prior state;
+duplicate active downs and stale motion remain rejected. Aggregate contact
+counts are logged at most once per second, without coordinates or identities.
+Physical correction is pending. A read-only Flame03 check also found the
+normalized `PLANK Wacom Tablet` using Pressure Recalibration=1 despite Host
+1.1.030; its packaged policy currently targets the raw mirror's udev tag.
+That is a distinct possible Host-side cause, not evidence that this publisher
+fix alone resolves the reported failure. No Host configuration/package change
+is included. Lag and video decoder recovery remain separate observations.
+
 ## Intended use
 
 Enable **Share Apple Pencil** on the iPad, approve the headset, then select that

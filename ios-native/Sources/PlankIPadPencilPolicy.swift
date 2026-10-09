@@ -8,6 +8,23 @@ struct PlankIPadPencilPolicy {
     private var last: PlankNormalizedPen?
     private var timestamp = -Double.infinity
 
+    /// Hover is stamped when its recognizer callback is delivered, whereas a
+    /// touch carries its acquisition timestamp. A queued hover callback must
+    /// not veto a fresh contact with an earlier acquisition time. Validate on
+    /// a copy so an invalid/margin down cannot retire the current state.
+    mutating func beginContact(point: CGPoint, viewport: PlankIPadViewport,
+                               timestamp: Double, force: Double, maximumForce: Double,
+                               altitude: Double, azimuth: Double) -> [PlankNormalizedPen]? {
+        guard !touching else { return nil }
+        var next = self
+        let retirement = next.retire()
+        guard let down = next.sample(.down, point: point, viewport: viewport,
+            timestamp: timestamp, force: force, maximumForce: maximumForce,
+            altitude: altitude, azimuth: azimuth) else { return nil }
+        self = next
+        return retirement + [down]
+    }
+
     mutating func sample(_ phase: PlankNormalizedPen.Phase, point: CGPoint,
                          viewport: PlankIPadViewport, timestamp next: Double,
                          force: Double, maximumForce: Double,

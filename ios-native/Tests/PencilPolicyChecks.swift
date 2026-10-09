@@ -31,6 +31,28 @@ import CoreGraphics
         _ = pen.retire()
         precondition(sample(.down, time: .nan) == nil)
         precondition(sample(.down, time: 7, force: .infinity) == nil)
+        // Real hover callbacks use delivery time; UIKit contacts use acquisition
+        // time. A new contact starts a new epoch, without admitting stale moves.
+        _ = pen.retire()
+        precondition(sample(.hover, time: 100.020) != nil)
+        func begin(time: Double, point: CGPoint = CGPoint(x: 500, y: 500), force: Double = 2) -> [PlankNormalizedPen]? {
+            pen.beginContact(point: point, viewport: viewport, timestamp: time,
+                force: force, maximumForce: 4, altitude: .pi / 4, azimuth: 0)
+        }
+        precondition(begin(time: 100.010, point: CGPoint(x: 0, y: 0)) == nil)
+        precondition(begin(time: .nan) == nil && begin(time: 100.010, force: .infinity) == nil)
+        // Invalid starts leave the existing hover epoch intact.
+        precondition(sample(.hover, time: 100.019) == nil)
+        let restarted = begin(time: 100.010)!
+        precondition(restarted.map(\.phase) == [.leave, .down])
+        precondition(restarted.last!.pressureOrDistance == 0.5)
+        precondition(begin(time: 100.011) == nil && pen.touching)
+        precondition(sample(.move, time: 100.009) == nil)
+        precondition(sample(.move, time: 100.030) != nil)
+        precondition(sample(.up, time: 100.040) != nil)
+        precondition(pen.retire().map(\.phase) == [.leave])
+        precondition(begin(time: 101)!.map(\.phase) == [.down])
+        _ = pen.retire()
         let up = PlankIPadPencilPolicy.orientation(altitude: .pi / 2, azimuth: 0)
         precondition(up.tilt == 0)
         let axes: [(Double, Double, Double)] = [(0, 1, 0), (.pi / 2, 0, 1), (.pi, -1, 0), (-.pi / 2, 0, -1)]

@@ -30,6 +30,12 @@ The earlier build notes below retain the history of the removed preview.
 
 ## First slice
 
+Pencil sharing build 19 corrects the hover-to-contact timing epoch in the
+foreground pad. First build 18 / Vision 47 tests passed hover/right-click but
+failed tip/drag on two workstations. See the [Pencil relay record](../docs/development/ipad-pencil-relay.md)
+for the reproduced publisher defect and separate normalized-Host pressure-policy
+observation. Physical tip/drag acceptance remains pending.
+
 One saved workstation, login, one aspect-fit desktop, video/audio, direct finger
 mouse emulation, indirect pointer buttons, physical wheel and hardware keyboard.
 Local controls live above the canvas; opening a control sheet retires locally

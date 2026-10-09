@@ -126,6 +126,8 @@ struct PlankIPadPencilPad: UIViewRepresentable {
     private var policy = PlankIPadPencilPolicy(), squeeze = PlankIPadSqueezePolicy()
     private var touch: UITouch?
     private var previous = CGRect.zero
+    private var receivedDowns = 0, acceptedDowns = 0, acceptedMoves = 0, acceptedUps = 0
+    private var lastContactLog = -Double.infinity
     private let outline = CAShapeLayer(), cursor = CAShapeLayer()
     private var viewport: PlankIPadViewport? { .init(bounds:bounds.insetBy(dx:16,dy:16),width:relay.width,height:relay.height) }
     init(relay: PlankIPadPencilRelay) {
@@ -153,7 +155,10 @@ struct PlankIPadPencilPad: UIViewRepresentable {
         guard relay.active, let viewport, let p = policy.sample(phase,point:sample.location(in:self),viewport:viewport,
             timestamp:sample.timestamp,force:Double(sample.force),maximumForce:Double(sample.maximumPossibleForce),
             altitude:Double(sample.altitudeAngle),azimuth:Double(sample.azimuthAngle(in:self))) else { return false }
-        relay.send(p); mark(sample.location(in:self)); return true
+        relay.send(p); mark(sample.location(in:self))
+        if phase == .move { acceptedMoves += 1 }
+        if phase == .up { acceptedUps += 1 }
+        logContactIfDue(); return true
     }
     private func mark(_ point: CGPoint) {
         CATransaction.begin(); CATransaction.setDisableActions(true)
@@ -168,7 +173,18 @@ struct PlankIPadPencilPad: UIViewRepresentable {
         relay.send(p); mark(gesture.location(in:self))
     }
     override func touchesBegan(_ touches: Set<UITouch>,with event: UIEvent?) {
-        guard touch == nil, let next = touches.first(where: { $0.type == .pencil }), send(next,phase:.down) else { return }; touch = next
+        guard touch == nil, let next = touches.first(where: { $0.type == .pencil }) else { return }
+        receivedDowns += 1
+        guard relay.active, let viewport,
+              let packets = policy.beginContact(point:next.location(in:self),viewport:viewport,
+                timestamp:next.timestamp,force:Double(next.force),maximumForce:Double(next.maximumPossibleForce),
+                altitude:Double(next.altitudeAngle),azimuth:Double(next.azimuthAngle(in:self))) else {
+            logContactIfDue(); return
+        }
+        // Preserve the zero-pressure hover retirement before the fresh down.
+        // Subsequent motion remains ordered by actual acquisition timestamps.
+        for packet in packets { relay.send(packet) }
+        touch = next; acceptedDowns += 1; mark(next.location(in:self)); logContactIfDue()
     }
     override func touchesMoved(_ touches: Set<UITouch>,with event: UIEvent?) {
         guard let touch, touches.contains(touch) else { return }
@@ -179,6 +195,14 @@ struct PlankIPadPencilPad: UIViewRepresentable {
         guard let touch, touches.contains(touch) else { return }; _ = send(touch,phase:.up); retire()
     }
     override func touchesCancelled(_ touches: Set<UITouch>,with event: UIEvent?) { retire() }
+    private func logContactIfDue() {
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - lastContactLog >= 1 else { return }
+        lastContactLog = now
+        // Counts only: no position, typed content, pairing codes or identities.
+        NSLog("PLANK Pencil pad contacts received=%d accepted=%d moves=%d ups=%d active=%d",
+            receivedDowns,acceptedDowns,acceptedMoves,acceptedUps,relay.active ? 1 : 0)
+    }
     func pencilInteraction(_ interaction: UIPencilInteraction,didReceiveSqueeze value: UIPencilInteraction.Squeeze) {
         guard let point = value.hoverPose?.location, let position = viewport?.normalized(point),
               squeeze.click(ended:value.phase == .ended,timestamp:value.timestamp,enabled:relay.active,
