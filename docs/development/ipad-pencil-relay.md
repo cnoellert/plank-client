@@ -62,8 +62,9 @@ pad: Shift, Ctrl, Option, Command and Space. Hold a button with a finger while
 drawing with the Pencil; sliding out or lifting releases it. Drag its header
 to reposition it, or close it to release all pad-owned keys. It does not open
 the system keyboard or require Scribble. Accessibility activation explicitly
-toggles a held key and announces its state. This path still needs physical
-simultaneous finger/Pencil acceptance.
+toggles a held key and announces its state. The user subsequently reported
+that the hotkeys work well. Lock/background and final Host release receipt
+remain separate qualification gates.
 
 The version 2 authenticated capability adds only allowlisted shortcut key edges.
 It requires updated apps on both ends. Existing private identities and version 1
@@ -81,9 +82,28 @@ planned work, not implemented by this candidate.
 
 iPad21 and Vision48 from `0eac6ba` are installed and their executable paths
 independently verified. The simultaneous finger-held shortcut/Pencil check is
-requested and pending; installed builds do not establish this acceptance.
-Build20 margins, mapping and charcoal appearance are accepted. Mac build25 is
+accepted by the user's October 9 hotkey report. The same report identifies a
+margin issue: the cropped area appears not to span the remote desktop. This
+supersedes the earlier general mapping acceptance; charcoal appearance remains
+accepted. Mac build25 is
 a separate candidate using the same version2 wire and approval boundary.
+
+## Build 22 shortcut ordering and margin investigation
+
+Pad Options now provides native reorder handles for all five shortcut keys.
+The first four fill the palette's top row; the last fills its bottom row.
+Order persists locally, with existing margin/mapping/appearance settings
+preserved. Reordering retires held input before replacing controls.
+
+The margin report remains unresolved. Both mapping modes pass corner checks,
+including the actual UIKit outline, window-to-pad conversion, contact policy
+and wire encoding in an isolated simulator fixture. This is local component
+evidence, not physical end-to-end acceptance. A read-only device preference
+check found Match desktop with left 6%, right/top/bottom 5%. Build22 records
+changed pad geometry only (no stroke positions or typed content) to distinguish
+local remapping from downstream workstation/application mapping. No coordinate
+compensation or Host change is made without that evidence. Image overlay remains
+planned after these controls; it is not implemented.
 
 ## Intended use
 

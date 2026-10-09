@@ -57,8 +57,17 @@ import CoreGraphics
         precondition(PlankIPadPencilPadSettings.load(from:storage) == .init())
         settings.tone = .warmGray; settings.save(to:storage)
         precondition(PlankIPadPencilPadSettings.load(from:storage) == settings.validated)
+        // Existing pad preferences must survive adding palette order.
+        let legacy = Data(#"{"mapping":"fullPad","left":0.1,"right":0.2,"top":0.05,"bottom":0.1,"tone":"warmGray","glow":0.3}"#.utf8)
+        let migrated = try! JSONDecoder().decode(PlankIPadPencilPadSettings.self,from:legacy)
+        precondition(migrated.mapping == .fullPad && migrated.left == 0.1 && migrated.glow == 0.3)
+        precondition(migrated.shortcuts == [.shift,.control,.option,.command,.space])
+        settings.shortcutOrder = [0x20,0x11,0x11,0xFFFF,0x5B]
+        precondition(settings.validated.shortcuts == [.space,.control,.command,.shift,.option])
+        settings.save(to:storage)
+        precondition(PlankIPadPencilPadSettings.load(from:storage).shortcuts == settings.validated.shortcuts)
         storage.set(Data("invalid".utf8),forKey:PlankIPadPencilPadSettings.storageKey)
         precondition(PlankIPadPencilPadSettings.load(from:storage) == .init())
-        print("PASS Pencil pad: asymmetric margins, both mappings, edge admission, rotation geometry, fresh contact, bounded settings and persistence")
+        print("PASS Pencil pad: asymmetric margins, both mappings, edge admission, rotation geometry, fresh contact, bounded settings, legacy migration and persisted shortcut order")
     }
 }

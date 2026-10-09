@@ -15,6 +15,8 @@ struct PlankIPadModifierPad: UIViewRepresentable {
 @MainActor final class PlankIPadModifierPadView: UIView {
     private let relay: PlankIPadPencilRelay
     private var keys: [PlankModifierHoldButton] = []
+    private var order: [PlankPencilModifier] = []
+    private let row = UIStackView(), bottom = UIStackView()
     private let onMove: (CGPoint) -> Void
     init(relay: PlankIPadPencilRelay,onClose: @escaping () -> Void,onMove: @escaping (CGPoint) -> Void) {
         self.relay = relay; self.onMove = onMove; super.init(frame:.zero)
@@ -33,19 +35,16 @@ struct PlankIPadModifierPad: UIViewRepresentable {
         close.widthAnchor.constraint(equalToConstant:44).isActive = true
         let header = UIStackView(arrangedSubviews:[handle,close]); header.axis = .horizontal
         header.heightAnchor.constraint(equalToConstant:44).isActive = true
-        let row = UIStackView(); row.axis = .horizontal; row.distribution = .fillEqually; row.spacing = 6
-        for key: PlankPencilModifier in [.shift,.control,.option,.command] {
-            let button = PlankModifierHoldButton(key:key,relay:relay); keys.append(button); row.addArrangedSubview(button)
-        }
-        let space = PlankModifierHoldButton(key:.space,relay:relay); keys.append(space)
-        let stack = UIStackView(arrangedSubviews:[header,row,space]); stack.axis = .vertical; stack.spacing = 6
+        row.axis = .horizontal; row.distribution = .fillEqually; row.spacing = 6
+        bottom.axis = .horizontal; bottom.distribution = .fillEqually
+        let stack = UIStackView(arrangedSubviews:[header,row,bottom]); stack.axis = .vertical; stack.spacing = 6
         stack.translatesAutoresizingMaskIntoConstraints = false; addSubview(stack)
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo:leadingAnchor,constant:10),
             stack.trailingAnchor.constraint(equalTo:trailingAnchor,constant:-10),
             stack.topAnchor.constraint(equalTo:topAnchor,constant:4),
             stack.bottomAnchor.constraint(equalTo:bottomAnchor,constant:-10),
-            row.heightAnchor.constraint(equalTo:space.heightAnchor)
+            row.heightAnchor.constraint(equalTo:bottom.heightAnchor)
         ])
         refresh()
     }
@@ -56,7 +55,21 @@ struct PlankIPadModifierPad: UIViewRepresentable {
         // into the gesture's accumulated translation. Pencil never moves it.
         let delta = gesture.translation(in:window); gesture.setTranslation(.zero,in:window); onMove(delta)
     }
-    func refresh() { keys.forEach { $0.refresh() } }
+    func refresh() {
+        let next = relay.padSettings.shortcuts
+        if next != order {
+            // Moving controls ends their old touch ownership before removal.
+            relay.releaseModifiers()
+            for key in keys { key.cancelTracking(with:nil); key.removeFromSuperview() }
+            keys.removeAll(); order = next
+            for (index,key) in next.enumerated() {
+                let button = PlankModifierHoldButton(key:key,relay:relay)
+                keys.append(button)
+                (index < 4 ? row : bottom).addArrangedSubview(button)
+            }
+        }
+        keys.forEach { $0.refresh() }
+    }
     func release() { relay.releaseModifiers() }
 }
 

@@ -334,5 +334,8 @@ The iPad pad sends actual normalized Pencil samples and lifted-tip squeeze
 right-click; it does not emulate a Wacom HID device. Closing, backgrounding or
 locking the pad stops sharing. The first link is local network, with separate
 app-owned identity and approvals. See [the contract and acceptance scope](../docs/development/ipad-pencil-relay.md).
-Device drawing acceptance is pending; existing direct desktop input remains a
-separate accepted path.
+Build19 contact, reconnect and rotation tests passed. Build21 hotkeys are
+accepted working; build22 adds saved shortcut ordering in Pad Options. The
+latest margin remapping report remains under investigation despite passing
+local corner checks. Image overlay is planned. Existing direct desktop input
+remains a separate accepted path.

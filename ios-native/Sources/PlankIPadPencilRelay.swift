@@ -219,6 +219,19 @@ struct PlankIPadPencilPadOptions: View {
                     Text("Percent of the pad on each edge. Preferences follow the iPad’s current orientation.")
                 }
                 Section {
+                    ForEach(relay.padSettings.shortcuts,id:\.rawValue) { key in
+                        Text(key.accessibilityTitle)
+                    }
+                    .onMove { offsets, destination in
+                        var next = relay.padSettings
+                        next.shortcutOrder.move(fromOffsets:offsets,toOffset:destination)
+                        relay.setPadSettings(next)
+                    }
+                } header: { Text("Shortcut order") } footer: {
+                    Text("Drag to arrange the keys. The first four run left to right; the last fills the bottom row.")
+                }
+                .environment(\.editMode,.constant(.active))
+                Section {
                     Picker("Tone",selection:binding(\.tone)) {
                         ForEach(PlankIPadPencilPadSettings.Tone.allCases,id:\.self) { Text($0.title).tag($0) }
                     }
@@ -249,6 +262,7 @@ struct PlankIPadPencilPad: UIViewRepresentable {
     private var policy = PlankIPadPencilPolicy(), squeeze = PlankIPadSqueezePolicy()
     private var touch: UITouch?
     private var previous = CGRect.zero
+    private var mappingSignature: String?
     private var receivedDowns = 0, acceptedDowns = 0, acceptedMoves = 0, acceptedUps = 0
     private var lastContactLog = -Double.infinity
     private let outline = CAShapeLayer(), cursor = CAShapeLayer()
@@ -277,6 +291,13 @@ struct PlankIPadPencilPad: UIViewRepresentable {
         cursor.fillColor = UIColor(white:0.6 + settings.glow * 0.2,alpha:1).cgColor
         outline.path = UIBezierPath(rect:rect).cgPath
         outline.opacity = relay.canDraw ? 1 : 0.4; CATransaction.commit()
+        // Geometry only, never stroke positions: distinguish local remapping
+        // from a downstream workstation/application transform on the next run.
+        let signature = "mode=\(settings.mapping.rawValue) bounds=\(NSStringFromCGRect(bounds)) area=\(NSStringFromCGRect(rect)) desktop=\(relay.width)x\(relay.height)"
+        if signature != mappingSignature {
+            mappingSignature = signature
+            NSLog("PLANK Pencil pad mapping %@",signature)
+        }
     }
     func retire() { for p in policy.retire() { relay.send(p) }; touch = nil; cursor.path = nil }
     private func send(_ sample: UITouch,phase: PlankNormalizedPen.Phase) -> Bool {
