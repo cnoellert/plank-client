@@ -180,6 +180,17 @@ No keyboard accessory or keyboard-frame notification offsets are retained.
 Mode round trips, floating movement and rotation require device acceptance.
 See [Apple's keyboard layout example](https://developer.apple.com/documentation/uikit/adjusting-your-layout-with-keyboard-layout-guide).
 
+Build 12's on-device screenshots still showed displaced preview/extra blank
+space after floating-to-full-size expansion. Build 13 gives the active desktop
+one UIKit keyboard-space owner: SwiftUI navigation/content avoidance is disabled
+for the desktop, a flexible geometry container keeps its full bounds, and one
+public guide places the preview and reserves space only for a docked keyboard.
+Floating keyboards overlay the desktop. Video and input mapping share the same
+viewport frame. The isolated `Tests/KeyboardLayoutFixture.swift` uses the actual
+production helper and system keyboard without connecting to a workstation.
+Floating/full-size round trips and physical-keyboard coexistence remain device
+gates; simulator geometry checks do not qualify them.
+
 No raw Wacom driver or direct Bluetooth Wacom support is claimed. PTH-660
 produced no visible probe input over USB or Bluetooth on the test iPad. The
 registered Mac/Linux Relay route is the planned first Wacom path; its codecs

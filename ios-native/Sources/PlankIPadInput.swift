@@ -155,32 +155,7 @@ struct PlankIPadCanvas: UIViewRepresentable {
     var smartDashesType: UITextSmartDashesType = .no
     var smartInsertDeleteType: UITextSmartInsertDeleteType = .no
     private let hiddenKeyboard = UIView(frame: .zero)
-    private lazy var previewText: UILabel = {
-        let view = UILabel()
-        view.font = .preferredFont(forTextStyle: .body)
-        view.adjustsFontForContentSizeCategory = true
-        view.numberOfLines = 1
-        view.lineBreakMode = .byTruncatingHead
-        view.accessibilityLabel = "Typing preview"
-        return view
-    }()
-    private lazy var keyboardControls: UIView = {
-        let container = UIControl()
-        container.translatesAutoresizingMaskIntoConstraints = false
-        container.isHidden = true
-        container.backgroundColor = .secondarySystemBackground
-        previewText.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(previewText)
-        NSLayoutConstraint.activate([
-            previewText.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 16),
-            previewText.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -16),
-            previewText.topAnchor.constraint(equalTo: container.topAnchor, constant: 8),
-            previewText.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -8)
-        ])
-        return container
-    }()
-    private var previewHeightConstraint: NSLayoutConstraint?
-    private var previewHeight: CGFloat { max(44, UIFont.preferredFont(forTextStyle: .body).lineHeight + 16) }
+    private lazy var keyboardLayout = PlankIPadKeyboardLayout(owner: self, video: video)
     private func configureKeyboardAssistant() {
         let item = keyboardEntry.inputAssistantItem
         item.allowsHidingShortcuts = !router.softwareKeyboardPresented
@@ -197,8 +172,7 @@ struct PlankIPadCanvas: UIViewRepresentable {
         item.trailingBarButtonGroups = [UIBarButtonItemGroup(barButtonItems: [hide], representativeItem: nil)]
     }
     func updateTypingPreview(_ text: String) {
-        previewText.text = text.isEmpty ? "Type into the remote desktop…" : text.replacingOccurrences(of: "\n", with: " ↵ ").replacingOccurrences(of: "\t", with: " ⇥ ")
-        previewText.textColor = text.isEmpty ? .secondaryLabel : .label
+        keyboardLayout.updateText(text)
     }
     override var inputView: UIView? { hiddenKeyboard }
 
@@ -215,9 +189,7 @@ struct PlankIPadCanvas: UIViewRepresentable {
     @objc private func hideSoftwareKeyboard() { router.setSoftwareKeyboardPresented(false) }
     func refreshSoftwareKeyboard() {
         guard window != nil else { return }
-        previewText.font = .preferredFont(forTextStyle: .body)
-        previewHeightConstraint?.constant = previewHeight
-        keyboardControls.isHidden = !router.softwareKeyboardPresented
+        keyboardLayout.setPresented(router.softwareKeyboardPresented)
         configureKeyboardAssistant()
         transferringKeyboardFocus = true
         defer { transferringKeyboardFocus = false }
@@ -234,39 +206,12 @@ struct PlankIPadCanvas: UIViewRepresentable {
         // Presentation/focus evidence only; never record typed characters.
         NSLog("PLANK iPad keyboard requested=%d textResponder=%d keyWindow=%d hardware=%d", router.softwareKeyboardPresented, keyboardEntry.isFirstResponder, window?.isKeyWindow == true, keyboardInput != nil)
     }
-    private func installTypingPreview() {
-        addSubview(keyboardControls)
-        let guide = keyboardLayoutGuide
-        guide.followsUndockedKeyboard = true
-        let height = keyboardControls.heightAnchor.constraint(equalToConstant: previewHeight)
-        previewHeightConstraint = height
-        // Keep the preview in this view's coordinate space. The guide updates
-        // with docking, undocking, floating movement and keyboard animation.
-        let width = keyboardControls.widthAnchor.constraint(equalTo: guide.widthAnchor)
-        let center = keyboardControls.centerXAnchor.constraint(equalTo: guide.centerXAnchor)
-        let above = keyboardControls.bottomAnchor.constraint(equalTo: guide.topAnchor)
-        let below = keyboardControls.topAnchor.constraint(equalTo: guide.bottomAnchor)
-        for constraint in [width, center, above, below] { constraint.priority = .defaultHigh }
-        let minimumWidth = keyboardControls.widthAnchor.constraint(greaterThanOrEqualToConstant: 160)
-        minimumWidth.priority = UILayoutPriority(740)
-        NSLayoutConstraint.activate([
-            height, width, center, minimumWidth,
-            keyboardControls.leadingAnchor.constraint(greaterThanOrEqualTo: safeAreaLayoutGuide.leadingAnchor),
-            keyboardControls.trailingAnchor.constraint(lessThanOrEqualTo: safeAreaLayoutGuide.trailingAnchor),
-            keyboardControls.topAnchor.constraint(greaterThanOrEqualTo: safeAreaLayoutGuide.topAnchor),
-            keyboardControls.bottomAnchor.constraint(lessThanOrEqualTo: safeAreaLayoutGuide.bottomAnchor)
-        ])
-        // A floating keyboard near the top leaves no room above it. Keep the
-        // preview adjacent below it; returning away from that edge restores it.
-        guide.setConstraints([above], activeWhenAwayFrom: .top)
-        guide.setConstraints([below], activeWhenNearEdge: .top)
-    }
     private func isTypingPreview(_ point: CGPoint) -> Bool {
-        !keyboardControls.isHidden && keyboardControls.frame.contains(point)
+        keyboardLayout.contains(point)
     }
     private var viewport: PlankIPadViewport? {
         guard let dimensions else { return nil }
-        return PlankIPadViewport(bounds: bounds, width: dimensions.width, height: dimensions.height)
+        return PlankIPadViewport(bounds: video.frame, width: dimensions.width, height: dimensions.height)
     }
     init(client: PlankCoreClient, router: PlankIPadInputRouter) {
         self.client = client; self.router = router
@@ -278,7 +223,7 @@ struct PlankIPadCanvas: UIViewRepresentable {
         // hardware attached. It stores no document and is not a visible field.
         keyboardEntry.frame = CGRect(x: 0, y: 0, width: 1, height: 1)
         addSubview(keyboardEntry)
-        installTypingPreview()
+        _ = keyboardLayout
         registerForTraitChanges([UITraitPreferredContentSizeCategory.self]) { (view: PlankIPadInputView, _: UITraitCollection) in
             if view.router.softwareKeyboardPresented { view.refreshSoftwareKeyboard() }
         }
@@ -332,8 +277,8 @@ struct PlankIPadCanvas: UIViewRepresentable {
     }
     override func layoutSubviews() {
         super.layoutSubviews()
-        if previousBounds != bounds { router.release(); previousBounds = bounds }
-        video.frame = bounds
+        let viewportBounds = keyboardLayout.layoutViewport()
+        if previousBounds != viewportBounds { router.release(); previousBounds = viewportBounds }
     }
     func clearContact() {
         clearPointerContact(); keyboardPolicy.reset()

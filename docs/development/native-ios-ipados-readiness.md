@@ -505,3 +505,31 @@ are unchanged. No private API, manual screen-space offset or extra Host change.
 is the implementation reference. Compilation does not qualify floating/full-size
 round trips, movement, rotation or keyboard typing coexistence; these remain the
 targeted device gates. Accepted wheel/Pencil tests need not be repeated.
+
+## Build 13 single keyboard layout owner — October 8
+
+Device screenshots showed build 12 still moving the preview across the desktop
+when expanding the floating keyboard and leaving unused space under the canvas.
+SwiftUI navigation avoidance and UIKit preview positioning were both accounting
+for keyboard space. The iPad branch was rebased with its merge structure onto
+Alan's accepted integration base before this change; its committed tree was
+verified identical before restoring the in-progress patch.
+
+Build 13 gives the active desktop a flexible GeometryReader and disables
+SwiftUI keyboard avoidance at both the desktop content and navigation root.
+UIKit's one public keyboard layout guide owns preview placement and viewport
+space. A full-width keyboard at the bottom reserves its height plus the compact
+preview exactly once; a narrow floating keyboard overlays the full viewport.
+Video rendering and pointer/Pencil mapping use the same video frame. Connection
+and bookmark screens keep normal keyboard avoidance. Native keyboard controls,
+text delivery, keyboard ownership and the accepted wheel/Pencil paths remain.
+
+An isolated simulator fixture compiles the actual production layout helper and
+compares its preview/video frames with real UIKit keyboard notifications. It
+passed docked presentation and hiding/reopening: the owner height stayed 1074
+points, preview bottom matched actual keyboard top, video ended at preview top,
+and hiding restored the full viewport. Orientation requests did not change the
+simulator dimensions, so rotation remains unqualified. There was no Simulator
+GUI available for floating gestures. These checks are not acceptance of floating/full-size gestures or Bluetooth keyboard
+coexistence on iPadOS 26.5; those remain targeted device gates. No Host, dependency
+pin, network setting or app identity change is included.

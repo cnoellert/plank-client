@@ -38,18 +38,22 @@ struct PlankIPadRoot: View {
                 if client.hasActiveDesktopSession {
                     VStack(spacing: 0) {
                         if client.frameDimensions == nil { ProgressView("Starting desktop…").padding() }
-                        PlankIPadCanvas(client: client, router: router, functionKeyMode: KeyboardFunctionKeyMode(rawValue: keyboardMode) ?? .pc)
-                            .overlay(alignment: .topLeading) {
-                                if client.videoDiagnosticsEnabled {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(client.videoDiagnosticText)
-                                        Text(client.audioDiagnosticText)
-                                    }.font(.caption2.monospacedDigit()).padding(8)
-                                        .background(.black.opacity(0.8)).foregroundStyle(.white)
-                                        .allowsHitTesting(false)
+                        GeometryReader { geometry in
+                            PlankIPadCanvas(client: client, router: router, functionKeyMode: KeyboardFunctionKeyMode(rawValue: keyboardMode) ?? .pc)
+                                .frame(width: geometry.size.width, height: geometry.size.height)
+                                .overlay(alignment: .topLeading) {
+                                    if client.videoDiagnosticsEnabled {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(client.videoDiagnosticText)
+                                            Text(client.audioDiagnosticText)
+                                        }.font(.caption2.monospacedDigit()).padding(8)
+                                            .background(.black.opacity(0.8)).foregroundStyle(.white)
+                                            .allowsHitTesting(false)
+                                    }
                                 }
-                            }
+                        }
                     }
+                    .ignoresSafeArea(.keyboard, edges: .bottom)
                     .ignoresSafeArea(.container, edges: hideBars ? [.top, .bottom] : [])
                     .overlay(alignment: .topTrailing) {
                         if hideBars {
@@ -106,6 +110,10 @@ struct PlankIPadRoot: View {
             }
             .toolbar(hideBars ? .hidden : .visible, for: .navigationBar)
         }
+        // UIKit owns keyboard space for both the viewport and typing preview.
+        // Applying this at the navigation root prevents ancestor avoidance from
+        // subtracting the keyboard height again (including floating transitions).
+        .ignoresSafeArea(.keyboard, edges: client.hasActiveDesktopSession ? .bottom : [])
         .statusBarHidden(hideBars)
         .sheet(isPresented: $add) { PlankIPadBookmarkEditor(store: store, client: client, host: .init(name: "", address: "", spatialDisplaySize: PlankIPadDisplayOptions.defaultSize), isNew: true) }
         .sheet(item: $editing) { host in PlankIPadBookmarkEditor(store: store, client: client, host: host, isNew: false) }
