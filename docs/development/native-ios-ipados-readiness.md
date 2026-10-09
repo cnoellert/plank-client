@@ -665,3 +665,15 @@ Pure policy, sanitizer-backed authentication/replay checks and a real loopback
 consent/configuration/pressure-stroke test passed. Device drawing and interruption
 acceptance remain pending. Dependency/recipe pins and Host packages are unchanged.
 The detailed contract is [iPad Pencil sharing](ipad-pencil-relay.md).
+
+## Build 20 Pencil pad customization — October 9
+
+iPad 19 / Vision 47 has user acceptance for corrected tip/drag, desktop reconnect
+without pad reselection, and fresh strokes after rotating during contact.
+Build 20 introduces locally persisted independent edge margins, optional full-pad
+mapping and a dark charcoal sharing surface with adjustable fill shading. It
+retains the accepted aspect-fit default and direct desktop mapping. Geometry
+changes and opening Pad Options retire contact; admission pauses while the
+options are open. Pure geometry, persistence and contact checks pass. Physical
+custom-area mapping and comfort are pending. Vision 47 and Host packages remain
+unchanged. See [Pencil sharing](ipad-pencil-relay.md) for the current contract.

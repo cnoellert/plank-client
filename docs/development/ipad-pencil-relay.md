@@ -32,8 +32,28 @@ if another failure needs it; this pass does not require changing it. Lag and
 video decoder recovery remain separate observations. The user subsequently
 confirmed desktop disconnect/reconnect recovery with the iPad sharing pad kept
 open, on iPad 19 / Vision 47. Accept that new-source reconnect check without
-repeating it. Rotation/focus, lock/background and held-contact final release
-qualification remain pending.
+repeating it. The user also accepted the requested rotation during contact,
+lift and fresh stroke in both orientations on iPad 19 / Vision 47. Focus,
+lock/background and held-contact final release qualification remain pending.
+
+### Build 20 pad options — October 9
+
+The sharing pad now defaults to neutral charcoal rather than a system background
+that can become white in light mode. **Pad Options** offers independent left,
+right, top and bottom margins (0–40% of the pad inside its 16-point safety inset),
+**Match desktop** or **Use full pad**, and charcoal/warm-gray tone with adjustable
+pad glow. The whole sharing surface and its options use dark appearance.
+Glow changes only the app's shading; device brightness remains a Control Center
+setting. These choices persist locally and do not change peer identity or consent.
+
+Match desktop retains the accepted aspect-fit mapping inside the chosen margins.
+Use full pad maps the whole chosen rectangle to the desktop and can scale the
+two axes differently. Percentages follow the current iPad orientation. The visible
+boundary, Pencil contact/hover and squeeze share one mapping. Opening options or
+changing geometry retires contact; drawing is paused while options are open,
+then requires a fresh contact. The direct iPad desktop retains its existing fit.
+Focused geometry, persistence and contact checks pass; physical customization
+and visual comfort remain candidate acceptance gates.
 
 ## Intended use
 
@@ -90,7 +110,8 @@ pen capability only when the workstation advertises support.
 ## Geometry and acceptance
 
 Map one visible active pad area to the selected remote display using normalized
-coordinates and preserve the target aspect ratio. Letterboxes do not draw.
+coordinates. Match desktop preserves the target aspect ratio; Use full pad
+fills the user-selected area. Margins and aspect letterboxes do not start strokes.
 Do not add global coordinate compensation for Flame Tablet Margins; the direct
 Pencil test already established zero margins. A working standalone iPad desktop
 Pencil does not qualify iPad-to-AVP forwarding, and the accepted raw Wacom Relay

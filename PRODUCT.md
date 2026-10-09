@@ -6,8 +6,8 @@ product
 
 ## Scope
 
-This context covers the Apple native development pilots, especially iPad typing
-controls. It does not change the shipping platform/support matrix in README.md.
+This context covers the Apple native development pilots, including iPad typing
+and Pencil sharing. It does not change the shipping platform/support matrix in README.md.
 
 ## Users
 
@@ -36,8 +36,9 @@ the remote canvas without providing useful working feedback.
 
 - Keep remote work central; local controls support the current task.
 - Use native Apple components and semantic typography for familiar behavior.
-- Make recent typing readable while sending input live.
-- Keep observed preview state distinct from remote document state.
+- Send typing live; the user removed the local text preview after keyboard-layout problems.
+- Keep the Pencil sharing surface dark and quiet beneath the headset; allow
+  artists to choose pad margins and mapping without altering their desktop.
 - Preserve accepted input behavior while refining presentation.
 
 ## Accessibility & Inclusion

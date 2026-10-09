@@ -9,10 +9,22 @@ import UIKit
     @Published private(set) var width = 1920
     @Published private(set) var height = 1200
     @Published private(set) var active = false
+    @Published private(set) var padSettings = PlankIPadPencilPadSettings.load()
+    @Published private(set) var adjustingPad = false
+    var canDraw: Bool { active && !adjustingPad }
     private var listener: NWListener?
     private var peer: PlankPencilRelayPeer?
     private var generation = UUID(), peerID = UUID()
     weak var pad: PlankIPadPencilPadView?
+    func setPadSettings(_ value: PlankIPadPencilPadSettings) {
+        let next = value.validated
+        guard next != padSettings else { return }
+        pad?.retire(); padSettings = next; next.save(); pad?.setNeedsLayout()
+    }
+    func setAdjustingPad(_ value: Bool) {
+        guard value != adjustingPad else { return }
+        pad?.retire(); adjustingPad = value; pad?.setNeedsLayout()
+    }
     func start() {
         guard !sharing else { return }
         do {
@@ -76,14 +88,14 @@ import UIKit
         if !peer.offer(.pen(packet)) { peer.close(); active = false }
     }
     func click(x: Float,y: Float) {
-        guard active, let peer else { return }
+        guard canDraw, let peer else { return }
         if !peer.offer(.rightClick(x:x,y:y)) { peer.close(); active = false }
     }
     func stop() {
         pad?.retire(); generation = UUID(); peerID = UUID(); active = false; sharing = false
         peer?.close(); peer = nil; verification = nil
         listener?.newConnectionHandler = nil; listener?.stateUpdateHandler = nil; listener?.cancel(); listener = nil
-        status = "Sharing is off"
+        adjustingPad = false; status = "Sharing is off"
     }
 }
 
@@ -91,6 +103,7 @@ struct PlankIPadPencilRelayView: View {
     @ObservedObject var relay: PlankIPadPencilRelay
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dismiss) private var dismiss
+    @State private var showingOptions = false
     var body: some View {
         NavigationStack {
             VStack(spacing:16) {
@@ -107,12 +120,85 @@ struct PlankIPadPencilRelayView: View {
                     .font(.footnote).foregroundStyle(.secondary).padding(.horizontal)
             }
             .navigationTitle("Share Apple Pencil")
-            .toolbar { ToolbarItem(placement:.topBarTrailing) { Button("Stop Sharing") { relay.stop(); dismiss() } } }
+            .navigationBarTitleDisplayMode(.inline)
+            .background(Color.black.ignoresSafeArea())
+            .toolbar {
+                ToolbarItem(placement:.topBarLeading) {
+                    Button {
+                        relay.setAdjustingPad(true); showingOptions = true
+                    } label: { Label("Pad Options",systemImage:"slider.horizontal.3") }
+                    .accessibilityLabel("Pad options: margins, mapping and appearance")
+                }
+                ToolbarItem(placement:.topBarTrailing) { Button("Stop Sharing") { relay.stop(); dismiss() } }
+            }
+            .sheet(isPresented:$showingOptions,onDismiss:{ relay.setAdjustingPad(false) }) {
+                PlankIPadPencilPadOptions(relay:relay)
+            }
         }
+        .preferredColorScheme(.dark)
         .interactiveDismissDisabled()
         .onAppear { relay.start() }
         .onDisappear { relay.stop() }
         .onChange(of:scenePhase) { _,phase in if phase != .active { relay.stop(); dismiss() } }
+    }
+}
+struct PlankIPadPencilPadOptions: View {
+    @ObservedObject var relay: PlankIPadPencilRelay
+    @Environment(\.dismiss) private var dismiss
+    private func binding<Value>(_ key: WritableKeyPath<PlankIPadPencilPadSettings,Value>) -> Binding<Value> {
+        Binding(get:{ relay.padSettings[keyPath:key] },set:{ value in
+            var next = relay.padSettings; next[keyPath:key] = value; relay.setPadSettings(next)
+        })
+    }
+    private func margin(_ title: String,_ key: WritableKeyPath<PlankIPadPencilPadSettings,Double>) -> some View {
+        VStack(alignment:.leading) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(relay.padSettings[keyPath:key],format:.percent.precision(.fractionLength(0)))
+                    .foregroundStyle(.secondary).monospacedDigit()
+            }
+            Slider(value:binding(key),in:0...0.4,step:0.01)
+                .accessibilityLabel("\(title) margin")
+                .accessibilityValue(Text(relay.padSettings[keyPath:key],format:.percent.precision(.fractionLength(0))))
+        }
+    }
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker("Mapping",selection:binding(\.mapping)) {
+                        ForEach(PlankIPadPencilPadSettings.Mapping.allCases,id:\.self) { Text($0.title).tag($0) }
+                    }.pickerStyle(.segmented)
+                } header: { Text("Drawing area") } footer: {
+                    Text(relay.padSettings.mapping == .matchDesktop
+                         ? "Keeps the desktop’s proportions inside your margins."
+                         : "Maps your entire chosen area to the desktop. Horizontal and vertical movement may scale differently.")
+                }
+                Section {
+                    margin("Left",\.left); margin("Right",\.right)
+                    margin("Top",\.top); margin("Bottom",\.bottom)
+                } header: { Text("Margins") } footer: {
+                    Text("Percent of the pad on each edge. Preferences follow the iPad’s current orientation.")
+                }
+                Section {
+                    Picker("Tone",selection:binding(\.tone)) {
+                        ForEach(PlankIPadPencilPadSettings.Tone.allCases,id:\.self) { Text($0.title).tag($0) }
+                    }
+                    VStack(alignment:.leading) {
+                        Text("Pad glow")
+                        Slider(value:binding(\.glow),in:0...1)
+                            .accessibilityLabel("Pad glow")
+                    }
+                } header: { Text("Appearance") } footer: {
+                    Text("Changes the pad’s shading. Adjust display brightness in Control Center.")
+                }
+                Section { Button("Reset Pad Options") { relay.setPadSettings(.init()) } }
+            }
+            .navigationTitle("Pad Options").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement:.confirmationAction) { Button("Done") { dismiss() } } }
+        }
+        .preferredColorScheme(.dark)
     }
 }
 struct PlankIPadPencilPad: UIViewRepresentable {
@@ -129,13 +215,12 @@ struct PlankIPadPencilPad: UIViewRepresentable {
     private var receivedDowns = 0, acceptedDowns = 0, acceptedMoves = 0, acceptedUps = 0
     private var lastContactLog = -Double.infinity
     private let outline = CAShapeLayer(), cursor = CAShapeLayer()
-    private var viewport: PlankIPadViewport? { .init(bounds:bounds.insetBy(dx:16,dy:16),width:relay.width,height:relay.height) }
+    private var viewport: PlankIPadViewport? { relay.padSettings.viewport(bounds:bounds,width:relay.width,height:relay.height) }
     init(relay: PlankIPadPencilRelay) {
         self.relay = relay; super.init(frame:.zero); relay.pad = self
         isMultipleTouchEnabled = false; backgroundColor = .black
-        outline.fillColor = UIColor.secondarySystemBackground.cgColor
-        outline.strokeColor = UIColor.systemCyan.cgColor; outline.lineWidth = 2; layer.addSublayer(outline)
-        cursor.fillColor = UIColor.systemCyan.cgColor; layer.addSublayer(cursor)
+        outline.lineWidth = 1; layer.addSublayer(outline)
+        layer.addSublayer(cursor)
         let hover = UIHoverGestureRecognizer(target:self,action:#selector(hovered(_:)))
         hover.allowedTouchTypes = [NSNumber(value:UITouch.TouchType.pencil.rawValue)]
         hover.cancelsTouchesInView = false; addGestureRecognizer(hover)
@@ -147,12 +232,17 @@ struct PlankIPadPencilPad: UIViewRepresentable {
         let rect = viewport?.rect ?? .zero
         if rect != previous { retire(); previous = rect }
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        outline.path = UIBezierPath(roundedRect:rect,cornerRadius:8).cgPath
-        outline.opacity = relay.active ? 1 : 0.4; CATransaction.commit()
+        let settings = relay.padSettings, white = settings.fillWhite
+        outline.fillColor = (settings.tone == .charcoal ? UIColor(white:white,alpha:1)
+            : UIColor(red:white * 1.07,green:white,blue:white * 0.85,alpha:1)).cgColor
+        outline.strokeColor = UIColor(white:0.28 + settings.glow * 0.2,alpha:1).cgColor
+        cursor.fillColor = UIColor(white:0.6 + settings.glow * 0.2,alpha:1).cgColor
+        outline.path = UIBezierPath(rect:rect).cgPath
+        outline.opacity = relay.canDraw ? 1 : 0.4; CATransaction.commit()
     }
     func retire() { for p in policy.retire() { relay.send(p) }; touch = nil; cursor.path = nil }
     private func send(_ sample: UITouch,phase: PlankNormalizedPen.Phase) -> Bool {
-        guard relay.active, let viewport, let p = policy.sample(phase,point:sample.location(in:self),viewport:viewport,
+        guard relay.canDraw, let viewport, let p = policy.sample(phase,point:sample.location(in:self),viewport:viewport,
             timestamp:sample.timestamp,force:Double(sample.force),maximumForce:Double(sample.maximumPossibleForce),
             altitude:Double(sample.altitudeAngle),azimuth:Double(sample.azimuthAngle(in:self))) else { return false }
         relay.send(p); mark(sample.location(in:self))
@@ -165,7 +255,7 @@ struct PlankIPadPencilPad: UIViewRepresentable {
         cursor.path = UIBezierPath(ovalIn:CGRect(x:point.x-3,y:point.y-3,width:6,height:6)).cgPath; CATransaction.commit()
     }
     @objc private func hovered(_ gesture: UIHoverGestureRecognizer) {
-        guard touch == nil, relay.active, let viewport else { return }
+        guard touch == nil, relay.canDraw, let viewport else { return }
         guard gesture.state == .began || gesture.state == .changed,
               let p = policy.sample(.hover,point:gesture.location(in:self),viewport:viewport,
                 timestamp:ProcessInfo.processInfo.systemUptime,force:0,maximumForce:0,
@@ -175,7 +265,7 @@ struct PlankIPadPencilPad: UIViewRepresentable {
     override func touchesBegan(_ touches: Set<UITouch>,with event: UIEvent?) {
         guard touch == nil, let next = touches.first(where: { $0.type == .pencil }) else { return }
         receivedDowns += 1
-        guard relay.active, let viewport,
+        guard relay.canDraw, let viewport,
               let packets = policy.beginContact(point:next.location(in:self),viewport:viewport,
                 timestamp:next.timestamp,force:Double(next.force),maximumForce:Double(next.maximumPossibleForce),
                 altitude:Double(next.altitudeAngle),azimuth:Double(next.azimuthAngle(in:self))) else {
@@ -205,7 +295,7 @@ struct PlankIPadPencilPad: UIViewRepresentable {
     }
     func pencilInteraction(_ interaction: UIPencilInteraction,didReceiveSqueeze value: UIPencilInteraction.Squeeze) {
         guard let point = value.hoverPose?.location, let position = viewport?.normalized(point),
-              squeeze.click(ended:value.phase == .ended,timestamp:value.timestamp,enabled:relay.active,
+              squeeze.click(ended:value.phase == .ended,timestamp:value.timestamp,enabled:relay.canDraw,
                 touching:policy.touching,heldButtons:false,hasPosition:true) else { return }
         relay.click(x:Float(position.x),y:Float(position.y))
     }

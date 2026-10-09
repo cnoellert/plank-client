@@ -7,14 +7,16 @@ struct PlankIPadViewport {
     let rect: CGRect
     let width: Int
     let height: Int
-    init?(bounds: CGRect, width: Int, height: Int) {
+    init?(bounds: CGRect, width: Int, height: Int, preserveAspectRatio: Bool = true) {
         guard bounds.minX.isFinite, bounds.minY.isFinite,
               bounds.width.isFinite, bounds.height.isFinite,
               bounds.width > 0, bounds.height > 0, width > 1, height > 1,
               width <= 65536, height <= 65536 else { return nil }
         let aspect = CGFloat(width) / CGFloat(height)
         let fitWidth: CGFloat, fitHeight: CGFloat
-        if bounds.width / bounds.height > aspect {
+        if !preserveAspectRatio {
+            fitWidth = bounds.width; fitHeight = bounds.height
+        } else if bounds.width / bounds.height > aspect {
             fitHeight = bounds.height; fitWidth = fitHeight * aspect
         } else {
             fitWidth = bounds.width; fitHeight = fitWidth / aspect

@@ -36,7 +36,16 @@ failed tip/drag on two workstations. See the [Pencil relay record](../docs/devel
 for the reproduced publisher defect and separate normalized-Host pressure-policy
 observation. On October 9 the user reports the requested build 19 tap/drag test
 working well on Flame03; correlated Host events show tip edges and pressure.
-Reconnect/interruption and latency qualification remain separate gates.
+The user also accepted desktop reconnect and fresh strokes after rotating the
+sharing pad. Focus, lock/background, final held-contact receipt and latency
+qualification remain separate gates.
+
+Build 20 adds **Pad Options**: independent edge margins, Match desktop/Use full
+pad mapping, and a dark charcoal surface with adjustable shading and optional
+warm gray. Settings persist locally. Pad glow adjusts the app's appearance;
+device display brightness remains in Control Center. Opening options pauses
+drawing and retires the current contact. Geometry/persistence checks pass;
+physical customization and comfort await candidate acceptance.
 
 One saved workstation, login, one aspect-fit desktop, video/audio, direct finger
 mouse emulation, indirect pointer buttons, physical wheel and hardware keyboard.
