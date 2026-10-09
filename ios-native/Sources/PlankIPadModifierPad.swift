@@ -32,7 +32,7 @@ struct PlankIPadModifierPad: UIViewRepresentable {
         close.addAction(UIAction { _ in onClose() },for:.touchUpInside)
         close.widthAnchor.constraint(equalToConstant:44).isActive = true
         let header = UIStackView(arrangedSubviews:[handle,close]); header.axis = .horizontal
-        header.heightAnchor.constraint(equalToConstant:36).isActive = true
+        header.heightAnchor.constraint(equalToConstant:44).isActive = true
         let row = UIStackView(); row.axis = .horizontal; row.distribution = .fillEqually; row.spacing = 6
         for key: PlankPencilModifier in [.shift,.control,.option,.command] {
             let button = PlankModifierHoldButton(key:key,relay:relay); keys.append(button); row.addArrangedSubview(button)

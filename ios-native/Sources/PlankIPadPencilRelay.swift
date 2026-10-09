@@ -132,7 +132,7 @@ struct PlankIPadPencilRelayView: View {
                     .overlay {
                         GeometryReader { geometry in
                             if showingModifiers {
-                                let width = min(312.0,geometry.size.width - 32), height = 156.0
+                                let width = min(312.0,geometry.size.width - 32), height = 164.0
                                 PlankIPadModifierPad(relay:relay,onClose:{
                                     relay.releaseModifiers(); showingModifiers = false
                                 },onMove:{ delta in
