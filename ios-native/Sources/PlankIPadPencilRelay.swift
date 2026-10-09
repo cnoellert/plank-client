@@ -6,7 +6,8 @@ import UIKit
     @Published private(set) var sharing = false
     @Published private(set) var status = "Sharing is off"
     @Published private(set) var verification: String?
-    @Published private(set) var width = 1920, height = 1200
+    @Published private(set) var width = 1920
+    @Published private(set) var height = 1200
     @Published private(set) var active = false
     private var listener: NWListener?
     private var peer: PlankPencilRelayPeer?
