@@ -3,7 +3,7 @@ set(CMAKE_Swift_LANGUAGE_VERSION 6)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "15.0" CACHE STRING "Minimum macOS version")
 project(PlankMac LANGUAGES Swift C CXX)
-set(PLANK_APPLE_BUILD_NUMBER "24" CACHE STRING "Native Apple pilot build")
+set(PLANK_APPLE_BUILD_NUMBER "25" CACHE STRING "Native Apple pilot build")
 set(PLANK_TRANSPORT_DIR "" CACHE PATH "Pinned plank-transport source")
 set(PLANK_FFMPEG_DIR "" CACHE PATH "Target-built FFmpeg prefix")
 set(PLANK_OPUS_DIR "" CACHE PATH "Pinned libopus 1.6.1 prefix")
@@ -38,6 +38,7 @@ add_executable(PlankMac MACOSX_BUNDLE
     Sources/PlankMacDisplayGeometry.swift
     Sources/PlankMacSessionWindows.swift
     Sources/PlankMacInputPolicy.swift
+    Sources/PlankMacTabletSource.swift
     Sources/PlankMacWacomSession.swift
     Bridge/PlankMacWacom.cpp
     Bridge/PlankMacRelayPermissions.c
@@ -46,6 +47,12 @@ add_executable(PlankMac MACOSX_BUNDLE
     Sources/PlankMacRelayUSBInventory.swift
     ../app/streaming/input/macrawwacom.cpp
     Sources/PlankMacAudioOutput.swift
+    Shared/PlankPencilCrypto.c
+    Shared/PlankPencilRelayWire.swift
+    Shared/PlankPencilModifiers.swift
+    Shared/PlankPencilRelayKeys.swift
+    Shared/PlankPencilRelayPeer.swift
+    ${VISION}/Sources/Views/PlankPencilRelaySettings.swift
     ${VISION}/PrivacyInfo.xcprivacy)
 set_source_files_properties(${VISION}/PrivacyInfo.xcprivacy PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 set(mac_icon "${CMAKE_CURRENT_BINARY_DIR}/branding/PlankMac.icns")
@@ -86,12 +93,13 @@ target_link_libraries(PlankMacSetupCrypto PUBLIC ${PLANK_RELAY_SODIUM_PREFIX}/li
 target_include_directories(PlankMacRelayCrypto PUBLIC ${PLANK_RELAY_SOURCE_DIR}/src ${PLANK_RELAY_SODIUM_PREFIX}/include)
 target_link_libraries(PlankMacRelayCrypto PUBLIC ${PLANK_RELAY_SODIUM_PREFIX}/lib/libsodium.a)
 target_include_directories(PlankMac PRIVATE ${PLANK_TRANSPORT_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/Shared
     ${VISION}/Bridge ${CMAKE_CURRENT_SOURCE_DIR}/Bridge
     ${CMAKE_CURRENT_SOURCE_DIR}/../app/streaming/input
     ${CMAKE_CURRENT_SOURCE_DIR}/../moonlight-common-c/moonlight-common-c/src
     ${PLANK_FFMPEG_DIR}/include ${PLANK_OPUS_DIR}/include/opus)
-target_compile_definitions(PlankMac PRIVATE PLANK_NATIVE_TRANSPORT=1 PLANK_TABLET_RELAY=1 PLANK_OPUS_AUDIO=1 PLANK_NATIVE_MAC_WACOM=1)
-target_compile_options(PlankMac PRIVATE "$<$<COMPILE_LANGUAGE:Swift>:-DPLANK_TABLET_RELAY;-DPLANK_NATIVE_MAC_WACOM>")
+target_compile_definitions(PlankMac PRIVATE PLANK_NATIVE_TRANSPORT=1 PLANK_TABLET_RELAY=1 PLANK_OPUS_AUDIO=1 PLANK_NATIVE_MAC_WACOM=1 PLANK_PENCIL_RELAY=1)
+target_compile_options(PlankMac PRIVATE "$<$<COMPILE_LANGUAGE:Swift>:-DPLANK_TABLET_RELAY;-DPLANK_NATIVE_MAC_WACOM;-DPLANK_PENCIL_RELAY_RECEIVER>")
 target_link_libraries(PlankMac PRIVATE ${rust_library} PlankMacRelayCrypto PlankMacSetupCrypto
     ${PLANK_OPUS_DIR}/lib/libopus.a
     ${PLANK_FFMPEG_DIR}/lib/libavcodec.dylib ${PLANK_FFMPEG_DIR}/lib/libavutil.dylib

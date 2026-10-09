@@ -37,6 +37,9 @@ final class PlankInputQueue: @unchecked Sendable {
     }
     private func observePointerSource(_ event: PlankInputEvent) {
         if case .pointer = event { mouseOwnsPointer = true }
+        if case let .pen(pen) = event, pen.phase != .cancel, pen.phase != .leave {
+            mouseOwnsPointer = false
+        }
         if case let .rawHid(frame) = event, frame.count >= 20,
            frame[6] == 3, frame[7] == 0 { mouseOwnsPointer = false } // Existing registered-Relay presentation path; local USB uses the filtered callback.
     }
@@ -127,6 +130,9 @@ final class PlankInputQueue: @unchecked Sendable {
             if shouldWake { oldestEnqueueTime = DispatchTime.now().uptimeNanoseconds }
             events.append(.pen(pen))
         }
+#if PLANK_NATIVE_MAC_WACOM
+        observePointerSource(.pen(pen))
+#endif
         highWaterDepth = max(highWaterDepth,events.count)
         lock.unlock()
         if shouldWake { wakeupContinuation.yield(()) }

@@ -79,6 +79,27 @@ planned work, not implemented by this candidate.
 
 ## Intended use
 
+### Mac receiver extension
+
+The build25 Mac candidate receives the same authenticated version-2 Pencil
+and held-shortcut records from iPad21. It exposes **Apple Pencil shared from
+iPad** as an explicit next-session tablet source. That session does not create
+the physical USB Wacom worker or a registered raw Relay connection; source
+changes cannot alter the running session's snapshot. Mac Settings and Session
+Controls reuse the same discovered-pad, comparison and approval view.
+
+The Mac's existing union-of-desktop-windows focus drives admission. Local
+controls separately pause Pencil and retire its keys/contact, while preserving
+the historical raw Wacom controls behavior. Accepted Pencil samples select
+the remote Host cursor; physical mouse movement returns the native cursor.
+Composite-stream coordinates and existing output crops are retained. No new
+Host contract, dependency pin or physical-Wacom payload change is introduced.
+
+Pencil is one receiver at a time: end the previous receiver's Pencil link or
+stop/restart iPad sharing before changing between Mac and Vision. Mac physical
+pressure/alignment, simultaneous shortcuts, focus/controls retirement and
+reconnect are pending separate acceptance. Image overlay remains planned.
+
 Enable **Share Apple Pencil** on the iPad, approve the headset, then select that
 iPad in PLANK Vision. The iPad becomes an absolute tablet surface while the AVP
 shows the workstation. First transport is an authenticated local network link;

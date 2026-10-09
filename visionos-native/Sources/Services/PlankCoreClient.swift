@@ -136,10 +136,36 @@ final class PlankCoreClient: ObservableObject {
         }
     }
     func resetPencilKeyOwnership() { pencilKeyOwnership = .init() }
-    var pencilRelaySourceAllowed: Bool { PlankRelayKeys.relayRegistry().selection == .off }
+    var pencilRelaySourceAllowed: Bool {
+#if PLANK_NATIVE_MAC_WACOM
+        // Use the immutable running-session choice, not preferences changed
+        // while a USB worker or registered Relay already owns the backend.
+        return PlankMacTabletSource.allowsPencil(sessionActive: hasActiveDesktopSession,
+            sessionSource: sessionNativeSource, savedSource: .saved)
+#else
+        return PlankRelayKeys.relayRegistry().selection == .off
+#endif
+    }
+    var pencilRelaySourceMessage: String {
+#if PLANK_NATIVE_MAC_WACOM
+        "Choose Apple Pencil shared from iPad as the tablet source before connecting."
+#else
+        "Turn Tablet Relay off before choosing an iPad Pencil."
+#endif
+    }
+#if PLANK_NATIVE_MAC_WACOM
+    private var pencilLocalControls = Set<UUID>()
+    func setPencilLocalControls(_ presented: Bool, owner: UUID) {
+        if presented { pencilLocalControls.insert(owner) } else { pencilLocalControls.remove(owner) }
+        pencilRelay.sync()
+    }
+#endif
     var pencilRelayCanDraw: Bool {
         guard pencilRelaySourceAllowed, hostSupportsNormalizedPen, tabletSceneActive,
               !isClosingSession else { return false }
+#if PLANK_NATIVE_MAC_WACOM
+        guard pencilLocalControls.isEmpty else { return false }
+#endif
         if case .streaming = phase { return true }; return false
     }
     func sendPencilRelayPen(_ pen: PlankNormalizedPen) -> Bool {
@@ -461,8 +487,8 @@ final class PlankCoreClient: ObservableObject {
         // attach before forwarding mouse input into that desktop session.
 #if PLANK_NATIVE_MAC_WACOM
         sessionNativeSource = PlankMacTabletSource.saved
-        let relayConfigured = sessionNativeSource == .usb ||
-            (sessionNativeSource == .relay && PlankRelayKeys.sessionRelayConfigured())
+        let relayConfigured = sessionNativeSource.usesUSB ||
+            (sessionNativeSource.usesRegisteredRelay && PlankRelayKeys.sessionRelayConfigured())
 #else
         let relayConfigured = PlankRelayKeys.sessionRelayConfigured()
 #endif
@@ -545,10 +571,10 @@ final class PlankCoreClient: ObservableObject {
         }
 #if PLANK_NATIVE_MAC_WACOM
         let localSource = sessionNativeSource
-        let localWacom = localSource == .usb ? PlankMacWacomSession(input: inputQueue, preflight: preflight) : nil
+        let localWacom = localSource.usesUSB ? PlankMacWacomSession(input: inputQueue, preflight: preflight) : nil
         nativeWacom = localWacom
-        tabletBridge = localSource == .relay ? sessionTabletBridge : nil
-        if localSource == .relay { sessionTabletBridge.setActive(tabletSceneActive) }
+        tabletBridge = localSource.usesRegisteredRelay ? sessionTabletBridge : nil
+        if localSource.usesRegisteredRelay { sessionTabletBridge.setActive(tabletSceneActive) }
         let sourceDiagnostics: @Sendable () -> String = { localWacom != nil ? "local USB Wacom" : sessionTabletBridge.diagnosticSummary() }
         let closePhysicalCapture: @Sendable () -> Void = { localWacom?.closeSynchronously() }
 #else
@@ -717,7 +743,7 @@ final class PlankCoreClient: ObservableObject {
                     focusSuspend: flags & PlankHostFeature.rawHidFocusSuspend != 0
                 )
 #if PLANK_NATIVE_MAC_WACOM
-                if localSource == .relay { sessionTabletBridge.startIfPaired(hostFeatures: flags) }
+                if localSource.usesRegisteredRelay { sessionTabletBridge.startIfPaired(hostFeatures: flags) }
 #else
                 sessionTabletBridge.startIfPaired(hostFeatures: flags)
 #endif
@@ -747,7 +773,7 @@ final class PlankCoreClient: ObservableObject {
                 preflight.observeHostFrame(frame)
 #if PLANK_NATIVE_MAC_WACOM
                 if let localWacom { localWacom.control(frame) }
-                else if localSource == .relay { sessionTabletBridge.forwardHostFrame(frame) }
+                else if localSource.usesRegisteredRelay { sessionTabletBridge.forwardHostFrame(frame) }
 #else
                 sessionTabletBridge.forwardHostFrame(frame)
 #endif
@@ -1058,7 +1084,11 @@ final class PlankCoreClient: ObservableObject {
 #if PLANK_TABLET_RELAY
         // A selected raw Relay owns the Host tablet backend. Never alternate
         // that backend with normalized Pencil reports.
+#if PLANK_NATIVE_MAC_WACOM
+        guard sessionNativeSource == .off else { return false }
+#else
         guard PlankRelayKeys.relayRegistry().selection == .off else { return false }
+#endif
 #endif
         return true
     }

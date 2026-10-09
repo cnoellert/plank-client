@@ -104,6 +104,9 @@ struct PlankMacDesktop: View {
             Divider()
             Text(client.tabletPreflightSummary).font(.caption)
             Text("Tablet: \(PlankMacTabletSource.saved.title)").font(.caption).foregroundStyle(.secondary)
+            if PlankMacTabletSource.saved == .pencil {
+                PlankPencilRelaySettings(receiver: client.pencilRelay)
+            }
         }.padding(20).frame(width: 340)
             .buttonStyle(.borderless)
             .background(PlankMacLocalPointerRegion())

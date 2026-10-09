@@ -56,7 +56,8 @@ struct PlankDiscoveredPencilPad: Identifiable, Sendable {
     }
     func stopDiscovery() { discoveryID = UUID(); browser?.cancel(); browser = nil; pads = [] }
     func connect(_ pad: PlankDiscoveredPencilPad) {
-        guard let client, client.pencilRelaySourceAllowed else { status = "Turn Tablet Relay off before choosing an iPad Pencil."; return }
+        guard let client else { return }
+        guard client.pencilRelaySourceAllowed else { status = client.pencilRelaySourceMessage; return }
         disconnect()
         chosenPad = pad
         do {

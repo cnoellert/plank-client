@@ -26,12 +26,19 @@ struct PlankMacSettings: View {
     @EnvironmentObject private var client: PlankCoreClient
     @AppStorage("plank.mac.tablet-source") private var tablet = "usb"
     @State private var speakers = PlankAudioPreferences.playOnHost()
+    @State private var pencilControlsOwner = UUID()
     var body: some View {
         Form {
             Picker("Tablet", selection: $tablet) {
-                ForEach([PlankMacTabletSource.off, .usb]) { Text($0.title).tag($0.rawValue) }
-            }
+                ForEach([PlankMacTabletSource.off, .usb, .pencil]) { Text($0.title).tag($0.rawValue) }
+            }.disabled(client.hasActiveDesktopSession || client.isClosingSession || relay.sharing)
+                .onChange(of: tablet) { old, new in
+                    if old == PlankMacTabletSource.pencil.rawValue, old != new { client.pencilRelay.disconnect() }
+                }
             Text("Tablet selection applies on the next connection. USB capture requires macOS Input Monitoring permission.").font(.caption).foregroundStyle(.secondary)
+            if tablet == PlankMacTabletSource.pencil.rawValue {
+                PlankPencilRelaySettings(receiver: client.pencilRelay)
+            }
             Section("Tablet Relay") {
                 Toggle("Share tablet with PLANK", isOn: Binding(get: { relay.sharing }, set: { if $0 { relay.start() } else { relay.stop() } }))
                     .disabled(client.phase.macHasVideoSession)
@@ -45,7 +52,8 @@ struct PlankMacSettings: View {
             Toggle("Also play on workstation speakers", isOn: $speakers)
                 .onChange(of: speakers) { _, value in UserDefaults.standard.set(value, forKey: PlankAudioPreferences.playOnHostKey) }
         }.padding(24).frame(width: 460)
-            .onAppear { NSCursor.arrow.set() }
+            .onAppear { NSCursor.arrow.set(); client.setPencilLocalControls(true, owner: pencilControlsOwner) }
+            .onDisappear { client.setPencilLocalControls(false, owner: pencilControlsOwner) }
     }
 }
 
