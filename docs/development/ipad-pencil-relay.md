@@ -121,3 +121,16 @@ alignment and right-click, followed by focus, rotation, lock and reconnect.
 Compilation, a working direct iPad Pencil or a working raw Wacom Relay does not
 qualify this chain. Bluetooth and background capture remain outside this slice.
 Host sender teardown and final receipt remain the existing upstream gate.
+
+### Local verification
+
+The focused Swift checks passed finite/range validation, unknown-version and
+trailing-byte rejection, contact ordering, fresh-down after cancellation and
+10,000 motion samples coalesced without losing stroke edges. The C adapter
+passed under AddressSanitizer/UndefinedBehaviorSanitizer: matching transcript
+codes, authenticated capability negotiation, empty raw handshake rejection,
+same-length wrong purpose rejection, preapproval rejection and encrypted replay
+failure. A real TCP loopback fixture with injected in-memory consent storage
+passed two-sided comparison, no durable approval before comparison, configuration
+acknowledgment and ordered down/move/up pressure delivery. These tests do not
+qualify the physical iPad, AVP, Keychain entitlement or workstation drawing.

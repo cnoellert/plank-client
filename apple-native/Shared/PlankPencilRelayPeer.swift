@@ -28,16 +28,22 @@ final class PlankPencilRelayPeer: @unchecked Sendable {
     private let deadline = DispatchTime.now().uptimeNanoseconds + 60_000_000_000
     private var lastReceive = DispatchTime.now().uptimeNanoseconds
     private var lastPing = DispatchTime.now().uptimeNanoseconds
+    private var openingConfiguration: PlankPencilMessage?
+    private let approvalLookup: @Sendable (Data) throws -> Bool
+    private let saveApproval: @Sendable (Data) throws -> Void
     private var configuration: PlankPencilMessage = .configuration(width:1920,height:1200,active:false)
     private var stroke = PlankPencilStrokeState()
     private var active = false
     private static let prefix = Data([0x50,0x4c,0x50,0x4e,1])
 
     init(connection: NWConnection, privateKey: Data, peerKey: Data? = nil,
+         approvalLookup: @escaping @Sendable (Data) throws -> Bool = PlankPencilRelayKeys.approved,
+         saveApproval: @escaping @Sendable (Data) throws -> Void = PlankPencilRelayKeys.approve,
          event: @escaping @Sendable (PlankPencilPeerEvent) -> Void) throws {
         initiator = peerKey != nil; self.connection = connection; self.event = event
         self.peerKey = peerKey ?? Data()
-        verified = try peerKey.map { try PlankPencilRelayKeys.approved($0) } ?? false
+        self.approvalLookup = approvalLookup; self.saveApproval = saveApproval
+        verified = try peerKey.map { try approvalLookup($0) } ?? false
         let c = privateKey.withUnsafeBytes { key in
             (peerKey ?? Data()).withUnsafeBytes { peer in
                 plank_pencil_crypto_create(initiator ? 1 : 0,key.bindMemory(to:UInt8.self).baseAddress,
@@ -118,7 +124,8 @@ final class PlankPencilRelayPeer: @unchecked Sendable {
         guard verified, secondReceived, stage == 1 else { return }
         // Pin only after the authenticated responder proved the advertised key
         // and the local user verified the first-message transcript code.
-        try PlankPencilRelayKeys.approve(peerKey)
+        try saveApproval(peerKey)
+        openingConfiguration = configuration
         stage = 2; try secure(configuration)
     }
     private func read() {
@@ -153,7 +160,7 @@ final class PlankPencilRelayPeer: @unchecked Sendable {
             var key = [UInt8](repeating:0,count:32)
             guard plank_pencil_crypto_peer(crypto,&key) == 0 else { throw PlankPencilWireError.crypto }
             peerKey = Data(key); stage = 1
-            verified = try PlankPencilRelayKeys.approved(peerKey)
+            verified = try approvalLookup(peerKey)
             if verified { approve() } else { event(.verification(try code())) }
             return
         }
@@ -173,10 +180,11 @@ final class PlankPencilRelayPeer: @unchecked Sendable {
         if stage == 2 {
             guard case .configuration = message else { throw PlankPencilWireError.invalid }
             if !initiator {
-                try PlankPencilRelayKeys.approve(peerKey)
+                try saveApproval(peerKey)
                 configuration = message; try secure(message)
-            } else { guard configuration == message else { throw PlankPencilWireError.invalid } }
+            } else { guard openingConfiguration == message else { throw PlankPencilWireError.invalid } }
             stage = 3; event(.ready)
+            if initiator && configuration != openingConfiguration { _ = offer(configuration) }
         }
         switch message {
         case .configuration:

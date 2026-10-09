@@ -21,6 +21,7 @@ import UIKit
             var txt = NWTXTRecord(); txt["version"] = "1"; txt["capability"] = "normalized-pen"
             txt["key"] = PlankPencilRelayKeys.hex(publicKey)
             listener.service = .init(name:UIDevice.current.name + " Pencil",type:"_plank-pencil._tcp",domain:"local.",txtRecord:txt)
+            listener.newConnectionLimit = 1
             self.listener = listener; sharing = true; status = "Starting Pencil sharing…"
             generation = UUID(); let current = generation
             listener.newConnectionHandler = { [weak self] connection in
@@ -48,12 +49,13 @@ import UIKit
                     case .messagesAvailable: self.drain()
                     case let .ended(reason):
                         self.pad?.retire(); self.peer = nil; self.active = false
+                        self.listener?.newConnectionLimit = 1
                         self.verification = nil; self.status = reason + ". Select this iPad again on the headset."
                     }
                 }
             }
             peer = next; next.start()
-        } catch { connection.cancel(); status = "Could not verify headset identity." }
+        } catch { connection.cancel(); listener?.newConnectionLimit = 1; status = "Could not verify headset identity." }
     }
     private func drain() {
         guard let peer else { return }

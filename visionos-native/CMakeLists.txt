@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.30)
 project(PlankVision LANGUAGES Swift C)
 
 set(CMAKE_Swift_LANGUAGE_VERSION 6)
-set(PLANK_VISION_BUILD_NUMBER "1" CACHE STRING "Monotonically increasing TestFlight build number")
+set(PLANK_VISION_BUILD_NUMBER "47" CACHE STRING "Monotonically increasing TestFlight build number")
 if(NOT PLANK_VISION_BUILD_NUMBER MATCHES "^[1-9][0-9]*$")
     message(FATAL_ERROR "PLANK_VISION_BUILD_NUMBER must be a positive integer")
 endif()
