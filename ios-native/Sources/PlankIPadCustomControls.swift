@@ -91,7 +91,7 @@ struct PlankIPadControlLayoutsButton: View {
                             .accessibilityAddTraits(layout.id == store.library.selectedID ? .isSelected : [])
                         }
                     }
-                }.frame(maxHeight:352)
+                }.frame(maxHeight:min(CGFloat(store.library.layouts.count) * 52,352))
                 Divider()
                 Button("Edit Layouts…",systemImage:"pencil",action:openEditor)
                     .frame(minHeight:44)
