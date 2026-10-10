@@ -127,102 +127,29 @@ import UIKit
     }
 }
 
-struct PlankIPadPencilRelayView: View {
+/// Consent is foreground local UI in the normal client working surface.
+/// It remains visible without changing the pad or artist-control canvas size.
+struct PlankIPadPencilConsent: View {
     @ObservedObject var relay: PlankIPadPencilRelay
-    @ObservedObject var customControls: PlankIPadCustomControlsStore
-    @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.dismiss) private var dismiss
-    @State private var showingOptions = false
-    @State private var showingControls = false
-    @State private var editingControls = false
+    let code: String
+    let reject: () -> Void
     var body: some View {
-        NavigationStack {
-            GeometryReader { geometry in
-                ZStack {
-                    // Chrome reserves only the Pencil pad's space. Artist
-                    // controls keep the whole client surface, like Desktop.
-                    VStack(spacing:16) {
-                        sharingHeader.hidden()
-                        PlankIPadPencilPad(relay:relay).background(.black)
-                            .clipShape(RoundedRectangle(cornerRadius:16)).padding()
-                        sharingFooter.hidden()
-                    }
-                    if showingControls {
-                        PlankIPadCustomControlsOverlay(store:customControls,enabled:relay.canDraw,
-                            begin:relay.beginControl,end:relay.endControl,tap:relay.tapControl,release:relay.releaseControls,
-                            inputEpoch:relay.inputEpoch,
-                            pencilSurface:{ relay.pad },pencilHover:{ relay.pad?.controlPencilHover($0) },
-                            pencilSqueeze:{ relay.pad?.controlPencilSqueeze($0,from:$1) })
-                            .frame(width:geometry.size.width,height:geometry.size.height)
-                    }
-                    // Approval and help stay in front of artist controls.
-                    // The transparent middle passes through to controls/pad.
-                    VStack(spacing:16) {
-                        sharingHeader
-                        Spacer(minLength:0).allowsHitTesting(false)
-                        sharingFooter
-                    }
-                }
-                .frame(width:geometry.size.width,height:geometry.size.height)
-                .onAppear { customControls.reportSurface(size:geometry.size,surface:.pencilSharing) }
-                .onChange(of:geometry.size) { _,size in
-                    if !editingControls && !showingOptions { customControls.reportSurface(size:size,surface:.pencilSharing) }
-                }
+        VStack(spacing:12) {
+            Text("Compare this code with the PLANK client before approving.")
+                .font(.callout).multilineTextAlignment(.center)
+            Text(code).font(.title.monospaced().bold())
+            HStack {
+                Button("Reject",role:.cancel,action:reject)
+                Button("Codes Match — Approve Client") { relay.approve() }
+                    .buttonStyle(.borderedProminent)
             }
-            .navigationTitle("Share Apple Pencil")
-            .navigationBarTitleDisplayMode(.inline)
-            .background(Color.black.ignoresSafeArea())
-            .toolbar {
-                ToolbarItem(placement:.topBarLeading) {
-                    HStack {
-                        Button {
-                            relay.setAdjustingPad(true); showingOptions = true
-                        } label: { Label("Pad Options",systemImage:"slider.horizontal.3") }
-                        .accessibilityLabel("Pad options: margins, mapping and appearance")
-                        PlankIPadControlsVisibilityButton(store:customControls,visible:showingControls,
-                            toggle:{ relay.releaseControls(); showingControls.toggle() },
-                            edit:{ relay.setAdjustingPad(true); editingControls = true })
-                    }
-                }
-                ToolbarItem(placement:.topBarTrailing) { Button("Stop Sharing") { relay.stop(); dismiss() } }
-            }
-            .sheet(isPresented:$showingOptions,onDismiss:{ relay.setAdjustingPad(false) }) {
-                PlankIPadPencilPadOptions(relay:relay)
-            }
-            .fullScreenCover(isPresented:$editingControls,onDismiss:{ relay.setAdjustingPad(false) }) {
-                PlankIPadCustomControlsEditor(store:customControls,referenceSurfaceSize:customControls.latestSurfaceSize(for:.pencilSharing) ?? .zero,
-                    surface:.pencilSharing)
-                    .interactiveDismissDisabled()
-            }
-        }
-        .preferredColorScheme(.dark)
-        .interactiveDismissDisabled()
-        .onAppear { relay.start() }
-        // The editor covers the pad while input is deliberately paused. Keep
-        // its authenticated peer; explicit stop/background still retire it.
-        .onDisappear { if !editingControls { relay.stop() } }
-        .onChange(of:scenePhase) { _,phase in if phase != .active { relay.stop(); dismiss() } }
+        }.padding(16).frame(maxWidth:560)
+            .background(.regularMaterial,in:RoundedRectangle(cornerRadius:16))
     }
-    private var sharingHeader: some View {
-        VStack(spacing:16) {
-            Text(relay.status).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.horizontal)
-            if let code = relay.verification {
-                Text(code).font(.title.monospaced().bold())
-                HStack {
-                    Button("Reject",role:.cancel) { relay.stop() }
-                    Button("Codes Match — Approve Client") { relay.approve() }.buttonStyle(.borderedProminent)
-                }
-            }
-        }
-    }
-    private var sharingFooter: some View {
-        Text("Keep this pad open while drawing. Squeeze the Pencil for a right-click after lifting the tip.")
-            .font(.footnote).foregroundStyle(.secondary).padding(.horizontal)
-    }
-
 }
 struct PlankIPadPencilPadOptions: View {
     @ObservedObject var relay: PlankIPadPencilRelay
+    var stopSharing: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     private func binding<Value>(_ key: WritableKeyPath<PlankIPadPencilPadSettings,Value>) -> Binding<Value> {
         Binding(get:{ relay.padSettings[keyPath:key] },set:{ value in
@@ -245,6 +172,13 @@ struct PlankIPadPencilPadOptions: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section("Apple Pencil Sharing") {
+                    Text(relay.status).foregroundStyle(.secondary)
+                    if let code = relay.verification {
+                        PlankIPadPencilConsent(relay:relay,code:code,reject:{ stopSharing?() })
+                    }
+                    if let stopSharing { Button("Stop Sharing",role:.destructive,action:stopSharing) }
+                }
                 Section {
                     Picker("Mapping",selection:binding(\.mapping)) {
                         ForEach(PlankIPadPencilPadSettings.Mapping.allCases,id:\.self) { Text($0.title).tag($0) }

@@ -27,6 +27,7 @@ struct PlankIPadRoot: View {
     @State private var showingCustomControls = false
     @State private var editingCustomControls = false
     @State private var controlWindowSize = CGSize.zero
+    @State private var desktopControlsEnabled = false
     @State private var add = false
     @State private var editing: HostBookmark?
     @State private var controls = false
@@ -37,74 +38,61 @@ struct PlankIPadRoot: View {
     @AppStorage("plank.ipad.showSessionToolbar") private var showToolbar = true
     @AppStorage("plank.ipad.keyboardFunctionKeyMode") private var keyboardMode = KeyboardFunctionKeyMode.pc.rawValue
     private var host: HostBookmark? { store.hosts.first { $0.id == selectedID } }
-    private var hideBars: Bool { client.hasActiveDesktopSession && !showToolbar }
+    private var hideBars: Bool { hasWorkingSurface && !showToolbar }
     private var busy: Bool {
         switch client.phase { case .probing, .authenticating, .startingSession: true; default: client.isClosingSession }
     }
+    private var hasWorkingSurface: Bool { client.hasActiveDesktopSession || sharePencil }
     var body: some View {
+        Group {
+            if hasWorkingSurface { workingSurface }
+            else { idleScreen }
+        }
+        .background {
+            PlankIPadWindowMetrics { size,_ in
+                // Cache real window changes even while an editor covers idle
+                // content, so its next entry cannot reuse a stale orientation.
+                reportControlWindow(size)
+            }
+        }
+        .ignoresSafeArea(.keyboard,edges:hasWorkingSurface ? .bottom : [])
+        .preferredColorScheme(sharePencil ? .dark : nil)
+        .statusBarHidden(hideBars)
+        .fullScreenCover(isPresented:$editingCustomControls) {
+            PlankIPadCustomControlsEditor(store:customControls,referenceSurfaceSize:controlWindowSize)
+                .interactiveDismissDisabled()
+        }
+        .sheet(isPresented:$add) { PlankIPadBookmarkEditor(store:store,client:client,host:.init(name:"",address:"",spatialDisplaySize:PlankIPadDisplayOptions.defaultSize),isNew:true) }
+        .sheet(item:$editing) { host in PlankIPadBookmarkEditor(store:store,client:client,host:host,isNew:false) }
+        .sheet(isPresented:$controls) {
+            if sharePencil { PlankIPadPencilPadOptions(relay:pencilRelay,stopSharing:stopPencilSharing) }
+            else { PlankIPadControls(client:client,router:router) }
+        }
+        .onAppear { selectedID = store.hosts.first?.id; updateAdmission() }
+        .onChange(of:store.hosts) { _,hosts in if selectedID == nil { selectedID = hosts.first?.id } }
+        .onChange(of:controls) { _,_ in updateAdmission() }
+        .onChange(of:editingCustomControls) { _,_ in updateAdmission() }
+        .onChange(of:sharePencil) { _,_ in updateAdmission() }
+        .onChange(of:client.phase) { _,_ in
+            if sharePencil && client.hasActiveDesktopSession { stopPencilSharing() }
+            updateAdmission()
+        }
+        .onChange(of:scenePhase) { _,phase in
+            // Sharing retains the old inactive stop boundary. Covering the
+            // pad with our editor/settings does not stop its consented peer.
+            if phase != .active && sharePencil { stopPencilSharing() }
+            updateAdmission()
+            if phase == .background { password = ""; disconnect() }
+        }
+    }
+    private var idleScreen: some View {
         NavigationStack {
-            Group {
-                if client.hasActiveDesktopSession {
-                    VStack(spacing: 0) {
-                        if client.frameDimensions == nil { ProgressView("Starting desktop…").padding() }
-                        GeometryReader { geometry in
-                            PlankIPadCanvas(client: client, router: router, functionKeyMode: KeyboardFunctionKeyMode(rawValue: keyboardMode) ?? .pc)
-                                .frame(width: geometry.size.width, height: geometry.size.height)
-                                .overlay {
-                                    if showingCustomControls {
-                                        PlankIPadCustomControlsOverlay(store:customControls,enabled:router.enabled,
-                                            begin:router.beginControl,end:{ _ = router.endControl(owner:$0) },
-                                            tap:router.tapControl,release:{ _ = router.releaseControls() },inputEpoch:router.inputEpoch,
-                                            pencilSurface:{ router.surface },
-                                            pencilHover:{ router.surface?.controlPencilHover($0) },
-                                            pencilSqueeze:{ router.surface?.controlPencilSqueeze($0,from:$1) })
-                                            .frame(width:geometry.size.width,height:geometry.size.height)
-                                    }
-                                }
-                                .overlay(alignment: .topLeading) {
-                                    if client.videoDiagnosticsEnabled {
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(client.videoDiagnosticText)
-                                            Text(client.audioDiagnosticText)
-                                        }.font(.caption2.monospacedDigit()).padding(8)
-                                            .background(.black.opacity(0.8)).foregroundStyle(.white)
-                                            .allowsHitTesting(false)
-                                    }
-                                }
-                                .onAppear { customControls.reportSurface(size:geometry.size) }
-                                .onChange(of:geometry.size) { _, size in
-                                    if !editingCustomControls { customControls.reportSurface(size:size) }
-                                }
-                        }
-                    }
-                    .ignoresSafeArea(.keyboard, edges: .bottom)
-                    .ignoresSafeArea(.container, edges: hideBars ? [.top, .bottom] : [])
-                    .overlay(alignment: .topTrailing) {
-                        if hideBars {
-                            HStack(spacing:8) {
-                                PlankIPadControlsVisibilityButton(store:customControls,visible:showingCustomControls,
-                                    toggle:toggleCustomControls,edit:editCustomControls)
-                                    .background(.regularMaterial,in:Circle())
-                                Button { setToolbarVisible(true) } label: {
-                                    Image(systemName: "chevron.down")
-                                        .frame(width: 44, height: 44)
-                                        .background(.regularMaterial, in: Circle())
-                                }
-                                .accessibilityLabel("Show session toolbar")
-                            }
-                            .padding(12)
-                        }
-                    }
-                } else {
                     ScrollViewReader { proxy in
                       ScrollView {
                         VStack(spacing: 20) {
                             if let message = router.inputFailure {
                                 Text(message).foregroundStyle(.orange).multilineTextAlignment(.center)
                             }
-                            Button { sharePencil = true } label: {
-                                Label("Share Apple Pencil", systemImage: "pencil.tip.crop.circle")
-                            }.buttonStyle(.bordered).disabled(busy)
                             Button { editingCustomControls = true } label: {
                                 Label("Custom Controls",systemImage:"rectangle.grid.2x2")
                             }.buttonStyle(.bordered).disabled(busy)
@@ -136,59 +124,106 @@ struct PlankIPadRoot: View {
                           scrollCredentials(using: proxy)
                       }
                     }
-                }
-            }
-            .navigationTitle(client.hasActiveDesktopSession ? (host?.name ?? "Desktop") : "PLANK iPad Pilot")
+            .navigationTitle("PLANK iPad Pilot")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                if client.hasActiveDesktopSession {
-                    ToolbarItemGroup(placement: .topBarTrailing) {
-                        Button { router.setSoftwareKeyboardPresented(!router.softwareKeyboardPresented) } label: {
-                            Label(router.softwareKeyboardPresented ? "Hide Keyboard" : "Show Keyboard", systemImage: "keyboard")
-                        }
-                        Button { controls = true } label: { Label("Session Controls", systemImage: "slider.horizontal.3") }
-                        PlankIPadControlsVisibilityButton(store:customControls,visible:showingCustomControls,
-                            toggle:toggleCustomControls,edit:editCustomControls)
-                        Button { setToolbarVisible(false) } label: { Label("Hide Toolbar", systemImage: "chevron.up") }
-                        Button("Disconnect") { disconnect() }.disabled(client.isClosingSession)
-                    }
-                } else {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button { add = true } label: { Label("Add Workstation", systemImage: "plus") }.disabled(busy)
-                    }
+                ToolbarItemGroup(placement:.topBarTrailing) {
+                    Menu {
+                        Button { startPencilSharing() } label: { Label("Share Apple Pencil",systemImage:"pencil.tip.crop.circle") }
+                            .disabled(busy || scenePhase != .active)
+                        Button { editingCustomControls = true } label: { Label("Edit Controls",systemImage:"rectangle.grid.2x2") }
+                            .disabled(busy)
+                    } label: { Label("Client Options",systemImage:"slider.horizontal.3") }
+                    Button { add = true } label: { Label("Add Workstation",systemImage:"plus") }.disabled(busy)
                 }
             }
-            .toolbar(hideBars ? .hidden : .visible, for: .navigationBar)
         }
-        .background {
-            GeometryReader { geometry in
-                Color.clear
-                    .onAppear { controlWindowSize = geometry.size }
-                    .onChange(of:geometry.size) { _, size in controlWindowSize = size }
+    }
+    private var workingSurface: some View {
+        PlankIPadWorkingSurface(barsVisible:!hideBars,measured:reportControlWindow) {
+            if sharePencil {
+                PlankIPadPencilPad(relay:pencilRelay)
+            } else {
+                VStack(spacing:0) {
+                    if client.frameDimensions == nil { ProgressView("Starting desktop…").padding() }
+                    PlankIPadCanvas(client:client,router:router,functionKeyMode:KeyboardFunctionKeyMode(rawValue:keyboardMode) ?? .pc)
+                        .overlay(alignment:.topLeading) {
+                            if client.videoDiagnosticsEnabled {
+                                VStack(alignment:.leading,spacing:2) {
+                                    Text(client.videoDiagnosticText); Text(client.audioDiagnosticText)
+                                }.font(.caption2.monospacedDigit()).padding(8)
+                                    .background(.black.opacity(0.8)).foregroundStyle(.white)
+                                    .allowsHitTesting(false)
+                            }
+                        }
+                }
+            }
+        } controls: {
+            if showingCustomControls {
+                if sharePencil {
+                    PlankIPadCustomControlsOverlay(store:customControls,enabled:pencilRelay.canDraw,
+                        begin:pencilRelay.beginControl,end:pencilRelay.endControl,tap:pencilRelay.tapControl,
+                        release:pencilRelay.releaseControls,inputEpoch:pencilRelay.inputEpoch,
+                        pencilSurface:{ pencilRelay.pad },pencilHover:{ pencilRelay.pad?.controlPencilHover($0) },
+                        pencilSqueeze:{ pencilRelay.pad?.controlPencilSqueeze($0,from:$1) })
+                        .id("pencil-sharing-controls")
+                } else {
+                    PlankIPadCustomControlsOverlay(store:customControls,enabled:desktopControlsEnabled && router.enabled,
+                        begin:router.beginControl,end:{ _ = router.endControl(owner:$0) },tap:router.tapControl,
+                        release:{ _ = router.releaseControls() },inputEpoch:router.inputEpoch,
+                        pencilSurface:{ router.surface },pencilHover:{ router.surface?.controlPencilHover($0) },
+                        pencilSqueeze:{ router.surface?.controlPencilSqueeze($0,from:$1) })
+                        .id("desktop-controls")
+                }
+            }
+        } toolbar: {
+            workingToolbar
+        } floating: {
+            HStack(spacing:8) {
+                PlankIPadControlsVisibilityButton(store:customControls,visible:showingCustomControls,
+                    toggle:toggleCustomControls,edit:editCustomControls)
+                    .background(.regularMaterial,in:Circle())
+                Button { setToolbarVisible(true) } label: {
+                    Image(systemName:"chevron.down").frame(width:44,height:44)
+                        .background(.regularMaterial,in:Circle())
+                }.accessibilityLabel("Show session toolbar")
+            }
+        } consent: {
+            if sharePencil,let code = pencilRelay.verification {
+                PlankIPadPencilConsent(relay:pencilRelay,code:code,reject:stopPencilSharing)
+                    .padding(.horizontal,16)
             }
         }
-        // The measured docked keyboard frame reserves space within the canvas.
-        // SwiftUI must not also shrink the canvas for the same keyboard.
-        .ignoresSafeArea(.keyboard, edges: client.hasActiveDesktopSession ? .bottom : [])
-        .statusBarHidden(hideBars)
-        .fullScreenCover(isPresented: $sharePencil) { PlankIPadPencilRelayView(relay: pencilRelay,customControls:customControls) }
-        .fullScreenCover(isPresented:$editingCustomControls) {
-            PlankIPadCustomControlsEditor(store:customControls,
-                referenceSurfaceSize:customControls.latestSurfaceSize(for:.desktop) ?? controlWindowSize)
-                .interactiveDismissDisabled()
-        }
-        .sheet(isPresented: $add) { PlankIPadBookmarkEditor(store: store, client: client, host: .init(name: "", address: "", spatialDisplaySize: PlankIPadDisplayOptions.defaultSize), isNew: true) }
-        .sheet(item: $editing) { host in PlankIPadBookmarkEditor(store: store, client: client, host: host, isNew: false) }
-        .sheet(isPresented: $controls) { PlankIPadControls(client: client, router: router) }
-        .onAppear { selectedID = store.hosts.first?.id; updateAdmission() }
-        .onChange(of: store.hosts) { _, hosts in if selectedID == nil { selectedID = hosts.first?.id } }
-        .onChange(of: controls) { _, _ in updateAdmission() }
-        .onChange(of: editingCustomControls) { _, _ in updateAdmission() }
-        .onChange(of: client.phase) { _, _ in updateAdmission() }
-        .onChange(of: scenePhase) { _, phase in
-            updateAdmission()
-            if phase == .background { pencilRelay.stop(); password = ""; disconnect() }
-        }
+    }
+    private var workingToolbar: some View {
+        HStack(spacing:12) {
+            Text(sharePencil ? "Apple Pencil" : (host?.name ?? "Desktop"))
+                .font(.headline).lineLimit(1)
+            Spacer(minLength:8)
+            if !sharePencil {
+                Button { router.setSoftwareKeyboardPresented(!router.softwareKeyboardPresented) } label: {
+                    Label(router.softwareKeyboardPresented ? "Hide Keyboard" : "Show Keyboard",systemImage:"keyboard")
+                }.labelStyle(.iconOnly).frame(minWidth:44,minHeight:44)
+            }
+            Button { controls = true } label: {
+                Label(sharePencil ? "Pencil Sharing Settings" : "Session Controls",systemImage:"slider.horizontal.3")
+            }
+                .labelStyle(.iconOnly).frame(minWidth:44,minHeight:44)
+            PlankIPadControlsVisibilityButton(store:customControls,visible:showingCustomControls,
+                toggle:toggleCustomControls,edit:editCustomControls)
+            Button { setToolbarVisible(false) } label: { Label("Hide Toolbar",systemImage:"chevron.up") }
+                .labelStyle(.iconOnly).frame(minWidth:44,minHeight:44)
+            if sharePencil { Button("Stop Sharing",action:stopPencilSharing).frame(minHeight:44) }
+            else { Button("Disconnect",action:disconnect).frame(minHeight:44).disabled(client.isClosingSession) }
+        }.padding(.horizontal,12)
+    }
+    private func reportControlWindow(_ size: CGSize) {
+        guard size.width.isFinite,size.height.isFinite,size.width > 1,size.height > 1 else { return }
+        if controlWindowSize != size { controlWindowSize = size }
+        // Both editor entry points resolve the same full-window coordinate
+        // system. Reporting geometry never rewrites saved placements/sizes.
+        customControls.reportSurface(size:size,surface:.desktop)
+        customControls.reportSurface(size:size,surface:.pencilSharing)
     }
     @ViewBuilder private func connection(_ host: HostBookmark) -> some View {
         if client.activeHostID == host.id {
@@ -220,6 +255,7 @@ struct PlankIPadRoot: View {
         withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(field, anchor: .center) }
     }
     private func connect(_ host: HostBookmark) {
+        guard !sharePencil else { return }
         credentialFocus = nil
         password = ""
         router.clearInputFailure()
@@ -233,6 +269,7 @@ struct PlankIPadRoot: View {
         Task { await client.authenticate(username: username, password: secret) }
     }
     private func start(_ host: HostBookmark) {
+        guard !sharePencil else { return }
         client.setTabletActive(scenePhase == .active)
         client.startSession(displaySize: host.spatialDisplaySize, frameRate: host.streamFrameRate,
                             videoBitrateKbps: host.videoBitrateKbps)
@@ -244,17 +281,32 @@ struct PlankIPadRoot: View {
         controls = false
         client.reset()
     }
+    private func startPencilSharing() {
+        guard !busy,!client.hasActiveDesktopSession,scenePhase == .active else { return }
+        credentialFocus = nil
+        router.release(); router.enabled = false
+        client.setTabletActive(false); client.reset()
+        sharePencil = true; pencilRelay.start(); updateAdmission()
+    }
+    private func stopPencilSharing() {
+        // Retire the old source before the root changes mode/overlay identity.
+        pencilRelay.stop(); sharePencil = false; controls = false
+        updateAdmission()
+    }
     private func toggleCustomControls() {
-        router.releaseControls(); showingCustomControls.toggle()
+        if sharePencil { pencilRelay.releaseControls() } else { router.releaseControls() }
+        showingCustomControls.toggle()
     }
     private func editCustomControls() {
-        router.release(); editingCustomControls = true
+        if sharePencil { pencilRelay.setAdjustingPad(true) } else { router.release() }
+        editingCustomControls = true
     }
     private func setToolbarVisible(_ visible: Bool) {
         // A local control changes the canvas bounds. Retire held input before
         // the layout moves, while retaining this stream and its remote mode.
-        router.release()
+        if sharePencil { pencilRelay.setAdjustingPad(true) } else { router.release() }
         showToolbar = visible
+        if sharePencil { pencilRelay.setAdjustingPad(false) }
         Task { @MainActor in
             await Task.yield()
             if router.enabled { router.surface?.resumeKeyboard() }
@@ -264,8 +316,12 @@ struct PlankIPadRoot: View {
         let foreground = scenePhase == .active
         let streaming: Bool
         if case .streaming = client.phase { streaming = true } else { streaming = false }
-        router.enabled = foreground && streaming && !controls && !editingCustomControls
-        client.setTabletActive(foreground && client.hasActiveDesktopSession)
+        router.enabled = foreground && streaming && !sharePencil && !controls && !editingCustomControls
+        // The router's admission is not published. Reflect its actual value
+        // into local presentation after onChange, including editor dismissal.
+        desktopControlsEnabled = router.enabled
+        client.setTabletActive(foreground && client.hasActiveDesktopSession && !sharePencil)
+        if sharePencil { pencilRelay.setAdjustingPad(controls || editingCustomControls) }
         PlankAudioOutput.shared.setSceneActive(foreground)
     }
 }

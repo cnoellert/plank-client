@@ -216,7 +216,7 @@ one active pen owner and one selected remote display.
 
 ## Development implementation
 
-The iPad pilot's **Share Apple Pencil** opens a foreground pad and advertises
+The iPad pilot's **Share Apple Pencil** starts a foreground pad and advertises
 `_plank-pencil._tcp` with `version=3`, `capability=normalized-pen-keys` and its public
 identity. PLANK Vision Settings has a separate Apple Pencil section. The raw
 Tablet Relay must be Off. The independent capability is deliberately not a
@@ -291,3 +291,24 @@ Each desktop lifetime retires its peer generation. The selected iPad can reconne
 on the next supported desktop with its existing verified identity; callbacks from
 the previous peer cannot enter that desktop. An unexpected network failure
 requires selecting the pad again rather than creating an unbounded retry loop.
+
+### Client-screen mode — iPad29 candidate
+
+The user approved moving Pencil Sharing into the normal iPad client screen.
+Sharing status, comparison approval, Pad Options and Stop Sharing move into
+the client controls and menus. Desktop and sharing use the same full-window
+artist-control canvas and editor reference, independently of local toolbar
+height. The drawing pad keeps its own margins and normalized coordinate
+mapping. This local UI change retains existing identities, physical approval,
+version3 wire authority and matching Vision49/Mac26 receivers.
+
+Direct desktop input and sharing remain mutually exclusive. Entering the
+editor or pad options retires contacts and pauses sharing input while keeping
+the authenticated peer. Explicit stop and a non-active scene end sharing.
+The new menu flow and saved-layout placement remain physical device gates.
+
+The targeted native UI fixture passed shared control-canvas/editor geometry,
+foreground local-control priority, peer-retaining editing/settings, source
+retirement and Pencil forwarding. It uses the user's unchanged saved library,
+controlled landscape bounds and stubbed network/Host callbacks; it does not
+qualify physical rotation, new end-to-end input or final Host release receipt.

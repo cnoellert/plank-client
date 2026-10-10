@@ -300,3 +300,47 @@ frames, exact eight-point test gutters and foreground approval hit priority.
 This does not qualify actual system rotation. Different whole-client window
 sizes can still compress normalized positions with fixed point-sized keys;
 this revision corrects the sharing-only, status-dependent pad contraction.
+
+## Shared client surface — iPad29
+
+The user accepted iPad28's transparency and client-neutral instructions, but
+reported that Pencil Sharing controls still overlap. The prior component
+fixture used a layout seeded for its measured content bounds; it did not
+establish placement for the user's existing saved library.
+
+A read-only copy of that library establishes the remaining difference. Its
+landscape button stacks have six-point gutters on a 1180 × 820-point window.
+The sharing screen's 1180 × 756-point navigation content produces overlaps
+of approximately three to four points with those same normalized centers and
+fixed button sizes. No saved control sizes or positions need to be rewritten
+to address this same-window mismatch.
+
+The user confirmed that Pencil Sharing should use the normal client screen
+and existing menus. Candidate iPad29 therefore makes it a working-surface
+mode, with sharing status, physical comparison approval, pad options and stop
+actions outside the artist-control canvas. Desktop and Pencil Sharing use one
+full-window control reference, including editor entry before a desktop session.
+Visible or hidden local chrome must not shorten that control reference. The
+video and Pencil pad retain their own input-coordinate transforms.
+
+Saved libraries, independent point sizes, labels, bindings, transparency and
+the version3 authenticated capability remain unchanged. Switching input
+authority retires old contacts; editor and options pause input while retaining
+the approved peer. Sharing stops when the scene becomes inactive, as before.
+Physical placement and the revised menu flow require a new device check.
+Intermittent real finger cancellation remains separate.
+
+The native component check loads the exact saved library without rewriting it.
+Desktop and Sharing, with local bars shown or hidden, resolve a controlled
+1180 × 820-point canvas with the four original six-point gutters and no
+overlaps. Their actual editor entry points, including idle entry, use that
+same reference. Native window hit tests prioritize settings and comparison
+approval over artist controls. Status/consent changes retain held controls;
+settings and editing retire input while preserving the peer. Stop and mode
+change retire the old source, and Pencil forwarding uses the actual pad's
+coordinates. A local presentation mirror also refreshes controls after editor
+dismissal without changing the router's admission authority.
+
+This is controlled landscape hosting with production views and stubbed runtime
+callbacks. The simulator's native window remained portrait; system rotation,
+physical device placement and workstation receipt are not inferred from it.
