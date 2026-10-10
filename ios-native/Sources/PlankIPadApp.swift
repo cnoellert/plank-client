@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 @main struct PlankIPadApp: App {
     @StateObject private var client: PlankCoreClient
@@ -31,6 +32,8 @@ struct PlankIPadRoot: View {
     @State private var controls = false
     @State private var username = ""
     @State private var password = ""
+    private enum CredentialField: Hashable { case username, password }
+    @FocusState private var credentialFocus: CredentialField?
     @AppStorage("plank.ipad.showSessionToolbar") private var showToolbar = true
     @AppStorage("plank.ipad.keyboardFunctionKeyMode") private var keyboardMode = KeyboardFunctionKeyMode.pc.rawValue
     private var host: HostBookmark? { store.hosts.first { $0.id == selectedID } }
@@ -93,7 +96,8 @@ struct PlankIPadRoot: View {
                         }
                     }
                 } else {
-                    ScrollView {
+                    ScrollViewReader { proxy in
+                      ScrollView {
                         VStack(spacing: 20) {
                             if let message = router.inputFailure {
                                 Text(message).foregroundStyle(.orange).multilineTextAlignment(.center)
@@ -122,6 +126,15 @@ struct PlankIPadRoot: View {
                                 }
                             }
                         }.frame(maxWidth: 480).padding(24).frame(maxWidth: .infinity)
+                      }
+                      .scrollDismissesKeyboard(.interactively)
+                      .onChange(of: credentialFocus) { _, _ in scrollCredentials(using: proxy) }
+                      .onChange(of: controlWindowSize) { _, _ in scrollCredentials(using: proxy) }
+                      .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidChangeFrameNotification)) { _ in
+                          // The native scroll view reserves keyboard space first.
+                          // Then reveal the focused local credential field.
+                          scrollCredentials(using: proxy)
+                      }
                     }
                 }
             }
@@ -181,8 +194,16 @@ struct PlankIPadRoot: View {
         if client.activeHostID == host.id {
             switch client.phase {
             case .needsCredentials, .authenticating:
-                TextField("Username", text: $username).textInputAutocapitalization(.never).autocorrectionDisabled().textContentType(.username)
-                SecureField("Password", text: $password).textContentType(.password).onSubmit { authenticate() }
+                TextField("Username", text: $username)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled().textContentType(.username)
+                    .textFieldStyle(.roundedBorder).submitLabel(.next)
+                    .focused($credentialFocus, equals: .username).id(CredentialField.username)
+                    .disabled(busy)
+                    .onSubmit { if !busy { credentialFocus = .password } }
+                SecureField("Password", text: $password).textContentType(.password)
+                    .textFieldStyle(.roundedBorder).submitLabel(.go)
+                    .focused($credentialFocus, equals: .password).id(CredentialField.password)
+                    .disabled(busy).onSubmit { authenticate() }
                 Button("Sign In") { authenticate() }.buttonStyle(.borderedProminent).disabled(busy || username.isEmpty || password.isEmpty)
             case .authenticated:
                 Button("Open Desktop") { start(host) }.buttonStyle(.borderedProminent).disabled(busy)
@@ -194,13 +215,20 @@ struct PlankIPadRoot: View {
             }
         } else { Button("Connect") { connect(host) }.buttonStyle(.borderedProminent).disabled(busy) }
     }
+    private func scrollCredentials(using proxy: ScrollViewProxy) {
+        guard let field = credentialFocus, !client.hasActiveDesktopSession else { return }
+        withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(field, anchor: .center) }
+    }
     private func connect(_ host: HostBookmark) {
+        credentialFocus = nil
         password = ""
         router.clearInputFailure()
         router.enabled = false
         Task { await client.reset()?.value; await client.connect(to: host) }
     }
     private func authenticate() {
+        guard !busy, !username.isEmpty, !password.isEmpty else { return }
+        credentialFocus = nil
         let secret = password; password = ""
         Task { await client.authenticate(username: username, password: secret) }
     }

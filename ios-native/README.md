@@ -28,6 +28,15 @@ This acceptance covers the controlled repeated-open check, not an independently
 recorded floating/full-size geometry cycle.
 The earlier build notes below retain the history of the removed preview.
 
+## Local sign-in keyboard — build 27 candidate
+
+Username and Password use local native fields with explicit focus-aware
+scrolling after keyboard layout changes. Next advances to Password; Go submits
+Sign In when both fields are filled and authentication is idle. Connect and
+Sign In retire credential focus. Password clearing and the streaming-only
+remote input gate remain separate from this local form. The login correction
+does not change the desktop's keyboard viewport or Pencil sharing.
+
 ## First slice
 
 The iPad24 custom-controls revision uses a fullscreen editor with a uniformly
@@ -42,11 +51,12 @@ AVP sharing, with intermittent button releases still open. iPad25 changes the
 grid icon to one-tap Show/Hide Controls; long-press opens Edit Controls. The grid
 button stays available beside the restore button when the desktop toolbar is
 hidden. This does not add a physical keyboard shortcut or live image overlay.
-Candidate iPad26 moves naming to a native Cancel/Save popup independent of the
+Installed iPad26 moves naming to a native Cancel/Save popup independent of the
 resizing canvas. The Control inspector edits only Button label; Rename Layout
 is an explicit layout-menu action. Reassigning a key updates its generated
 name, while custom action labels remain; Use Key Name restores automatic names.
-The editor still saves only through its outer Done action.
+The editor still saves only through its outer Done action. The user accepted
+this naming revision on October9.
 
 Pencil sharing build 19 corrects the hover-to-contact timing epoch in the
 foreground pad. First build 18 / Vision 47 tests passed hover/right-click but

@@ -689,3 +689,28 @@ checks, sanitizer-backed crypto purpose/version/replay checks and a real TCP
 modifier-held pressure-stroke loopback passed. Physical simultaneous input and
 release acceptance are pending. No Host/network/dependency changes. Dimmed image
 overlay remains the next planned feature.
+
+## Build 27 local credential keyboard candidate — October 9
+
+After accepting iPad26's custom-control naming revision, the user reported that
+the workstation sign-in keyboard covered Username and Password. The login
+already uses normal SwiftUI keyboard avoidance: `hasActiveDesktopSession` is
+false during credential entry and authentication. The fields sit below the
+workstation controls and header, without explicit focus scrolling.
+
+Build27 keeps the existing local fields and adds focus-aware native scrolling
+after focus, viewport and keyboard-frame changes. Username's Next moves to
+Password; Password's Go submits the existing Sign In operation when filled and
+idle. Connect and authentication clear credential focus. Password clearing
+before the authentication request and on connection/background is preserved.
+This does not use the remote text responder or alter streaming input admission,
+the desktop keyboard viewport, protocol, Host or dependency pins.
+
+An isolated fixture with the actual production root and native docked keyboard
+passed portrait visibility. A controlled 400-point scroll viewport reproduced
+the clipping: the baseline password and Sign In were outside its visible area.
+With the correction, both credential fields and Sign In are visible. The
+reduced viewport is a layout experiment, not physical landscape acceptance;
+the Simulator could not supply a matching landscape system keyboard. Physical
+keyboard presentation, field progression and sign-in remain the targeted
+device gate for this candidate. No new pen, wheel or transport test is required.

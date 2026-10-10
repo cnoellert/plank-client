@@ -242,9 +242,11 @@ wire migration; generated names stay within the existing 40-character limit.
 
 The label/model checks cover copied controls, custom names, legacy glyphs,
 invalid bindings, unchanged geometry and every supported key/modifier name.
-Native keyboard/name presentation still needs targeted device acceptance; no
-new pen, wheel or transport qualification is implied. Intermittent real finger
-cancellation remains a separate open issue.
+The user accepted the installed iPad26 naming revision on October9: “Works
+really well.” This is targeted naming acceptance; no new pen, wheel or transport
+qualification is implied. Intermittent real finger cancellation remains a
+separate open issue. The subsequently reported credential-screen keyboard
+occlusion is a separate local login layout issue.
 
 The next image feature is separately planned in
 [live image and magnification](ipad-live-image.md): adjustable image intensity,
