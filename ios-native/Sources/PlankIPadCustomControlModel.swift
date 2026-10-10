@@ -94,6 +94,141 @@ func clampedPlacement(_ placement: PlankControlPlacement, in bounds: CGRect) -> 
     return next
 }
 
+/// Transient local chrome uses whole-window coordinates, just like saved keys.
+/// It never changes normalized anchors, the schema, or the remote pen viewport.
+struct PlankControlChromeGeometry: Equatable, Sendable {
+    let bounds: CGRect
+    let usableBounds: CGRect
+    let reservedRects: [CGRect]
+    init(bounds: CGRect, usableBounds: CGRect, reservedRects: [CGRect] = []) {
+        let window = Self.valid(bounds) ? bounds : .zero
+        self.bounds = window
+        let usable = Self.valid(usableBounds) ? usableBounds.intersection(window) : .zero
+        self.usableBounds = Self.valid(usable) ? usable : .zero
+        self.reservedRects = reservedRects.prefix(8).compactMap { frame in
+            guard Self.valid(frame) else { return nil }
+            let clipped = frame.intersection(window)
+            return Self.valid(clipped) ? clipped : nil
+        }
+    }
+    static func unrestricted(size: CGSize) -> Self {
+        let bounds = CGRect(origin:.zero,size:size)
+        return Self(bounds:bounds,usableBounds:bounds)
+    }
+    static func unmeasured(size: CGSize) -> Self {
+        Self(bounds:CGRect(origin:.zero,size:size),usableBounds:.zero)
+    }
+    static func valid(_ rect: CGRect) -> Bool {
+        !rect.isNull && rect.minX.isFinite && rect.minY.isFinite
+            && rect.width.isFinite && rect.height.isFinite && rect.width > 0 && rect.height > 0
+    }
+    var shadedRects: [CGRect] {
+        guard Self.valid(bounds) else { return [] }
+        guard Self.valid(usableBounds) else { return [bounds] }
+        return [CGRect(x:bounds.minX,y:bounds.minY,width:bounds.width,height:usableBounds.minY - bounds.minY),
+                CGRect(x:bounds.minX,y:usableBounds.maxY,width:bounds.width,height:bounds.maxY - usableBounds.maxY),
+                CGRect(x:bounds.minX,y:usableBounds.minY,width:usableBounds.minX - bounds.minX,height:usableBounds.height),
+                CGRect(x:usableBounds.maxX,y:usableBounds.minY,width:bounds.maxX - usableBounds.maxX,height:usableBounds.height)]
+            .filter(Self.valid) + reservedRects
+    }
+}
+
+/// Preserve touching/snapped clusters and intentional overlaps, moving them as
+/// one piece around local chrome. Separate groups never gain a new overlap.
+/// A group that cannot fit stays saved and editable; no key is scaled to fit.
+enum PlankControlPlacementResolver {
+    struct Resolution: Equatable, Sendable {
+        var frames: [UUID: CGRect]
+        var unavailableIDs: Set<UUID>
+    }
+    static func pointSizedFrame(_ placement: PlankControlPlacement,in bounds: CGRect) -> CGRect {
+        guard placement.isValid, PlankControlChromeGeometry.valid(bounds) else { return .zero }
+        let center = placement.frame(in:bounds)
+        return CGRect(x:center.midX - placement.width / 2,y:center.midY - placement.height / 2,
+                      width:placement.width,height:placement.height)
+    }
+    static func resolve(controls: [PlankCustomControl],landscape: Bool,
+                        chrome: PlankControlChromeGeometry,gutter: CGFloat = 6) -> Resolution {
+        let controls = Array(controls.prefix(PlankControlLayout.maximumControls))
+        let gap = gutter.isFinite ? max(0,gutter) : 6
+        let area = chrome.usableBounds.insetBy(dx:gap,dy:gap)
+        guard PlankControlChromeGeometry.valid(area) else {
+            return Resolution(frames:[:],unavailableIDs:Set(controls.map(\.id)))
+        }
+        let original = controls.map { pointSizedFrame($0.placement(landscape:landscape),in:chrome.bounds) }
+        var groups: [[Int]] = []
+        func intervalGap(_ a: ClosedRange<CGFloat>,_ b: ClosedRange<CGFloat>) -> CGFloat {
+            max(0,max(a.lowerBound,b.lowerBound) - min(a.upperBound,b.upperBound))
+        }
+        func connected(_ a: CGRect,_ b: CGRect) -> Bool {
+            guard PlankControlChromeGeometry.valid(a),PlankControlChromeGeometry.valid(b) else { return false }
+            let x = intervalGap(a.minX...a.maxX,b.minX...b.maxX)
+            let y = intervalGap(a.minY...a.maxY,b.minY...b.maxY)
+            return (x <= 0.000_001 && y <= gap + 0.000_001)
+                || (y <= 0.000_001 && x <= gap + 0.000_001)
+        }
+        for index in original.indices {
+            let joins = groups.indices.filter { groups[$0].contains { connected(original[index],original[$0]) } }
+            var group = [index]
+            for joined in joins.reversed() { group += groups.remove(at:joined) }
+            groups.append(group)
+        }
+        func union(_ group: [Int]) -> CGRect { group.reduce(CGRect.null) { $0.union(original[$1]) } }
+        groups.sort {
+            let a = union($0), b = union($1)
+            if abs(a.minY - b.minY) > 0.000_001 { return a.minY < b.minY }
+            if abs(a.minX - b.minX) > 0.000_001 { return a.minX < b.minX }
+            return $0.map { controls[$0].id.uuidString }.min()! < $1.map { controls[$0].id.uuidString }.min()!
+        }
+        var result = Resolution(frames:[:],unavailableIDs:[])
+        var occupied: [CGRect] = []
+        func intersects(_ a: CGRect,_ b: CGRect) -> Bool {
+            let intersection = a.intersection(b)
+            return !intersection.isNull && intersection.width > 0.000_001 && intersection.height > 0.000_001
+        }
+        for group in groups {
+            let frame = union(group)
+            let minX = area.minX - frame.minX, maxX = area.maxX - frame.maxX
+            let minY = area.minY - frame.minY, maxY = area.maxY - frame.maxY
+            guard PlankControlChromeGeometry.valid(frame),minX <= maxX,maxY >= minY else {
+                result.unavailableIDs.formUnion(group.map { controls[$0].id }); continue
+            }
+            let obstacles = (chrome.reservedRects + occupied).map { $0.insetBy(dx:-gap,dy:-gap) }
+            var x = [min(max(0,minX),maxX),minX,maxX]
+            var y = [min(max(0,minY),maxY),minY,maxY]
+            for obstacle in obstacles {
+                x += [obstacle.minX - frame.maxX,obstacle.maxX - frame.minX]
+                y += [obstacle.minY - frame.maxY,obstacle.maxY - frame.minY]
+            }
+            // At most32 control rectangles and8 chrome regions participate.
+            x = Array(Set(x.filter { $0.isFinite && $0 >= minX && $0 <= maxX })).sorted()
+            y = Array(Set(y.filter { $0.isFinite && $0 >= minY && $0 <= maxY })).sorted()
+            var candidates = x.flatMap { dx in y.map { CGPoint(x:dx,y:$0) } }
+            candidates.sort {
+                let a = $0.x * $0.x + $0.y * $0.y, b = $1.x * $1.x + $1.y * $1.y
+                if abs(a - b) > 0.000_001 { return a < b }
+                if abs($0.x) != abs($1.x) { return abs($0.x) < abs($1.x) }
+                if $0.y != $1.y { return $0.y < $1.y }
+                return $0.x < $1.x
+            }
+            let translation = candidates.first { delta in
+                group.allSatisfy { index in
+                    let moved = original[index].offsetBy(dx:delta.x,dy:delta.y)
+                    return obstacles.allSatisfy { !intersects(moved,$0) }
+                }
+            }
+            guard let translation else {
+                result.unavailableIDs.formUnion(group.map { controls[$0].id }); continue
+            }
+            for index in group {
+                let moved = original[index].offsetBy(dx:translation.x,dy:translation.y)
+                result.frames[controls[index].id] = moved; occupied.append(moved)
+            }
+        }
+        return result
+    }
+}
+
 /// Snapping is measured in actual surface points, independently of sheet scale.
 /// Only peers near the perpendicular span participate, preventing a distant row
 /// from pulling an unrelated key sideways.

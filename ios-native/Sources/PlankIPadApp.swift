@@ -49,17 +49,24 @@ struct PlankIPadRoot: View {
             else { idleScreen }
         }
         .background {
-            PlankIPadWindowMetrics { size,_ in
+            PlankIPadWindowMetrics { size,insets in
                 // Cache real window changes even while an editor covers idle
                 // content, so its next entry cannot reuse a stale orientation.
                 reportControlWindow(size)
+                if !hasWorkingSurface {
+                    reportControlChrome(PlankControlChromeGeometry(bounds:CGRect(origin:.zero,size:size),
+                        usableBounds:CGRect(x:insets.left,y:insets.top+44,
+                            width:max(0,size.width-insets.left-insets.right),
+                            height:max(0,size.height-insets.top-44-insets.bottom))))
+                }
             }
         }
         .ignoresSafeArea(.keyboard,edges:hasWorkingSurface ? .bottom : [])
         .preferredColorScheme(sharePencil ? .dark : nil)
         .statusBarHidden(hideBars)
-        .fullScreenCover(isPresented:$editingCustomControls) {
-            PlankIPadCustomControlsEditor(store:customControls,referenceSurfaceSize:controlWindowSize)
+        .fullScreenCover(isPresented:$editingCustomControls,onDismiss:customControlsEditorDismissed) {
+            PlankIPadCustomControlsEditor(store:customControls,referenceSurfaceSize:controlWindowSize,
+                surface:sharePencil ? .pencilSharing : .desktop)
                 .interactiveDismissDisabled()
         }
         .sheet(isPresented:$add) { PlankIPadBookmarkEditor(store:store,client:client,host:.init(name:"",address:"",spatialDisplaySize:PlankIPadDisplayOptions.defaultSize),isNew:true) }
@@ -78,9 +85,9 @@ struct PlankIPadRoot: View {
             updateAdmission()
         }
         .onChange(of:scenePhase) { _,phase in
-            // Sharing retains the old inactive stop boundary. Covering the
-            // pad with our editor/settings does not stop its consented peer.
-            if phase != .active && sharePencil { stopPencilSharing() }
+            // Transient inactivity retires input without discarding the
+            // approved peer. Actual backgrounding still ends foreground sharing.
+            if phase == .background && sharePencil { stopPencilSharing() }
             updateAdmission()
             if phase == .background { password = ""; disconnect() }
         }
@@ -140,7 +147,8 @@ struct PlankIPadRoot: View {
         }
     }
     private var workingSurface: some View {
-        PlankIPadWorkingSurface(barsVisible:!hideBars,measured:reportControlWindow) {
+        PlankIPadWorkingSurface(barsVisible:!hideBars,consentVisible:sharePencil && pencilRelay.verification != nil,
+            measured:reportControlWindow,chromeChanged:reportControlChrome) {
             if sharePencil {
                 PlankIPadPencilPad(relay:pencilRelay)
             } else {
@@ -228,6 +236,12 @@ struct PlankIPadRoot: View {
         customControls.reportSurface(size:size,surface:.desktop)
         customControls.reportSurface(size:size,surface:.pencilSharing)
     }
+    private func reportControlChrome(_ geometry: PlankControlChromeGeometry) {
+        // Editor and live keys use the same measured menu boundaries, including
+        // the compact controls shown when the main toolbar is hidden.
+        customControls.reportChrome(geometry,surface:.desktop)
+        customControls.reportChrome(geometry,surface:.pencilSharing)
+    }
     @ViewBuilder private func connection(_ host: HostBookmark) -> some View {
         if client.activeHostID == host.id {
             switch client.phase {
@@ -304,6 +318,15 @@ struct PlankIPadRoot: View {
         if sharePencil { pencilRelay.setAdjustingPad(true) } else { router.release() }
         editingCustomControls = true
     }
+    private func customControlsEditorDismissed() {
+        // Done and Cancel both return to the same live source. Restore after
+        // the cover has gone as well as when its presentation binding changes.
+        updateAdmission()
+        Task { @MainActor in
+            await Task.yield()
+            if router.enabled { router.surface?.resumeKeyboard() }
+        }
+    }
     private func selectCustomControlLayout(_ id: UUID) {
         guard id != customControls.library.selectedID,
               customControls.library.layouts.contains(where:{ $0.id == id }) else { return }
@@ -318,7 +341,7 @@ struct PlankIPadRoot: View {
         // the layout moves, while retaining this stream and its remote mode.
         if sharePencil { pencilRelay.setAdjustingPad(true) } else { router.release() }
         showToolbar = visible
-        if sharePencil { pencilRelay.setAdjustingPad(false) }
+        updateAdmission()
         Task { @MainActor in
             await Task.yield()
             if router.enabled { router.surface?.resumeKeyboard() }
@@ -333,7 +356,7 @@ struct PlankIPadRoot: View {
         // into local presentation after onChange, including editor dismissal.
         desktopControlsEnabled = router.enabled
         client.setTabletActive(foreground && client.hasActiveDesktopSession && !sharePencil)
-        if sharePencil { pencilRelay.setAdjustingPad(controls || editingCustomControls) }
+        if sharePencil { pencilRelay.setAdjustingPad(!foreground || controls || editingCustomControls) }
         PlankAudioOutput.shared.setSceneActive(foreground)
     }
 }

@@ -6,10 +6,11 @@ import CoreGraphics
         try modelChecks()
         labelChecks()
         geometryChecks()
+        chromeReservationChecks()
         ownershipChecks()
         failedAdmissionChecks()
         receiverChecks()
-        print("PASS custom controls: bounded saved layouts, legacy migration, independent Space size, reference/live preview parity, stable gutter/alignment/size snapping, anchored resizing, finite bindings, overlapping ownership, physical repeat, combo order, atomic rejection, fail-closed input epochs and stale-change protection")
+        print("PASS custom controls: bounded saved layouts, legacy migration, independent Space size, reference/live preview parity, translated snapped groups around measured chrome, explicit unavailable/recoverable fit, stable gutter/alignment/size snapping, anchored resizing, finite bindings, overlapping ownership, physical repeat, combo order, atomic rejection, fail-closed input epochs and stale-change protection")
     }
     private static func labelChecks() {
         let source = PlankControlLayout.defaults().controls.first { $0.binding.code == 0x20 }!
@@ -154,6 +155,99 @@ import CoreGraphics
         let longMoved = PlankControlSnap.move(placement:longKey,in:bounds,peers:[smallerPeer])
         precondition(longMoved.placement.width == 200 && longMoved.placement.height == 52,
                      "Moving a wide key beside a smaller key cannot resize either")
+    }
+    private static func chromeReservationChecks() {
+        let bounds = CGRect(x:0,y:0,width:1180,height:820)
+        func key(_ frame: CGRect) -> PlankCustomControl {
+            let placement = PlankControlPlacement(frame:frame,in:bounds)
+            return PlankCustomControl(id:UUID(),label:"Space",binding:.init(code:0x20),behavior:.hold,
+                                      portrait:placement,landscape:placement)
+        }
+        func overlaps(_ a: CGRect,_ b: CGRect) -> Bool {
+            let value = a.intersection(b)
+            return !value.isNull && value.width > 0.000_01 && value.height > 0.000_01
+        }
+        let keys = [key(CGRect(x:1000,y:6,width:160,height:52)),
+                    key(CGRect(x:1000,y:64,width:160,height:52)),
+                    key(CGRect(x:1000,y:122,width:160,height:52)),
+                    key(CGRect(x:1000,y:650,width:160,height:52)),
+                    key(CGRect(x:1000,y:708,width:160,height:52))]
+        let original = keys
+        let unknown = PlankControlChromeGeometry.unmeasured(size:bounds.size)
+        let unknownResult = PlankControlPlacementResolver.resolve(controls:keys,landscape:true,chrome:unknown)
+        precondition(unknown.usableBounds == .zero && unknownResult.frames.isEmpty
+            && unknownResult.unavailableIDs == Set(keys.map(\.id)),
+            "An orientation without a chrome measurement must not infer unrestricted placement")
+        let visible = PlankControlChromeGeometry(bounds:bounds,
+            usableBounds:CGRect(x:0,y:66,width:1180,height:734))
+        let floating = CGRect(x:1020,y:12,width:148,height:44)
+        let hidden = PlankControlChromeGeometry(bounds:bounds,
+            usableBounds:CGRect(x:0,y:0,width:1180,height:800),reservedRects:[floating])
+        for chrome in [visible,hidden] {
+            let resolved = PlankControlPlacementResolver.resolve(controls:keys,landscape:true,chrome:chrome)
+            precondition(resolved.unavailableIDs.isEmpty && resolved.frames.count == keys.count)
+            precondition(keys == original,"Passive reservation must not rewrite saved anchors or point sizes")
+            for control in keys {
+                let frame = resolved.frames[control.id]!
+                precondition(frame.width == control.landscape.width && frame.height == control.landscape.height)
+                precondition(chrome.usableBounds.contains(frame))
+                precondition(chrome.reservedRects.allSatisfy { !overlaps(frame,$0) },"No key may occupy actual chrome")
+            }
+            for pair in [(0,1),(1,2),(3,4)] {
+                precondition(abs(resolved.frames[keys[pair.1].id]!.minY - resolved.frames[keys[pair.0].id]!.maxY - 6) < 0.000_01,
+                             "Chrome translation must preserve the existing six-point snapped group")
+            }
+            precondition(resolved == PlankControlPlacementResolver.resolve(controls:Array(keys.reversed()),landscape:true,chrome:chrome),
+                         "Saved array order must not change deterministic chrome placement")
+            let geometry = PlankControlPreviewGeometry(referenceSize:bounds.size,availableSize:CGSize(width:700,height:500))
+            for frame in resolved.frames.values {
+                let preview = geometry.preview(frame:frame)
+                precondition(abs(preview.minX / geometry.scale - frame.minX) < 0.000_01
+                    && abs(preview.minY / geometry.scale - frame.minY) < 0.000_01,
+                    "Editor and live overlay resolve the same full-window frame before preview scaling")
+            }
+            // Only an explicit geometry edit adopts displayed positions into
+            // its draft, with the old raw arrangement kept for one-step Undo.
+            let undo = keys
+            var draft = keys
+            for index in draft.indices {
+                draft[index].landscape = PlankControlPlacement(frame:resolved.frames[draft[index].id]!,in:bounds)
+            }
+            precondition(draft.map(\.landscape.width) == keys.map(\.landscape.width))
+            precondition(PlankControlPlacementResolver.resolve(controls:draft,landscape:true,chrome:chrome) == resolved,
+                         "Materializing visible geometry cannot shift it again")
+            draft = undo
+            precondition(draft == original,"Undo/Cancel restores exact pre-edit raw anchors")
+        }
+        let consent = CGRect(x:310,y:80,width:560,height:180)
+        let consentChrome = PlankControlChromeGeometry(bounds:bounds,usableBounds:visible.usableBounds,reservedRects:[consent])
+        let center = key(CGRect(x:500,y:104,width:200,height:52))
+        let consentResult = PlankControlPlacementResolver.resolve(controls:[center],landscape:true,chrome:consentChrome)
+        precondition(consentResult.frames[center.id] != nil && !overlaps(consentResult.frames[center.id]!,consent),
+                     "Measured foreground consent stays clear without resizing keys")
+        let approved = PlankControlPlacementResolver.resolve(controls:[center],landscape:true,chrome:visible)
+        precondition(approved.frames[center.id] == center.landscape.frame(in:bounds),
+                     "Removing the consent obstacle restores the original safe placement")
+        let overlapping = [key(CGRect(x:1000,y:6,width:160,height:52)),key(CGRect(x:1050,y:24,width:100,height:52))]
+        let overlapResult = PlankControlPlacementResolver.resolve(controls:overlapping,landscape:true,chrome:visible)
+        let a = overlapResult.frames[overlapping[0].id]!, b = overlapResult.frames[overlapping[1].id]!
+        precondition(overlaps(a,b) && abs(b.minX - a.minX - 50) < 0.000_01 && abs(b.minY - a.minY - 18) < 0.000_01,
+                     "Intentional control overlap remains intact inside a translated group")
+        let tiny = PlankControlChromeGeometry(bounds:CGRect(x:0,y:0,width:200,height:150),
+            usableBounds:CGRect(x:0,y:66,width:200,height:64))
+        var large = key(CGRect(x:100,y:100,width:480,height:240))
+        let before = large
+        let unavailable = PlankControlPlacementResolver.resolve(controls:[large],landscape:true,chrome:tiny)
+        precondition(unavailable.frames.isEmpty && unavailable.unavailableIDs == [large.id] && large == before,
+                     "Impossible fit is explicit and never silently shrinks or deletes a saved control")
+        large.landscape.width = 100; large.landscape.height = 44
+        let recovered = PlankControlPlacementResolver.resolve(controls:[large],landscape:true,chrome:tiny)
+        precondition(recovered.unavailableIDs.isEmpty && recovered.frames[large.id]!.size == CGSize(width:100,height:44),
+                     "The unavailable saved control can recover through an explicit editor size change")
+        let invalid = PlankControlChromeGeometry(bounds:bounds,usableBounds:CGRect(x:CGFloat.nan,y:0,width:100,height:100),
+                                                 reservedRects:[.null,CGRect(x:0,y:0,width:CGFloat.infinity,height:44)])
+        precondition(PlankControlPlacementResolver.resolve(controls:keys,landscape:true,chrome:invalid).unavailableIDs.count == keys.count)
+        precondition(invalid.reservedRects.isEmpty)
     }
     private static func modelChecks() throws {
         // The accepted mapping table is the authority for the assignable catalog.

@@ -4,6 +4,11 @@ October10, 2026: the user accepted the installed iPad31 editor refinement and
 requested publication of the completed development work. This checkpoint is
 for review; it does not change the shipping platform matrix or release packages.
 
+Subsequent feedback found menu overlap and remote Pencil interruption on editor
+entry. The local iPad32 correction is in preparation; its targeted device check
+is separate from the accepted iPad31 inspector gestures. See
+[the current controls boundary](ipad-custom-controls.md#menu-protection-and-editor-continuity--ipad32).
+
 ## Review order
 
 The accepted upstream Apple/Mac foundation is
@@ -12,7 +17,8 @@ display/wheel changes remain separate dependent reviews:
 
 1. [Mac sharing](https://github.com/cnoellert/plank-client/pull/11).
 2. [Mac displays and wheel](https://github.com/cnoellert/plank-client/pull/12).
-3. `codex/ios-ipados-readiness`, based on `codex/native-mac-displays`.
+3. [iPad and Pencil controls](https://github.com/cnoellert/plank-client/pull/13),
+   `codex/ios-ipados-readiness`, based on `codex/native-mac-displays`.
 
 The iPad branch was rebased onto the accepted upstream foundation during
 development. Publication also merges the original display review tip

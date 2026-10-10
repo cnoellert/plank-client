@@ -46,7 +46,10 @@ input paths. Layout geometry must not alter remote coordinate mapping.
   undo for edits. Saved layouts are shared between client and Pencil sharing.
 - **Edit** works on a draft. Entering editing releases active controls and
   ends drawing contact. Done saves; Cancel leaves the previous layout intact.
-  Working mode fixes control positions and shows held states.
+  Editing pauses drawing while retaining the approved foreground sharing peer
+  and desktop session. Done and Cancel restore input admission to that source.
+  Actual app backgrounding stops foreground sharing. Working mode fixes
+  control positions and shows held states.
 - Finger and accessibility input can use controls. Pencil never activates a
   shortcut control. A finger hold survives movement outside the key until lift
   or genuine cancellation. Provide accessible labels, held-state announcements
@@ -445,3 +448,32 @@ physical check was empty-space dismissal, control-tap reopening, and unobstructe
 move/resize in the editor. The user accepted it on October10: “Perfect.”
 Accepted30 shortcuts and previous input, layout and
 sharing qualification are carried forward.
+
+## Menu protection and editor continuity — iPad32
+
+After the inspector check, the user reported two separate gaps: artist keys
+could overlap menu controls, and entering the editor could drop remote Pencil
+input until reconnection. The iPad32 candidate addresses these local boundaries;
+the new physical check remains pending.
+
+Editor and live keys use one measured full-window placement policy. The visible
+toolbar, safe edges, compact toolbar controls and first-use consent panel are
+reserved. Existing point sizes remain unchanged. Touching or snapped groups
+translate together when possible; a group that cannot fit is marked **Needs
+room** in the editor and is unavailable for live input until made smaller or
+repositioned. Passive resolution does not rewrite the saved library. An explicit
+geometry edit first captures Undo and materializes the currently displayed
+positions in the local draft, so moving a translated key does not jump its
+neighbors. Cancel preserves the saved arrangement. An orientation without a
+matching menu measurement is unavailable for live keys; the editor asks the
+artist to rotate the iPad to preview its menu clearance. Preview content is
+clipped inside the preview, and consent reservations end when the panel closes.
+
+Transient scene inactivity now retires input without closing the approved
+sharing peer. Input remains paused while inactive or editing; both Done and
+Cancel restore admission after dismissal. Backgrounding still stops sharing,
+and genuine transport refusal or loss still follows the existing failure path.
+The earlier code stopped sharing for every inactive scene. Whether the physical
+editor transition triggered that scene event was not captured, so the reported
+disconnect's precise device cause is not claimed. No receiver, Host, identity,
+approval, network or dependency change is part of this candidate.
