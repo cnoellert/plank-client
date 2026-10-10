@@ -441,6 +441,7 @@ because the update closes the iPad app.
 The user confirmed disconnection on October10. Build31 was installed as an
 update and opened; independent inventories verify version31 and its exact
 running executable. Signed build30 remains available for rollback. The next
-physical check is empty-space dismissal, control-tap reopening, and unobstructed
-move/resize in the editor. Accepted30 shortcuts and previous input, layout and
+physical check was empty-space dismissal, control-tap reopening, and unobstructed
+move/resize in the editor. The user accepted it on October10: “Perfect.”
+Accepted30 shortcuts and previous input, layout and
 sharing qualification are carried forward.

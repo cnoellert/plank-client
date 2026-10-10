@@ -4,6 +4,11 @@ Audit date: 2026-10-08. Status: input probe partially accepted; single-display
 iPad Client has targeted playback, mouse, keyboard and resolution-switching
 acceptance, not production qualification.
 
+The audit and build notes below are historical. The October10 accepted iPad31,
+Vision49 and staged Mac26 state is summarized in the
+[current checkpoint](ipad-client-checkpoint.md), including Pencil sharing,
+saved artist controls and their separate remaining qualification gates.
+
 ## Recommended order
 
 Start with an iPad input probe for Apple Pencil, then a native single-display

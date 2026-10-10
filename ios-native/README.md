@@ -5,6 +5,22 @@ existing native session/media services at their current source paths. Shipping
 Mac and Vision app identities and targets are unchanged. iPadOS 26 and Apple
 Silicon device/simulator are the initial compile scope, not a final OS matrix.
 
+## Current accepted development checkpoint — October 10
+
+Installed iPad31 is the accepted editor checkpoint, with compatible Vision49
+installed and Mac26 signed/staged for separate device qualification. The pilot
+supports direct remote playback/input and foreground Apple Pencil sharing from
+the normal client screen, plus one saved artist-control library in both modes.
+Layouts, bindings, labels, button sizes and positions are editable; the toolbar
+offers quick layout selection, touch-and-hold editing, visibility and global
+transparency. Empty editor space hides the inspector; a control tap reopens it,
+and moving or resizing clears it out of the way.
+
+See [the current checkpoint and review handoff](../docs/development/ipad-client-checkpoint.md)
+for exact runtime revisions, accepted tests and remaining gates. Earlier build
+sections below retain the development history and are superseded by that record.
+Live image overlays and magnification remain planned separately.
+
 ## Current keyboard behavior — build 17
 
 The keyboard icon opens UIKit's native keyboard and sends typing directly to
