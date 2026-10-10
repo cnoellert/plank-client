@@ -395,3 +395,29 @@ and launched; independent app and process inventories verify version30 and its
 exact running executable. Signed build29 remains available for rollback. The
 new physical tap chooser and touch-and-hold editor check is next; accepted
 build29 placement/menu and previous input qualification are carried forward.
+
+The user accepted the installed build30 layout shortcut on October10:
+“Working well.” Its targeted chooser/editor check is resolved. The next editor
+refinement is dismissing the selected control inspector on empty-space taps
+and while moving/resizing, with normal control taps reopening it. This does
+not reopen accepted input, layout placement or sharing qualification.
+
+## Inspector dismissal and reopening — iPad31
+
+Tapping empty editor space clears the selected control and hides its inspector.
+Tapping a control selects it and reopens its inspector. The explicit close
+button retains the selection, so the control and its resize handles remain
+available. Beginning a move or corner resize hides the inspector without
+clearing that gesture or changing the selected control.
+
+Only background fill siblings recognize empty-space taps. Foreground controls,
+resize handles and inspector widgets keep their own touch priority. In the
+narrow inspector sheet, Done or swipe dismissal synchronizes the hidden state;
+the selected control or its inspector button can reopen it. Inspector toggles
+expose their current Show/Hide state to accessibility.
+
+Dismissal changes transient editor presentation only. Draft layouts, naming,
+undo history, bindings and saved point sizes are retained. Actual placement or
+resize edits continue through the existing snapping and undo paths. Live artist
+controls, layout shortcuts, input admission and sharing transport are unchanged.
+The new dismissal/reopening gestures require their own device check.

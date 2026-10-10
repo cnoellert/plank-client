@@ -651,6 +651,7 @@ struct PlankIPadCustomControlsEditor: View {
         selectedLayout.controls.first(where:{ $0.id == selectedControlID })
     }
     private var usesSheetInspector: Bool { previewGeometry(in:canvasSize).previewFrame.width < 620 }
+    private var inspectorPresented: Bool { usesSheetInspector ? narrowInspector : inspectorVisible }
     var body: some View {
         NavigationStack {
             VStack(spacing:0) {
@@ -658,6 +659,8 @@ struct PlankIPadCustomControlsEditor: View {
                 GeometryReader { geometry in
                     ZStack(alignment:.topLeading) {
                         Color(white:0.035)
+                            .contentShape(Rectangle())
+                            .onTapGesture(perform:deselectControl)
                         canvas(in:geometry.size)
                     }
                     .clipped()
@@ -681,12 +684,12 @@ struct PlankIPadCustomControlsEditor: View {
                         .disabled(!draft.isValid)
                 }
             }
-            .sheet(isPresented:$narrowInspector) {
+            .sheet(isPresented:$narrowInspector,onDismiss:hideControlInspector) {
                 NavigationStack {
                     inspector
                     .navigationTitle("Control")
                     .navigationBarTitleDisplayMode(.inline)
-                    .toolbar { ToolbarItem(placement:.confirmationAction) { Button("Done") { narrowInspector = false } } }
+                    .toolbar { ToolbarItem(placement:.confirmationAction) { Button("Done",action:hideControlInspector) } }
                 }
                 .alert(nameTitle,isPresented:namePresentation(fromInspector:true),presenting:nameTarget) { target in
                     nameActions(for:target)
@@ -766,6 +769,11 @@ struct PlankIPadCustomControlsEditor: View {
             RoundedRectangle(cornerRadius:16)
                 .fill(Color(white:0.045))
                 .overlay { RoundedRectangle(cornerRadius:16).stroke(Color.white.opacity(0.10),lineWidth:1) }
+                // A sibling background owns empty-space taps. Controls,
+                // resize handles and the foreground inspector keep their own
+                // gestures instead of competing with an ancestor recognizer.
+                .contentShape(Rectangle())
+                .onTapGesture(perform:deselectControl)
             if selectedLayout.controls.isEmpty {
                 VStack(spacing:12) {
                     Image(systemName:"hand.tap").font(.largeTitle).foregroundStyle(.secondary)
@@ -808,7 +816,8 @@ struct PlankIPadCustomControlsEditor: View {
                 .font(.body).frame(width:44,height:44)
                 .background(.regularMaterial,in:Circle())
                 .position(inspectorToggleCenter(beside:frame,bounds:bounds))
-                .accessibilityLabel("Show control inspector")
+                .accessibilityLabel(inspectorPresented ? "Hide control inspector" : "Show control inspector")
+                .accessibilityValue(inspectorPresented ? "Visible" : "Hidden")
             }
         }
         .frame(width:canvas.width,height:canvas.height)
@@ -873,7 +882,10 @@ struct PlankIPadCustomControlsEditor: View {
             .frame(width:44,height:44).contentShape(Rectangle())
             .highPriorityGesture(DragGesture(minimumDistance:0,coordinateSpace:.named("plank-custom-controls-editor-canvas"))
                 .onChanged { value in
-                    if resizeStart == nil { remember(); resizeStart = control.placement(landscape:editingLandscape) }
+                    if resizeStart == nil {
+                        remember(); hideControlInspector()
+                        resizeStart = control.placement(landscape:editingLandscape)
+                    }
                     guard let original = resizeStart else { return }
                     let bounds = geometry.referenceBounds
                     let result = PlankControlSnap.resize(original:original,corner:corner,
@@ -897,7 +909,10 @@ struct PlankIPadCustomControlsEditor: View {
                     Text("Control").font(.headline)
                     Spacer()
                     if !usesSheetInspector {
-                        Button { inspectorVisible = false } label: { Image(systemName:"xmark.circle.fill").foregroundStyle(.secondary) }
+                        Button(action:hideControlInspector) {
+                            Image(systemName:"xmark.circle.fill").foregroundStyle(.secondary)
+                                .frame(width:44,height:44)
+                        }
                             .accessibilityLabel("Hide inspector")
                     }
                 }
@@ -1064,7 +1079,16 @@ struct PlankIPadCustomControlsEditor: View {
         if showInspector {
             inspectorVisible = true
             if usesSheetInspector { narrowInspector = true }
-        }
+        } else { hideControlInspector() }
+    }
+    private func hideControlInspector() {
+        inspectorVisible = false
+        narrowInspector = false
+    }
+    private func deselectControl() {
+        selectedControlID = nil
+        hideControlInspector()
+        dragStart = nil; resizeStart = nil; snapGuides = []
     }
     private func remember() {
         if history.last != draft { history.append(draft) }
