@@ -5,8 +5,9 @@ requested publication of the completed development work. This checkpoint is
 for review; it does not change the shipping platform matrix or release packages.
 
 Subsequent feedback found menu overlap and remote Pencil interruption on editor
-entry. The local iPad32 correction is in preparation; its targeted device check
-is separate from the accepted iPad31 inspector gestures. See
+entry. The local iPad32 correction is freshly compiled, signed and staged;
+its targeted device check is pending and separate from the accepted iPad31
+inspector gestures. See
 [the current controls boundary](ipad-custom-controls.md#menu-protection-and-editor-continuity--ipad32).
 
 ## Review order
@@ -31,12 +32,14 @@ Retarget these slices upstream in dependency order after their bases are accepte
 
 | Target | Compiled runtime source | State |
 | --- | --- | --- |
+| iPad32 | `387d0d73ebbbc03fe3aa6506eaa63c3cee5bb83b` | Signed and staged; menu-clearance and editor-continuity device check pending |
 | iPad31 | `1a788801d8e48ebb3498e3c029ddee2d44afe227` | Signed, installed, exact running executable independently verified; targeted editor acceptance recorded |
 | Vision49 | `0a71d0c0cef026e74844dde495e186f799b32068` | Signed and installation verified; subsequent Pencil sharing accepted by the user |
 | Mac26 | `0a71d0c0cef026e74844dde495e186f799b32068` | Signed and staged; physical Pencil reception pending |
 
-Later publication commits record history and documentation only. Signed iPad30
-is retained for rollback. The public recipe and dependency pins are unchanged
+The original iPad31 publication recorded history and documentation only.
+iPad32 contains the subsequent local menu/admission correction; signed iPad31
+is retained for its rollback. Signed iPad30 is also retained. The public recipe and dependency pins are unchanged
 from the compiled candidates; no Host, network or app identity change accompanies
 publication. Private signing profiles, device receipts and logs are excluded.
 
@@ -84,6 +87,20 @@ move/resize and one-step undo restoration. Its 77 protected source boundaries
 and complete non-editor controls body match accepted30. Simulator injected
 gestures do not establish physical Pencil or Host receipt; narrow-sheet swipe
 was source reviewed only.
+
+The iPad32 pure geometry checks passed menu exclusion, grouped translation,
+unchanged point sizes, recoverable unavailable controls and exact Undo of
+explicit draft geometry edits. Four focused native simulator cases passed
+production-root admission through actual editor Done/Cancel, injected inactive
+and background transitions, and genuine offer refusal. An authenticated loopback
+peer remains approved across editing and admits a fresh stroke after resumption.
+Actual visible/compact toolbar and consent rectangles match cached/editor
+geometry and live control frames; the consent reservation clears after approval.
+A preinstallation check caught and corrected an older Environment snapshot
+reopening input during inactive dismissal. The corrected runtime was freshly
+rebuilt and signed; the earlier candidate was never installed. Injected scene
+events and simulated contacts do not establish the reported physical cause or
+final Host receipt. The targeted physical iPad32 check remains pending.
 
 ## Separate remaining work
 

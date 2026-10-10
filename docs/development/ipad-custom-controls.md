@@ -479,3 +479,18 @@ The earlier code stopped sharing for every inactive scene. Whether the physical
 editor transition triggered that scene event was not captured, so the reported
 disconnect's precise device cause is not claimed. No receiver, Host, identity,
 approval, network or dependency change is part of this candidate.
+
+The corrected runtime `387d0d73` passed focused pure geometry checks and four
+native simulator cases. The native fixture observes the production root,
+editor, pad, publisher, peer, working surface and control views: actual menus
+exclude live keys and match the store's geometry, consent reservations clear,
+and Done/Cancel retain the approved loopback peer. Inactive dismissal stays
+paused; a new active event resumes input and accepts a fresh stroke. Background
+still stops the source, and genuine offer refusal remains a failure.
+
+These are controlled simulator events and contacts, with the direct router and
+remote Host stubbed. They do not establish the physical editor-disconnect cause,
+real OS interruption matrix or final Host release. The corrected iPad32 device
+target was freshly compiled, signed and independently verified; signed iPad31
+is retained for rollback. Build32 is staged, not installed, and its menu-clearance
+and editor-continuity physical check remains pending.
