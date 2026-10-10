@@ -374,3 +374,18 @@ admission. Selecting the current layout does nothing. The desktop session or
 approved sharing peer remains connected. Saved layouts, point sizes, mapping,
 opacity, input transport and receiver builds remain unchanged. Device tap and
 touch-and-hold acceptance are separate from compilation and component checks.
+
+Bounded native simulator checks exercise layout choice, the selected mark,
+retirement before publishing new bindings, peer retention, and editor entry in
+both working modes with visible or hidden local chrome. The idle chooser caught
+a presentation conflict: dismissing the popover and opening the editor in the
+same transaction could leave the idle screen visible. Editor entry now waits
+for chooser disappearance and a new main-actor transaction. Native replay
+confirms a visible editor with usable Cancel; ordinary dismissal and choosing
+the current layout never queue editing.
+
+These checks use production root/components with stubbed transport and seeded
+contacts. Native simulator taps and presses do not establish physical-device
+gestures, VoiceOver custom actions or workstation receipt. The corrected build30
+was freshly compiled and signed with the unchanged dependencies; signed build29
+is retained for rollback. Build30 is staged, not installed at this checkpoint.
