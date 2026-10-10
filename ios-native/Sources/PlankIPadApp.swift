@@ -128,11 +128,11 @@ struct PlankIPadRoot: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItemGroup(placement:.topBarTrailing) {
+                    PlankIPadControlLayoutsButton(store:customControls,select:selectCustomControlLayout,edit:editCustomControls)
+                        .disabled(busy)
                     Menu {
                         Button { startPencilSharing() } label: { Label("Share Apple Pencil",systemImage:"pencil.tip.crop.circle") }
                             .disabled(busy || scenePhase != .active)
-                        Button { editingCustomControls = true } label: { Label("Edit Controls",systemImage:"rectangle.grid.2x2") }
-                            .disabled(busy)
                     } label: { Label("Client Options",systemImage:"slider.horizontal.3") }
                     Button { add = true } label: { Label("Add Workstation",systemImage:"plus") }.disabled(busy)
                 }
@@ -181,7 +181,9 @@ struct PlankIPadRoot: View {
         } floating: {
             HStack(spacing:8) {
                 PlankIPadControlsVisibilityButton(store:customControls,visible:showingCustomControls,
-                    toggle:toggleCustomControls,edit:editCustomControls)
+                    toggle:toggleCustomControls)
+                    .background(.regularMaterial,in:Circle())
+                PlankIPadControlLayoutsButton(store:customControls,select:selectCustomControlLayout,edit:editCustomControls)
                     .background(.regularMaterial,in:Circle())
                 Button { setToolbarVisible(true) } label: {
                     Image(systemName:"chevron.down").frame(width:44,height:44)
@@ -210,7 +212,8 @@ struct PlankIPadRoot: View {
             }
                 .labelStyle(.iconOnly).frame(minWidth:44,minHeight:44)
             PlankIPadControlsVisibilityButton(store:customControls,visible:showingCustomControls,
-                toggle:toggleCustomControls,edit:editCustomControls)
+                toggle:toggleCustomControls)
+            PlankIPadControlLayoutsButton(store:customControls,select:selectCustomControlLayout,edit:editCustomControls)
             Button { setToolbarVisible(false) } label: { Label("Hide Toolbar",systemImage:"chevron.up") }
                 .labelStyle(.iconOnly).frame(minWidth:44,minHeight:44)
             if sharePencil { Button("Stop Sharing",action:stopPencilSharing).frame(minHeight:44) }
@@ -300,6 +303,15 @@ struct PlankIPadRoot: View {
     private func editCustomControls() {
         if sharePencil { pencilRelay.setAdjustingPad(true) } else { router.release() }
         editingCustomControls = true
+    }
+    private func selectCustomControlLayout(_ id: UUID) {
+        guard id != customControls.library.selectedID,
+              customControls.library.layouts.contains(where:{ $0.id == id }) else { return }
+        // Retire the current source before publishing different bindings. The
+        // stream/approved peer stays connected; existing admission is restored.
+        if sharePencil { pencilRelay.setAdjustingPad(true) } else { router.release() }
+        customControls.select(id:id)
+        updateAdmission()
     }
     private func setToolbarVisible(_ visible: Bool) {
         // A local control changes the canvas bounds. Retire held input before

@@ -349,5 +349,28 @@ iPad29 was freshly compiled, signed and installed as an update on October9
 after explicit disconnected authorization. Independent inventories verify
 the exact build29 application and running executable. A read-only preferences
 comparison confirms the saved control library is semantically unchanged.
-Physical placement/menu acceptance is now requested; component verification
-does not establish that device gate.
+The user accepted the installed build29 layout and menu flow: “That's looking
+great. Functionality is there. Super quick and easy.” This resolves the targeted
+saved-layout placement and client-screen sharing check. Actual OS rotation and
+final Host release receipt remain separate; they are not inferred from this
+acceptance.
+
+## Quick layout access — iPad30
+
+A dedicated stack button opens the saved layout chooser on tap. The selected
+layout is marked; choosing another applies it immediately. Touch and hold
+offers **Edit Layouts**, which opens the existing editor. The chooser also
+includes that action for discoverability, and accessibility exposes the current
+layout name and a named edit action.
+
+This button is available in Desktop and Pencil Sharing, including the floating
+controls when the local toolbar is hidden, and on the idle client toolbar.
+The grid button continues to show or hide artist controls; its appearance menu
+retains **Transparency**. Layout editing now belongs to the layout button.
+
+Selecting a different valid layout retires the active source's held keys and
+pen contact before publishing the new bindings, then restores existing input
+admission. Selecting the current layout does nothing. The desktop session or
+approved sharing peer remains connected. Saved layouts, point sizes, mapping,
+opacity, input transport and receiver builds remain unchanged. Device tap and
+touch-and-hold acceptance are separate from compilation and component checks.

@@ -3,12 +3,11 @@ import UIKit
 
 enum PlankIPadControlSurface: Hashable { case desktop, pencilSharing }
 
-/// Fast local visibility control; the editor remains in its native context menu.
+/// Fast local visibility control with shared appearance options.
 struct PlankIPadControlsVisibilityButton: View {
     @ObservedObject var store: PlankIPadCustomControlsStore
     let visible: Bool
     let toggle: () -> Void
-    let edit: () -> Void
     @State private var showingTransparency = false
     var body: some View {
         Button(action:toggle) {
@@ -20,10 +19,8 @@ struct PlankIPadControlsVisibilityButton: View {
         .accessibilityLabel(visible ? "Hide artist controls" : "Show artist controls")
         .accessibilityValue(visible ? "Visible" : "Hidden")
         .contextMenu {
-            Button("Edit Controls…",systemImage:"pencil",action:edit)
             Button("Transparency…",systemImage:"circle.lefthalf.filled") { showingTransparency = true }
         }
-        .accessibilityAction(named:Text("Edit controls"),edit)
         .accessibilityAction(named:Text("Controls transparency")) { showingTransparency = true }
         .popover(isPresented:$showingTransparency) {
             VStack(alignment:.leading,spacing:16) {
@@ -47,6 +44,65 @@ struct PlankIPadControlsVisibilityButton: View {
             .padding().frame(width:300)
             .presentationCompactAdaptation(.popover)
         }
+    }
+}
+
+/// Tap to choose a saved layout; native touch-and-hold opens the editor action.
+/// A Button/popover keeps layout selection separate from the context menu.
+struct PlankIPadControlLayoutsButton: View {
+    @ObservedObject var store: PlankIPadCustomControlsStore
+    let select: (UUID) -> Void
+    let edit: () -> Void
+    @State private var showingLayouts = false
+    var body: some View {
+        Button { showingLayouts = true } label: {
+            Label("Layouts",systemImage:"rectangle.stack")
+                .labelStyle(.iconOnly).frame(minWidth:44,minHeight:44)
+        }
+        .accessibilityLabel("Layouts")
+        .accessibilityValue(store.selectedLayout.name)
+        .accessibilityHint("Choose a saved layout. Touch and hold to edit layouts.")
+        .contextMenu { Button("Edit Layouts…",systemImage:"pencil",action:openEditor) }
+        .accessibilityAction(named:Text("Edit layouts"),openEditor)
+        .popover(isPresented:$showingLayouts) {
+            VStack(alignment:.leading,spacing:12) {
+                HStack {
+                    Text("Layouts").font(.headline)
+                    Spacer()
+                    Button("Done") { showingLayouts = false }
+                }
+                ScrollView {
+                    VStack(spacing:0) {
+                        ForEach(store.library.layouts) { layout in
+                            Button {
+                                showingLayouts = false
+                                select(layout.id)
+                            } label: {
+                                HStack {
+                                    Text(layout.name).lineLimit(2)
+                                    Spacer()
+                                    Image(systemName:"checkmark")
+                                        .opacity(layout.id == store.library.selectedID ? 1 : 0)
+                                }.frame(maxWidth:.infinity,minHeight:44,alignment:.leading)
+                                    .contentShape(Rectangle())
+                            }
+                            .accessibilityLabel(layout.name)
+                            .accessibilityValue(layout.id == store.library.selectedID ? "Selected" : "")
+                            .accessibilityAddTraits(layout.id == store.library.selectedID ? .isSelected : [])
+                        }
+                    }
+                }.frame(maxHeight:352)
+                Divider()
+                Button("Edit Layouts…",systemImage:"pencil",action:openEditor)
+                    .frame(minHeight:44)
+            }
+            .padding().frame(width:300)
+            .presentationCompactAdaptation(.popover)
+        }
+    }
+    private func openEditor() {
+        showingLayouts = false
+        edit()
     }
 }
 
