@@ -54,6 +54,7 @@ struct PlankIPadControlLayoutsButton: View {
     let select: (UUID) -> Void
     let edit: () -> Void
     @State private var showingLayouts = false
+    @State private var pendingEditor = false
     var body: some View {
         Button { showingLayouts = true } label: {
             Label("Layouts",systemImage:"rectangle.stack")
@@ -98,11 +99,24 @@ struct PlankIPadControlLayoutsButton: View {
             }
             .padding().frame(width:300)
             .presentationCompactAdaptation(.popover)
+            .onDisappear(perform:completeEditorRequest)
         }
     }
     private func openEditor() {
-        showingLayouts = false
-        edit()
+        if showingLayouts {
+            // The chooser and editor must not compete in one presentation
+            // transaction, especially from the idle navigation toolbar.
+            pendingEditor = true
+            showingLayouts = false
+        } else { edit() }
+    }
+    private func completeEditorRequest() {
+        guard pendingEditor else { return }
+        pendingEditor = false
+        Task { @MainActor in
+            await Task.yield()
+            edit()
+        }
     }
 }
 
