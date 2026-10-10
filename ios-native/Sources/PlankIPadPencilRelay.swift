@@ -70,7 +70,7 @@ import UIKit
             }
             listener.stateUpdateHandler = { [weak self] state in Task { @MainActor in
                 guard let self, self.generation == current else { return }
-                if case .ready = state { self.status = "On the headset, choose this iPad in PLANK Settings → Apple Pencil." }
+                if case .ready = state { self.status = "On the PLANK client, choose this iPad in Settings → Apple Pencil." }
                 if case .failed = state { self.stop(); self.status = "Pencil sharing could not start. Check local network access." }
             } }
             listener.start(queue:.main)
@@ -85,18 +85,18 @@ import UIKit
                     guard let self, self.generation == current, self.peerID == id else { return }
                     switch event {
                     case let .verification(code):
-                        self.verification = code; self.status = "Compare this code with PLANK on your headset before approving."
-                    case .ready: self.verification = nil; self.status = "Headset approved. Waiting for an active desktop."
+                        self.verification = code; self.status = "Compare this code with the PLANK client before approving."
+                    case .ready: self.verification = nil; self.status = "Client approved. Waiting for an active desktop."
                     case .messagesAvailable: self.drain()
                     case let .ended(reason):
                         self.retireInput(); self.peer = nil; self.active = false
                         self.listener?.newConnectionLimit = 1
-                        self.verification = nil; self.status = reason + ". Select this iPad again on the headset."
+                        self.verification = nil; self.status = reason + ". Select this iPad again in the PLANK client."
                     }
                 }
             }
             peer = next; next.start()
-        } catch { connection.cancel(); listener?.newConnectionLimit = 1; status = "Could not verify headset identity." }
+        } catch { connection.cancel(); listener?.newConnectionLimit = 1; status = "Could not verify client identity." }
     }
     private func drain() {
         guard let peer else { return }
@@ -105,12 +105,12 @@ import UIKit
                 guard case let .configuration(w,h,next) = message else { throw PlankPencilWireError.invalid }
                 // Retire the old contact before the pad mapping/admission changes.
                 retireInput(); width = Int(w); height = Int(h); active = next
-                status = next ? "Connected. Draw in the outlined area." : "Connected. Bring the PLANK desktop into focus on your headset."
+                status = next ? "Connected. Draw in the outlined area." : "Connected. Bring the PLANK desktop into focus on the client."
                 pad?.setNeedsLayout()
             }
         } catch { peer.close(); status = "Pencil connection ended." }
     }
-    func approve() { guard verification != nil else { return }; verification = nil; peer?.approve(); status = "Verifying headset…" }
+    func approve() { guard verification != nil else { return }; verification = nil; peer?.approve(); status = "Verifying client…" }
     func send(_ packet: PlankNormalizedPen) {
         guard let peer else { return }
         if !peer.offer(.pen(packet)) { peer.close(); active = false }
@@ -137,36 +137,37 @@ struct PlankIPadPencilRelayView: View {
     @State private var editingControls = false
     var body: some View {
         NavigationStack {
-            VStack(spacing:16) {
-                Text(relay.status).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.horizontal)
-                if let code = relay.verification {
-                    Text(code).font(.title.monospaced().bold())
-                    HStack {
-                        Button("Reject",role:.cancel) { relay.stop() }
-                        Button("Codes Match — Approve Headset") { relay.approve() }.buttonStyle(.borderedProminent)
+            GeometryReader { geometry in
+                ZStack {
+                    // Chrome reserves only the Pencil pad's space. Artist
+                    // controls keep the whole client surface, like Desktop.
+                    VStack(spacing:16) {
+                        sharingHeader.hidden()
+                        PlankIPadPencilPad(relay:relay).background(.black)
+                            .clipShape(RoundedRectangle(cornerRadius:16)).padding()
+                        sharingFooter.hidden()
+                    }
+                    if showingControls {
+                        PlankIPadCustomControlsOverlay(store:customControls,enabled:relay.canDraw,
+                            begin:relay.beginControl,end:relay.endControl,tap:relay.tapControl,release:relay.releaseControls,
+                            inputEpoch:relay.inputEpoch,
+                            pencilSurface:{ relay.pad },pencilHover:{ relay.pad?.controlPencilHover($0) },
+                            pencilSqueeze:{ relay.pad?.controlPencilSqueeze($0,from:$1) })
+                            .frame(width:geometry.size.width,height:geometry.size.height)
+                    }
+                    // Approval and help stay in front of artist controls.
+                    // The transparent middle passes through to controls/pad.
+                    VStack(spacing:16) {
+                        sharingHeader
+                        Spacer(minLength:0).allowsHitTesting(false)
+                        sharingFooter
                     }
                 }
-                PlankIPadPencilPad(relay:relay).background(.black)
-                    .overlay {
-                        GeometryReader { geometry in
-                            if showingControls {
-                                PlankIPadCustomControlsOverlay(store:customControls,enabled:relay.canDraw,
-                                    begin:relay.beginControl,end:relay.endControl,tap:relay.tapControl,release:relay.releaseControls,
-                                    inputEpoch:relay.inputEpoch,
-                                    pencilSurface:{ relay.pad },pencilHover:{ relay.pad?.controlPencilHover($0) },
-                                    pencilSqueeze:{ relay.pad?.controlPencilSqueeze($0,from:$1) })
-                                    .frame(width:geometry.size.width,height:geometry.size.height)
-                            }
-                            Color.clear
-                                .allowsHitTesting(false)
-                                .onAppear { customControls.reportSurface(size:geometry.size,surface:.pencilSharing) }
-                                .onChange(of:geometry.size) { _, size in
-                                    if !editingControls && !showingOptions { customControls.reportSurface(size:size,surface:.pencilSharing) }
-                                }
-                        }
-                    }.clipShape(RoundedRectangle(cornerRadius:16)).padding()
-                Text("Keep this pad open while drawing. Squeeze the Pencil for a right-click after lifting the tip.")
-                    .font(.footnote).foregroundStyle(.secondary).padding(.horizontal)
+                .frame(width:geometry.size.width,height:geometry.size.height)
+                .onAppear { customControls.reportSurface(size:geometry.size,surface:.pencilSharing) }
+                .onChange(of:geometry.size) { _,size in
+                    if !editingControls && !showingOptions { customControls.reportSurface(size:size,surface:.pencilSharing) }
+                }
             }
             .navigationTitle("Share Apple Pencil")
             .navigationBarTitleDisplayMode(.inline)
@@ -178,7 +179,7 @@ struct PlankIPadPencilRelayView: View {
                             relay.setAdjustingPad(true); showingOptions = true
                         } label: { Label("Pad Options",systemImage:"slider.horizontal.3") }
                         .accessibilityLabel("Pad options: margins, mapping and appearance")
-                        PlankIPadControlsVisibilityButton(visible:showingControls,
+                        PlankIPadControlsVisibilityButton(store:customControls,visible:showingControls,
                             toggle:{ relay.releaseControls(); showingControls.toggle() },
                             edit:{ relay.setAdjustingPad(true); editingControls = true })
                     }
@@ -189,7 +190,7 @@ struct PlankIPadPencilRelayView: View {
                 PlankIPadPencilPadOptions(relay:relay)
             }
             .fullScreenCover(isPresented:$editingControls,onDismiss:{ relay.setAdjustingPad(false) }) {
-                PlankIPadCustomControlsEditor(store:customControls,referenceSurfaceSize:relay.pad?.bounds.size ?? .zero,
+                PlankIPadCustomControlsEditor(store:customControls,referenceSurfaceSize:customControls.latestSurfaceSize(for:.pencilSharing) ?? .zero,
                     surface:.pencilSharing)
                     .interactiveDismissDisabled()
             }
@@ -202,6 +203,23 @@ struct PlankIPadPencilRelayView: View {
         .onDisappear { if !editingControls { relay.stop() } }
         .onChange(of:scenePhase) { _,phase in if phase != .active { relay.stop(); dismiss() } }
     }
+    private var sharingHeader: some View {
+        VStack(spacing:16) {
+            Text(relay.status).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.horizontal)
+            if let code = relay.verification {
+                Text(code).font(.title.monospaced().bold())
+                HStack {
+                    Button("Reject",role:.cancel) { relay.stop() }
+                    Button("Codes Match — Approve Client") { relay.approve() }.buttonStyle(.borderedProminent)
+                }
+            }
+        }
+    }
+    private var sharingFooter: some View {
+        Text("Keep this pad open while drawing. Squeeze the Pencil for a right-click after lifting the tip.")
+            .font(.footnote).foregroundStyle(.secondary).padding(.horizontal)
+    }
+
 }
 struct PlankIPadPencilPadOptions: View {
     @ObservedObject var relay: PlankIPadPencilRelay
@@ -293,7 +311,11 @@ struct PlankIPadPencilPad: UIViewRepresentable {
     override func layoutSubviews() {
         super.layoutSubviews()
         let rect = viewport?.rect ?? .zero
-        if rect != previous { retire(); relay.releaseControls(); previous = rect }
+        if rect != previous {
+            // This is the Pencil viewport, not the artist-controls surface.
+            // Retire its stroke; the overlay owns control geometry retirement.
+            retire(); previous = rect
+        }
         CATransaction.begin(); CATransaction.setDisableActions(true)
         let settings = relay.padSettings, white = settings.fillWhite
         outline.fillColor = (settings.tone == .charcoal ? UIColor(white:white,alpha:1)

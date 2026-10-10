@@ -82,7 +82,7 @@ struct PlankIPadRoot: View {
                     .overlay(alignment: .topTrailing) {
                         if hideBars {
                             HStack(spacing:8) {
-                                PlankIPadControlsVisibilityButton(visible:showingCustomControls,
+                                PlankIPadControlsVisibilityButton(store:customControls,visible:showingCustomControls,
                                     toggle:toggleCustomControls,edit:editCustomControls)
                                     .background(.regularMaterial,in:Circle())
                                 Button { setToolbarVisible(true) } label: {
@@ -147,7 +147,7 @@ struct PlankIPadRoot: View {
                             Label(router.softwareKeyboardPresented ? "Hide Keyboard" : "Show Keyboard", systemImage: "keyboard")
                         }
                         Button { controls = true } label: { Label("Session Controls", systemImage: "slider.horizontal.3") }
-                        PlankIPadControlsVisibilityButton(visible:showingCustomControls,
+                        PlankIPadControlsVisibilityButton(store:customControls,visible:showingCustomControls,
                             toggle:toggleCustomControls,edit:editCustomControls)
                         Button { setToolbarVisible(false) } label: { Label("Hide Toolbar", systemImage: "chevron.up") }
                         Button("Disconnect") { disconnect() }.disabled(client.isClosingSession)

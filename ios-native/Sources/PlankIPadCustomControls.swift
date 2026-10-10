@@ -5,9 +5,11 @@ enum PlankIPadControlSurface: Hashable { case desktop, pencilSharing }
 
 /// Fast local visibility control; the editor remains in its native context menu.
 struct PlankIPadControlsVisibilityButton: View {
+    @ObservedObject var store: PlankIPadCustomControlsStore
     let visible: Bool
     let toggle: () -> Void
     let edit: () -> Void
+    @State private var showingTransparency = false
     var body: some View {
         Button(action:toggle) {
             Label(visible ? "Hide Controls" : "Show Controls",
@@ -19,8 +21,32 @@ struct PlankIPadControlsVisibilityButton: View {
         .accessibilityValue(visible ? "Visible" : "Hidden")
         .contextMenu {
             Button("Edit Controls…",systemImage:"pencil",action:edit)
+            Button("Transparency…",systemImage:"circle.lefthalf.filled") { showingTransparency = true }
         }
         .accessibilityAction(named:Text("Edit controls"),edit)
+        .accessibilityAction(named:Text("Controls transparency")) { showingTransparency = true }
+        .popover(isPresented:$showingTransparency) {
+            VStack(alignment:.leading,spacing:16) {
+                HStack {
+                    Text("Transparency").font(.headline)
+                    Spacer()
+                    Button("Done") { showingTransparency = false }
+                }
+                HStack {
+                    Text("Artist Controls")
+                    Spacer()
+                    Text(store.transparency,format:.percent.precision(.fractionLength(0)))
+                        .foregroundStyle(.secondary).monospacedDigit()
+                }
+                Slider(value:Binding(get:{ store.transparency },set:{ store.setTransparency($0) }),in:0...1)
+                    .accessibilityLabel("Artist controls transparency")
+                    .accessibilityValue(Text(store.transparency,format:.percent.precision(.fractionLength(0))))
+                Text("Applies to iPad Desktop and Pencil Sharing. Held keys stay highlighted.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            .padding().frame(width:300)
+            .presentationCompactAdaptation(.popover)
+        }
     }
 }
 
@@ -28,6 +54,8 @@ struct PlankIPadControlsVisibilityButton: View {
 /// Editing stays local until Done; the overlay receives transport closures.
 @MainActor final class PlankIPadCustomControlsStore: ObservableObject {
     @Published private(set) var library: PlankCustomControlLibrary
+    @Published private(set) var transparency: Double
+    private let defaults: UserDefaults
     /// Surface geometry is transient. Reporting it must not publish a change
     /// during UIKit layout or alter the saved arrangement.
     private var surfaceSizes: [PlankIPadControlSurface: [Bool: CGSize]] = [:]
@@ -48,7 +76,18 @@ struct PlankIPadControlsVisibilityButton: View {
     private static func usable(_ size: CGSize) -> Bool {
         size.width.isFinite && size.height.isFinite && size.width > 1 && size.height > 1
     }
-    init(library: PlankCustomControlLibrary = .load()) { self.library = library }
+    init(library: PlankCustomControlLibrary = .load(),defaults: UserDefaults = .standard) {
+        self.library = library
+        self.defaults = defaults
+        transparency = PlankIPadControlAppearance.load(from:defaults)
+    }
+    func setTransparency(_ value: Double) {
+        guard value.isFinite else { return }
+        let next = PlankIPadControlAppearance.normalized(value)
+        guard next != transparency else { return }
+        PlankIPadControlAppearance.save(next,to:defaults)
+        transparency = next
+    }
     var selectedLayout: PlankControlLayout { library.selectedLayout }
     func select(id: UUID) {
         var next = library
@@ -81,7 +120,8 @@ struct PlankIPadCustomControlsOverlay: UIViewRepresentable {
     }
     func updateUIView(_ view: PlankIPadCustomControlsOverlayView, context: Context) { configure(view) }
     private func configure(_ view: PlankIPadCustomControlsOverlayView) {
-        view.configure(layout:store.selectedLayout, enabled:enabled, begin:begin,
+        view.configure(layout:store.selectedLayout, appearance:PlankIPadControlAppearance(transparency:store.transparency),
+                       enabled:enabled, begin:begin,
                        end:end, tap:tap, release:release, supports:supports,inputEpoch:inputEpoch,
                        pencilSurface:pencilSurface,pencilHover:pencilHover,pencilSqueeze:pencilSqueeze)
     }
@@ -113,7 +153,7 @@ struct PlankIPadCustomControlsOverlay: UIViewRepresentable {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
 
-    func configure(layout next: PlankControlLayout, enabled: Bool,
+    func configure(layout next: PlankControlLayout, appearance: PlankIPadControlAppearance = .init(), enabled: Bool,
                    begin: @escaping (UUID, PlankControlBinding) -> Bool,
                    end: @escaping (UUID) -> Void, tap: @escaping (PlankControlBinding) -> Bool,
                    release: @escaping () -> Void, supports: (PlankControlBinding) -> Bool,
@@ -142,7 +182,7 @@ struct PlankIPadCustomControlsOverlay: UIViewRepresentable {
         hoverAction = pencilHover; squeezeAction = pencilSqueeze
         for control in next.controls {
             buttons[control.id]?.configure(enabled:enabled && supports(control.binding),
-                                           begin:begin, end:end, tap:tap,pencilSurface:pencilSurface)
+                                           appearance:appearance,begin:begin, end:end, tap:tap,pencilSurface:pencilSurface)
         }
     }
     override func layoutSubviews() {
@@ -242,6 +282,7 @@ struct PlankIPadCustomControlsOverlay: UIViewRepresentable {
     private var pencils: [ObjectIdentifier: PencilContact] = [:]
     private var accessibilityOwner: UUID?
     private var enabled = false
+    private var appearance = PlankIPadControlAppearance()
     private var beginAction: (UUID, PlankControlBinding) -> Bool = { _,_ in false }
     private var endAction: (UUID) -> Void = { _ in }
     private var tapAction: (PlankControlBinding) -> Bool = { _ in false }
@@ -281,12 +322,14 @@ struct PlankIPadCustomControlsOverlay: UIViewRepresentable {
         refresh()
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
-    func configure(enabled next: Bool, begin: @escaping (UUID, PlankControlBinding) -> Bool,
+    func configure(enabled next: Bool, appearance: PlankIPadControlAppearance,
+                   begin: @escaping (UUID, PlankControlBinding) -> Bool,
                    end: @escaping (UUID) -> Void, tap: @escaping (PlankControlBinding) -> Bool,
                    pencilSurface: @escaping () -> UIView?) {
         let wasEnabled = enabled
         enabled = next
         if wasEnabled && !next { retire(reason:.disabled) }
+        self.appearance = appearance
         beginAction = begin; endAction = end; tapAction = tap
         self.pencilSurface = pencilSurface
         refresh()
@@ -472,9 +515,13 @@ struct PlankIPadCustomControlsOverlay: UIViewRepresentable {
     private func refresh() {
         let held = accessibilityOwner != nil || contacts.hasHeldContact
         let touched = held || !contacts.isEmpty
-        backgroundColor = touched ? .systemBlue : UIColor(white:0.14,alpha:0.94)
-        layer.borderColor = (touched ? UIColor.systemBlue : UIColor(white:0.32,alpha:0.8)).cgColor
-        label.textColor = .white
+        backgroundColor = touched
+            ? UIColor.systemBlue.withAlphaComponent(appearance.pressedFillAlpha)
+            : UIColor(white:0.14,alpha:appearance.idleFillAlpha)
+        layer.borderColor = (touched
+            ? UIColor.systemBlue.withAlphaComponent(appearance.pressedBorderAlpha)
+            : UIColor(white:0.32,alpha:appearance.idleBorderAlpha)).cgColor
+        label.textColor = UIColor.white.withAlphaComponent(touched ? appearance.pressedLabelAlpha : appearance.idleLabelAlpha)
         alpha = enabled ? 1 : 0.42
         accessibilityTraits = touched ? [.button,.selected] : .button
         if !enabled { accessibilityTraits.insert(.notEnabled) }

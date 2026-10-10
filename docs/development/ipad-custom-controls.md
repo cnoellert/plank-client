@@ -252,3 +252,41 @@ The next image feature is separately planned in
 [live image and magnification](ipad-live-image.md): adjustable image intensity,
 Fit and true pixel magnification, with a shared image/input mapping. It is not
 implemented by the visibility change.
+
+## Transparency and sharing surface revision — iPad28
+
+The user accepted the installed iPad27 credential keyboard revision: “That
+works great.” That local login gate is resolved; earlier naming, input and
+transport acceptance remains unchanged.
+
+Long-press the Show/Hide Controls grid icon for **Edit Controls…** and
+**Transparency…**. The transparency popup provides one persistent global
+slider shared by iPad Desktop and Pencil Sharing. It changes control color
+layers only. Hit targets, saved geometry and finger ownership are unchanged;
+labels remain readable and held controls retain a clear highlight at maximum
+transparency. This is artist-control appearance, separate from the planned
+live-image overlay.
+
+The reported sharing overlap has a measured cause: the sharing-only pad was
+shorter than the whole available client surface, and status/approval content
+could shorten it further. Absolute button dimensions remained correct while
+normalized centers moved closer together. The actual pad, UIKit overlay and
+reported GeometryReader agreed, so this was not an incorrect UIKit scale.
+The revised sharing controls and editor use the whole available content
+surface, independently of the drawing pad's margins and status content. Pen
+coordinate mapping remains owned by the pad. Saved labels, bindings and
+placements are preserved.
+
+Sharing instructions now say: “On the PLANK client, choose this iPad in
+Settings → Apple Pencil.” Approval and focus instructions also refer to the
+client, supporting the existing Vision and Mac receivers. No wire capability,
+identity, approval, Host, network or dependency change is part of this slice.
+
+Focused appearance/persistence/contact and actual portrait sharing-surface
+component checks pass. Status/approval transitions preserve the control
+surface and held finger ownership; resizing that surface still releases held
+keys. Pencil coordinates remain relative to the actual pad, and pad resizing
+retires the stroke independently. Physical transparency and the reported
+sharing layout are not yet accepted; orientation and window sizing remain
+device gates. Real finger cancellation remains a separate open issue; this
+revision does not latch a cancelled key.
