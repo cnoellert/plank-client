@@ -42,6 +42,11 @@ AVP sharing, with intermittent button releases still open. iPad25 changes the
 grid icon to one-tap Show/Hide Controls; long-press opens Edit Controls. The grid
 button stays available beside the restore button when the desktop toolbar is
 hidden. This does not add a physical keyboard shortcut or live image overlay.
+Candidate iPad26 moves naming to a native Cancel/Save popup independent of the
+resizing canvas. The Control inspector edits only Button label; Rename Layout
+is an explicit layout-menu action. Reassigning a key updates its generated
+name, while custom action labels remain; Use Key Name restores automatic names.
+The editor still saves only through its outer Done action.
 
 Pencil sharing build 19 corrects the hover-to-contact timing epoch in the
 foreground pad. First build 18 / Vision 47 tests passed hover/right-click but

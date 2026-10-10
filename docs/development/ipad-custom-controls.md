@@ -218,6 +218,34 @@ scene activity. These are correlations, not an OS cancellation reason. Counts
 are saturated and logging is rate limited; no text, binding, touch identity or
 coordinates are logged. Cancellation still releases the key normally.
 
+## Naming revision — iPad26
+
+The user reports iPad25's editor and onscreen controls working better, but the
+keyboard made naming unusable. The embedded inspector existed only while the
+uniformly scaled preview stayed wide enough. A docked keyboard could shrink
+that preview past its threshold and remove the focused text field. Local
+editor text is not remote input; the direct router remains disabled in editing.
+
+Naming now uses a native Cancel/Save text popup outside preview geometry, from
+the active editor or narrow inspector presentation. **Button label** is the
+only naming action in the Control inspector. The layout title identifies the
+saved arrangement and is renamed explicitly through **Rename Layout** in the
+layout menu. Each popup changes the editor draft once; the editor's Done saves
+the library and Cancel preserves the previous saved layout.
+
+Changing a key or its modifiers updates a label that still follows the key
+name. Duplicating Space and assigning Ctrl therefore names the new button Ctrl,
+without changing the original button or either placement. Artist action names
+such as Undo remain intact. **Use Key Name** restores automatic naming. Existing
+saved labels and the legacy Command glyph are recognized without a storage or
+wire migration; generated names stay within the existing 40-character limit.
+
+The label/model checks cover copied controls, custom names, legacy glyphs,
+invalid bindings, unchanged geometry and every supported key/modifier name.
+Native keyboard/name presentation still needs targeted device acceptance; no
+new pen, wheel or transport qualification is implied. Intermittent real finger
+cancellation remains a separate open issue.
+
 The next image feature is separately planned in
 [live image and magnification](ipad-live-image.md): adjustable image intensity,
 Fit and true pixel magnification, with a shared image/input mapping. It is not

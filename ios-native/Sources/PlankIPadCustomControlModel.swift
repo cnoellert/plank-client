@@ -249,6 +249,7 @@ enum PlankControlSnap {
 }
 
 struct PlankCustomControl: Codable, Equatable, Identifiable, Sendable {
+    static let maximumLabelLength = 40
     var id: UUID
     var label: String
     var binding: PlankControlBinding
@@ -262,7 +263,7 @@ struct PlankCustomControl: Codable, Equatable, Identifiable, Sendable {
         self.portrait = portrait; self.landscape = landscape
     }
     var isValid: Bool {
-        !label.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && label.count <= 40
+        !label.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && label.count <= Self.maximumLabelLength
             && !label.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
             && binding.isValid && portrait.isValid && landscape.isValid
     }
@@ -270,6 +271,18 @@ struct PlankCustomControl: Codable, Equatable, Identifiable, Sendable {
     mutating func setPlacement(_ value: PlankControlPlacement, landscape: Bool) {
         if landscape { self.landscape = value } else { portrait = value }
     }
+    var automaticLabel: String { String(binding.title.prefix(Self.maximumLabelLength)) }
+    /// Keep an artist's named action, but follow a changed shortcut when the
+    /// existing label is still its generated key name (including legacy ⌘).
+    mutating func setBinding(_ value: PlankControlBinding) {
+        guard value.isValid else { return }
+        let followsKey = label.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty
+            || label == automaticLabel
+            || (binding.modifiers == 0 && PlankPencilModifier(rawValue:binding.code)?.title == label)
+        binding = value
+        if followsKey { useBindingLabel() }
+    }
+    mutating func useBindingLabel() { label = automaticLabel }
 }
 
 struct PlankControlLayout: Codable, Equatable, Identifiable, Sendable {

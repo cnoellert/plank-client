@@ -511,6 +511,10 @@ struct PlankIPadCustomControlsEditor: View {
     @State private var resizeMode = false
     @State private var canvasSize = CGSize.zero
     @State private var snapGuides: [PlankControlSnap.Guide] = []
+    private enum NameTarget { case layout(UUID), control(UUID) }
+    @State private var nameTarget: NameTarget?
+    @State private var nameDraft = ""
+    @State private var namingFromInspector = false
 
     init(store: PlankIPadCustomControlsStore, referenceSurfaceSize: CGSize = .zero,
          surface: PlankIPadControlSurface = .desktop) {
@@ -567,11 +571,17 @@ struct PlankIPadCustomControlsEditor: View {
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar { ToolbarItem(placement:.confirmationAction) { Button("Done") { narrowInspector = false } } }
                 }
+                .alert(nameTitle,isPresented:namePresentation(fromInspector:true),presenting:nameTarget) { target in
+                    nameActions(for:target)
+                } message: { _ in Text(nameMessage) }
                 .presentationDetents([.medium,.large])
                 .presentationDragIndicator(.visible)
                 .preferredColorScheme(.dark)
             }
         }
+        .alert(nameTitle,isPresented:namePresentation(fromInspector:false),presenting:nameTarget) { target in
+            nameActions(for:target)
+        } message: { _ in Text(nameMessage) }
         .preferredColorScheme(.dark)
     }
 
@@ -590,6 +600,7 @@ struct PlankIPadCustomControlsEditor: View {
                 Divider()
                 Button("New Layout",systemImage:"plus") { addLayout() }
                     .disabled(draft.layouts.count >= PlankCustomControlLibrary.maximumLayouts)
+                Button("Rename Layout…",systemImage:"pencil") { beginNameEdit(.layout(selectedLayout.id)) }
                 Button("Copy Layout",systemImage:"doc.on.doc") { copyLayout() }
                     .disabled(draft.layouts.count >= PlankCustomControlLibrary.maximumLayouts)
                 Button("Reset Controls",systemImage:"arrow.counterclockwise") { resetLayout() }
@@ -773,12 +784,24 @@ struct PlankIPadCustomControlsEditor: View {
                             .accessibilityLabel("Hide inspector")
                     }
                 }
-                TextField("Layout name",text:layoutNameBinding)
-                    .font(.subheadline).textFieldStyle(.roundedBorder)
-                    .accessibilityLabel("Layout name")
-                if selectedControl != nil {
-                    TextField("Control label",text:labelBinding)
-                        .textFieldStyle(.roundedBorder).accessibilityLabel("Control label")
+                if let control = selectedControl {
+                    VStack(alignment:.leading,spacing:8) {
+                        Text("Button label").font(.subheadline).foregroundStyle(.secondary)
+                        Button { beginNameEdit(.control(control.id)) } label: {
+                            HStack {
+                                Text(control.label.isEmpty ? control.automaticLabel : control.label)
+                                    .foregroundStyle(.primary).lineLimit(2)
+                                Spacer()
+                                Image(systemName:"pencil").foregroundStyle(.secondary)
+                            }.frame(maxWidth:.infinity,minHeight:44)
+                        }
+                        .buttonStyle(.bordered)
+                        .accessibilityLabel("Edit button label: \(control.label)")
+                        if control.label != control.automaticLabel {
+                            Button("Use Key Name") { mutateControl { $0.useBindingLabel() } }
+                                .font(.subheadline)
+                        }
+                    }
                     Picker("Key",selection:keyBinding) {
                         ForEach(PlankControlKeyCatalog.entries) { key in Text(key.title).tag(key.code) }
                     }
@@ -823,7 +846,10 @@ struct PlankIPadCustomControlsEditor: View {
     private func modifierToggle(_ label: String,name: String,mask: UInt8) -> some View {
         let selected = (selectedControl?.binding.modifiers ?? 0) & mask != 0
         return Button {
-            mutateControl { $0.binding.modifiers ^= mask }
+            mutateControl { control in
+                var binding = control.binding; binding.modifiers ^= mask
+                control.setBinding(binding)
+            }
         } label: { Text(label).font(.title3).frame(maxWidth:.infinity,minHeight:44) }
         .buttonStyle(.bordered)
         .tint(selected ? .blue : .gray)
@@ -855,18 +881,63 @@ struct PlankIPadCustomControlsEditor: View {
             }
         })
     }
-    private var layoutNameBinding: Binding<String> {
-        Binding(get:{ selectedLayout.name },set:{ value in
-            remember(); var layout = selectedLayout; layout.name = String(value.prefix(48)); replaceDraft(layout)
+    private var nameTitle: String {
+        switch nameTarget {
+        case .layout: return "Rename Layout"
+        case .control: return "Button Label"
+        case nil: return "Name"
+        }
+    }
+    private var nameMessage: String {
+        if case .layout = nameTarget { return "This name identifies the saved arrangement of controls." }
+        return "The label shown on this button. Its key and behavior stay unchanged."
+    }
+    private func namePresentation(fromInspector: Bool) -> Binding<Bool> {
+        Binding(get:{ nameTarget != nil && namingFromInspector == fromInspector },set:{ presented in
+            if !presented && namingFromInspector == fromInspector { nameTarget = nil }
         })
     }
-    private var labelBinding: Binding<String> {
-        Binding(get:{ selectedControl?.label ?? "" },set:{ value in
-            mutateControl { $0.label = String(value.prefix(40)) }
-        })
+    @ViewBuilder private func nameActions(for target: NameTarget) -> some View {
+        TextField(nameTitle,text:$nameDraft)
+            .textInputAutocapitalization(.sentences).autocorrectionDisabled()
+            .accessibilityLabel(nameTitle)
+        Button("Cancel",role:.cancel) { nameTarget = nil }
+        Button("Save") { saveName(nameDraft,for:target) }
+            .disabled(nameDraft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty)
+    }
+    private func beginNameEdit(_ target: NameTarget) {
+        switch target {
+        case let .layout(id):
+            guard let layout = draft.layouts.first(where:{ $0.id == id }) else { return }
+            nameDraft = layout.name
+        case let .control(id):
+            guard let control = selectedLayout.controls.first(where:{ $0.id == id }) else { return }
+            nameDraft = control.label
+        }
+        namingFromInspector = narrowInspector
+        nameTarget = target
+    }
+    private func saveName(_ value: String,for target: NameTarget) {
+        let text = value.trimmingCharacters(in:.whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        switch target {
+        case let .layout(id):
+            guard let index = draft.layouts.firstIndex(where:{ $0.id == id }) else { return }
+            remember(); draft.layouts[index].name = String(text.prefix(48))
+        case let .control(id):
+            var layout = selectedLayout
+            guard let index = layout.controls.firstIndex(where:{ $0.id == id }) else { return }
+            remember(); layout.controls[index].label = String(text.prefix(40)); replaceDraft(layout)
+        }
+        nameTarget = nil
     }
     private var keyBinding: Binding<UInt16> {
-        Binding(get:{ selectedControl?.binding.code ?? 0x20 },set:{ value in mutateControl { $0.binding.code = value } })
+        Binding(get:{ selectedControl?.binding.code ?? 0x20 },set:{ value in
+            mutateControl { control in
+                var binding = control.binding; binding.code = value
+                control.setBinding(binding)
+            }
+        })
     }
     private func controlBinding<Value>(_ key: WritableKeyPath<PlankCustomControl,Value>,fallback: Value) -> Binding<Value> {
         Binding(get:{ selectedControl?[keyPath:key] ?? fallback },set:{ value in mutateControl { $0[keyPath:key] = value } })

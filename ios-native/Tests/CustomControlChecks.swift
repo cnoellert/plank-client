@@ -4,11 +4,48 @@ import CoreGraphics
 @main enum CustomControlChecks {
     static func main() throws {
         try modelChecks()
+        labelChecks()
         geometryChecks()
         ownershipChecks()
         failedAdmissionChecks()
         receiverChecks()
         print("PASS custom controls: bounded saved layouts, legacy migration, independent Space size, reference/live preview parity, stable gutter/alignment/size snapping, anchored resizing, finite bindings, overlapping ownership, physical repeat, combo order, atomic rejection, fail-closed input epochs and stale-change protection")
+    }
+    private static func labelChecks() {
+        let source = PlankControlLayout.defaults().controls.first { $0.binding.code == 0x20 }!
+        var duplicate = source
+        duplicate.id = UUID()
+        duplicate.setBinding(.init(code:0x11))
+        precondition(duplicate.label == "Ctrl" && source.label == "Space",
+                     "A duplicated key adopts its new key name without renaming the source")
+        precondition(duplicate.portrait == source.portrait && duplicate.landscape == source.landscape,
+                     "Changing a key cannot resize or move its control")
+        duplicate.setBinding(.init(code:0x5A,modifiers:3))
+        precondition(duplicate.label == "Shift + Ctrl + Z")
+        duplicate.label = "Undo"
+        duplicate.setBinding(.init(code:0x59,modifiers:8))
+        precondition(duplicate.label == "Undo", "An artist's custom action name survives rebinding")
+        duplicate.useBindingLabel()
+        precondition(duplicate.label == "Command + Y")
+        duplicate.setBinding(.init(code:0x58))
+        precondition(duplicate.label == "X", "Using the key name resumes automatic naming")
+        var command = PlankControlLayout.defaults().controls.first { $0.binding.code == 0x5B }!
+        precondition(command.label == "⌘")
+        command.setBinding(.init(code:0x11))
+        precondition(command.label == "Ctrl", "Legacy modifier glyphs remain automatic names")
+        let valid = duplicate
+        duplicate.setBinding(.init(code:0xFFFF))
+        precondition(duplicate == valid, "Invalid rebinding cannot mutate a saved control")
+        for entry in PlankControlKeyCatalog.entries {
+            for mask in UInt8(0)...15 {
+                var generated = source
+                generated.setBinding(.init(code:entry.code,modifiers:mask))
+                precondition(generated.isValid && generated.label.count <= PlankCustomControl.maximumLabelLength,
+                             "Every supported generated shortcut name fits the saved label limit")
+                generated.setBinding(.init(code:0x20))
+                precondition(generated.label == "Space", "Truncated generated combo names continue following the key")
+            }
+        }
     }
     private static func geometryChecks() {
         func close(_ a: CGFloat, _ b: CGFloat) -> Bool { abs(a - b) < 0.000_01 }
