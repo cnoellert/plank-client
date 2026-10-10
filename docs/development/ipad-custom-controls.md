@@ -421,3 +421,19 @@ undo history, bindings and saved point sizes are retained. Actual placement or
 resize edits continue through the existing snapping and undo paths. Live artist
 controls, layout shortcuts, input admission and sharing transport are unchanged.
 The new dismissal/reopening gestures require their own device check.
+
+Focused native simulator checks passed empty-space deselection, control-tap
+reopening, explicit close with selection retained, and inspector naming taps
+without background interception. Moving and resizing hide the inspector while
+retaining selection; a single undo restores the original placement or size.
+Narrow-sheet Done and reopening also passed. An initial resize
+probe hit the rounded background at the edge; replay inside the existing
+44-point handle passed without a source change.
+
+These checks use the production editor, model and store with simulated native
+gestures. They do not establish physical Pencil gestures or workstation receipt.
+The fresh device build31 is signed and staged, with signed build30 retained for
+rollback. The 77 protected source boundaries and the entire non-editor controls
+body match accepted30. Build31 has not been installed at this checkpoint;
+installation requires the desktop disconnected and Pencil Sharing stopped
+because the update closes the iPad app.
