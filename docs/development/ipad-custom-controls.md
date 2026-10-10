@@ -7,7 +7,7 @@ assignable keys/shortcut combinations. The same editor and saved layouts must
 be available in the direct iPad desktop client and Share Apple Pencil. This
 supersedes the proposed five-key-only, palette-confined editor scope.
 
-Installed iPad24/Vision49 provide the revised custom controls. On October 9 the
+iPad24/Vision49 introduced the revised custom controls. On October 9 the
 user tested both Pencil sharing to AVP and the direct iPad desktop, reporting
 that placement and operation work considerably better. Intermittent button
 releases remain unresolved; this feedback does not qualify all interruption
@@ -290,3 +290,13 @@ retires the stroke independently. Physical transparency and the reported
 sharing layout are not yet accepted; orientation and window sizing remain
 device gates. Real finger cancellation remains a separate open issue; this
 revision does not latch a cancelled key.
+
+Build28 was freshly compiled, signed and installed as an update on October9
+after the user confirmed disconnection. Independent app/process inventories
+verify build28 open. Physical acceptance of the new menu and sharing placement
+is pending. The component checks include actual portrait geometry and a
+controlled landscape-sized production View, with matching editor/runtime
+frames, exact eight-point test gutters and foreground approval hit priority.
+This does not qualify actual system rotation. Different whole-client window
+sizes can still compress normalized positions with fixed point-sized keys;
+this revision corrects the sharing-only, status-dependent pad contraction.
