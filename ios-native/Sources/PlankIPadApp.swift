@@ -20,6 +20,9 @@ struct PlankIPadRoot: View {
     @ObservedObject var store: HostStore
     @ObservedObject var router: PlankIPadInputRouter
     @Environment(\.scenePhase) private var scenePhase
+    // Presentation callbacks may retain an earlier Environment snapshot.
+    // Admission uses the latest phase delivered by SwiftUI's scene observer.
+    @State private var inputScenePhase = ScenePhase.inactive
     @State private var selectedID: UUID?
     @StateObject private var pencilRelay = PlankIPadPencilRelay()
     @StateObject private var customControls = PlankIPadCustomControlsStore()
@@ -84,7 +87,8 @@ struct PlankIPadRoot: View {
             if sharePencil && client.hasActiveDesktopSession { stopPencilSharing() }
             updateAdmission()
         }
-        .onChange(of:scenePhase) { _,phase in
+        .onChange(of:scenePhase,initial:true) { _,phase in
+            inputScenePhase = phase
             // Transient inactivity retires input without discarding the
             // approved peer. Actual backgrounding still ends foreground sharing.
             if phase == .background && sharePencil { stopPencilSharing() }
@@ -287,7 +291,7 @@ struct PlankIPadRoot: View {
     }
     private func start(_ host: HostBookmark) {
         guard !sharePencil else { return }
-        client.setTabletActive(scenePhase == .active)
+        client.setTabletActive(inputScenePhase == .active)
         client.startSession(displaySize: host.spatialDisplaySize, frameRate: host.streamFrameRate,
                             videoBitrateKbps: host.videoBitrateKbps)
         store.markConnected(host)
@@ -299,7 +303,7 @@ struct PlankIPadRoot: View {
         client.reset()
     }
     private func startPencilSharing() {
-        guard !busy,!client.hasActiveDesktopSession,scenePhase == .active else { return }
+        guard !busy,!client.hasActiveDesktopSession,inputScenePhase == .active else { return }
         credentialFocus = nil
         router.release(); router.enabled = false
         client.setTabletActive(false); client.reset()
@@ -348,7 +352,7 @@ struct PlankIPadRoot: View {
         }
     }
     private func updateAdmission() {
-        let foreground = scenePhase == .active
+        let foreground = inputScenePhase == .active
         let streaming: Bool
         if case .streaming = client.phase { streaming = true } else { streaming = false }
         router.enabled = foreground && streaming && !sharePencil && !controls && !editingCustomControls

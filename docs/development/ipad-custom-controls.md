@@ -473,6 +473,8 @@ Transient scene inactivity now retires input without closing the approved
 sharing peer. Input remains paused while inactive or editing; both Done and
 Cancel restore admission after dismissal. Backgrounding still stops sharing,
 and genuine transport refusal or loss still follows the existing failure path.
+Admission uses the latest delivered scene phase, so a retained dismissal callback
+cannot reopen input using an earlier active Environment snapshot.
 The earlier code stopped sharing for every inactive scene. Whether the physical
 editor transition triggered that scene event was not captured, so the reported
 disconnect's precise device cause is not claimed. No receiver, Host, identity,
