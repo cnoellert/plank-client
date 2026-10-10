@@ -344,3 +344,10 @@ dismissal without changing the router's admission authority.
 This is controlled landscape hosting with production views and stubbed runtime
 callbacks. The simulator's native window remained portrait; system rotation,
 physical device placement and workstation receipt are not inferred from it.
+
+iPad29 was freshly compiled, signed and installed as an update on October9
+after explicit disconnected authorization. Independent inventories verify
+the exact build29 application and running executable. A read-only preferences
+comparison confirms the saved control library is semantically unchanged.
+Physical placement/menu acceptance is now requested; component verification
+does not establish that device gate.
