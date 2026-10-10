@@ -437,3 +437,10 @@ rollback. The 77 protected source boundaries and the entire non-editor controls
 body match accepted30. Build31 has not been installed at this checkpoint;
 installation requires the desktop disconnected and Pencil Sharing stopped
 because the update closes the iPad app.
+
+The user confirmed disconnection on October10. Build31 was installed as an
+update and opened; independent inventories verify version31 and its exact
+running executable. Signed build30 remains available for rollback. The next
+physical check is empty-space dismissal, control-tap reopening, and unobstructed
+move/resize in the editor. Accepted30 shortcuts and previous input, layout and
+sharing qualification are carried forward.
