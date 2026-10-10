@@ -389,3 +389,9 @@ contacts. Native simulator taps and presses do not establish physical-device
 gestures, VoiceOver custom actions or workstation receipt. The corrected build30
 was freshly compiled and signed with the unchanged dependencies; signed build29
 is retained for rollback. Build30 is staged, not installed at this checkpoint.
+
+The user authorized installation on October10. Build30 was updated in place
+and launched; independent app and process inventories verify version30 and its
+exact running executable. Signed build29 remains available for rollback. The
+new physical tap chooser and touch-and-hold editor check is next; accepted
+build29 placement/menu and previous input qualification are carried forward.
