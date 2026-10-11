@@ -34,6 +34,7 @@ add_executable(PlankVision MACOSX_BUNDLE
     Sources/Services/PlankAudioReceiver.swift
     Sources/Services/PlankHTTPClient.swift
     Sources/Services/PlankVideoSurfaces.swift
+    Sources/Services/PlankPencilReferenceImageCodec.swift
     Sources/Services/PlankCoreClient.swift
     Sources/Services/PlankSessionStartupDeadline.swift
     Sources/Services/PlankHardwareVideoDecoder.swift
