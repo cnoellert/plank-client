@@ -24,6 +24,16 @@ compiled with unoptimized Swift. These are plausible picture-delay costs;
 no correlated physical encode, transfer and presentation timings were recorded,
 so the dominant cause has not been measured.
 
+A bounded in-memory comparison of the exact codec on M4 Max/macOS26.7 found a
+large optimization difference for synthetic 3840×2160 frames reduced to
+1920×1080. Three encodes per format gave median BGRA times of 1105.84 ms
+unoptimized and 15.27 ms optimized, and actual xf44 GBR10 times of 1300.15 ms
+and 21.50 ms. JPEG sizes were identical between optimization modes for each
+format (129,947 and 130,332 bytes). No screen images were captured or saved.
+These are Mac encode measurements, not AVP performance or end-to-end latency.
+They justify investigating an optimized image conversion candidate before
+discarding the JPEG approach or raising its frame rate/bandwidth limits.
+
 Use full pad deliberately stretches the complete image and normalized Pencil
 mapping together. Match desktop uses one aspect-preserving rectangle for both.
 The physical mode used in the reported trial is unrecorded, so that stretching
