@@ -8,7 +8,33 @@ signed rollbacks. iPad34 and Vision50 are installed and their exact running
 executables independently verified; Mac27 remains staged and unlaunched.
 Physical image appearance, alignment and simultaneous input under image load
 remain pending.
-Magnification and pan remain the next slice.
+Magnification and pan remain planned after the reference image is useful.
+
+## October 10 physical usability result
+
+The user reported that picture latency and stretching make this version not
+worth using, and clarified that the delay is mainly the picture. The image
+slice is not accepted for promotion. Earlier Pencil and controls acceptance
+remains intact; a new Pencil slowdown was not reported as reproduced. Dimming,
+mapping corners and input under media load were not separately qualified.
+
+The current source caps image sampling at 10 fps, performs CPU resampling/JPEG
+encoding, and paces media bytes at 2 MiB/s. The installed development apps were
+compiled with unoptimized Swift. These are plausible picture-delay costs;
+no correlated physical encode, transfer and presentation timings were recorded,
+so the dominant cause has not been measured.
+
+Use full pad deliberately stretches the complete image and normalized Pencil
+mapping together. Match desktop uses one aspect-preserving rectangle for both.
+The physical mode used in the reported trial is unrecorded, so that stretching
+path is not a conclusive diagnosis. Applying an image-only aspect fill/crop
+would break Pencil alignment. A uniform cropped drawing view requires a shared
+source crop/scale and matching inverse input transform. A separate visual-only
+magnifier can instead retain the established full-pad input mapping.
+
+The next decision is a measured performance and geometry approach; no follow-up
+build or repeated physical test is queued. The optional image choices remain
+default off, and the working input-only pad remains available.
 
 ## First reference-image slice
 

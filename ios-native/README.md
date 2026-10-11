@@ -26,7 +26,9 @@ optional dimmable full-desktop references while Pencil Sharing, enabled from
 Pad Options and the receiver's Apple Pencil settings. Both ends require image
 consent; iPad34 and Vision50 are installed with exact running executables
 independently verified. Mac27 remains staged and unlaunched. Physical appearance,
-alignment and input under image load remain pending.
+alignment and input under image load remain unqualified. The user reported that
+picture latency and stretching make this version unsuitable; image promotion
+is held pending a worthwhile performance/geometry approach.
 See [the image boundary and next magnification slice](../docs/development/ipad-live-image.md).
 
 ## Current keyboard behavior — build 17
