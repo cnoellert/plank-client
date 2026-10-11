@@ -83,6 +83,8 @@ import UIKit
                     case let .remove(endpoint):
                         guard case let .service(name,_,_,_) = endpoint, name == self.imageServiceName else { return }
                         self.imageServiceName = nil; self.imageReceiver.stop()
+                    @unknown default:
+                        self.imageServiceName = nil; self.imageReceiver.stop()
                     }
                 }
             }
