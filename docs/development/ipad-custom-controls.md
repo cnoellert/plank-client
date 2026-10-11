@@ -539,3 +539,9 @@ the isolated simulator was shut down afterward. The fresh iPad device build
 compiled and was signed as build33. Signed build32 remains available for
 rollback. Build33 is staged and has not been installed; the physical26.5 check
 for movement, resizing and landscape toolbar spacing remains open.
+
+Build33 was subsequently installed after the artist confirmed disconnection.
+Device inventories verify version33 and its exact running executable. The
+passive navigation sampler is active. Installation and logging do not establish
+physical movement or spacing acceptance; the targeted landscape check remains
+open.
