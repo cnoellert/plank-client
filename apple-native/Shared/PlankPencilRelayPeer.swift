@@ -1,6 +1,11 @@
 import Foundation
 import Network
 
+struct PlankPencilSessionBinding: Sendable, Equatable {
+    let peerKey: Data
+    let transcriptHash: Data
+}
+
 enum PlankPencilPeerEvent: Sendable {
     case verification(String)
     case ready
@@ -110,6 +115,16 @@ final class PlankPencilRelayPeer: @unchecked Sendable {
         return result.accepted
     }
     func close() { queue.async { [self] in finish("Pencil sharing stopped") } }
+    // Media authority can only derive from this approved, ready, CURRENT pen
+    // connection. The full transcript is read on its existing serial executor.
+    func sessionBinding(_ completion: @escaping @Sendable (PlankPencilSessionBinding?) -> Void) {
+        queue.async { [self] in
+            guard !closed, verified, stage == 3, peerKey.count == 32, let crypto else { completion(nil); return }
+            var hash = [UInt8](repeating:0,count:64)
+            guard plank_pencil_crypto_final_hash(crypto,&hash) == 0 else { completion(nil); return }
+            completion(.init(peerKey:peerKey,transcriptHash:Data(hash)))
+        }
+    }
     private func output(_ operation: (OpaquePointer,UnsafeMutablePointer<UInt8>,Int,UnsafeMutablePointer<Int>) -> Int32) throws -> Data {
         guard let crypto else { throw PlankPencilWireError.crypto }
         var bytes = [UInt8](repeating:0,count:256), count = 0

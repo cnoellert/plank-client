@@ -15,6 +15,11 @@ struct PlankPencilRelaySettings: View {
                 if receiver.pads.isEmpty { Text("No Pencil pads found").foregroundStyle(.secondary) }
             }
             Text(receiver.status).font(.footnote).foregroundStyle(.secondary)
+            if receiver.connected {
+                Toggle("Share desktop image with this iPad",isOn:Binding(
+                    get:{ receiver.imageSharingEnabled },set:{ receiver.setImageSharingEnabled($0) }))
+                PlankPencilImageStatus(sender:receiver.imageSender)
+            }
             if let code = receiver.verification {
                 Text(code).font(.title2.monospaced().bold())
                 Text("Compare the code on the iPad before approving on either device.").font(.footnote)
@@ -24,5 +29,14 @@ struct PlankPencilRelaySettings: View {
         }
         .onAppear { receiver.discover(owner: discoveryOwner) }
         .onDisappear { receiver.stopDiscovery(owner: discoveryOwner) }
+    }
+}
+private struct PlankPencilImageStatus: View {
+    @ObservedObject var sender: PlankPencilImageSender
+    var body: some View {
+        VStack(alignment:.leading,spacing:4) {
+            Text(sender.status)
+            Text("Enable Receive desktop image in the iPad’s Pad Options. The dimmable image is a reference for painting.")
+        }.font(.footnote).foregroundStyle(.secondary)
     }
 }

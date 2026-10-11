@@ -7,7 +7,8 @@ Silicon device/simulator are the initial compile scope, not a final OS matrix.
 
 ## Current accepted development checkpoint — October 10
 
-Installed iPad31 is the accepted editor checkpoint, with compatible Vision49
+Installed iPad33 is the accepted editor movement/resize and landscape toolbar
+checkpoint, with compatible Vision49
 installed and Mac26 signed/staged for separate device qualification. The pilot
 supports direct remote playback/input and foreground Apple Pencil sharing from
 the normal client screen, plus one saved artist-control library in both modes.
@@ -19,7 +20,11 @@ and moving or resizing clears it out of the way.
 See [the current checkpoint and review handoff](../docs/development/ipad-client-checkpoint.md)
 for exact runtime revisions, accepted tests and remaining gates. Earlier build
 sections below retain the development history and are superseded by that record.
-Live image overlays and magnification remain planned separately.
+The separate development image slice targets iPad34 / Vision50 / Mac27. It adds
+optional dimmable full-desktop references while Pencil Sharing, enabled from
+Pad Options and the receiver's Apple Pencil settings. Both ends require image
+consent; current installed33/49 are unchanged until an authorized update.
+See [the image boundary and next magnification slice](../docs/development/ipad-live-image.md).
 
 ## Current keyboard behavior — build 17
 

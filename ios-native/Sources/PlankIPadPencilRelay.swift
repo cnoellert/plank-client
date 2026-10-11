@@ -12,11 +12,14 @@ import UIKit
     @Published private(set) var padSettings = PlankIPadPencilPadSettings.load()
     @Published private(set) var adjustingPad = false
     @Published private(set) var inputEpoch: UInt64 = 0
+    let imageReceiver = PlankIPadPencilImageReceiver()
     private var controlKeys = PlankControlKeyOwnership()
     var canDraw: Bool { active && !adjustingPad }
     private var listener: NWListener?
     private var peer: PlankPencilRelayPeer?
     private var generation = UUID(), peerID = UUID()
+    private var imageServiceName: String?
+    private var hasConfiguration = false
     weak var pad: PlankIPadPencilPadView?
     func setPadSettings(_ value: PlankIPadPencilPadSettings) {
         let next = value.validated
@@ -65,6 +68,24 @@ import UIKit
             listener.newConnectionLimit = 1
             self.listener = listener; sharing = true; status = "Starting Pencil sharing…"
             generation = UUID(); let current = generation
+            listener.serviceRegistrationUpdateHandler = { [weak self] change in
+                Task { @MainActor in
+                    guard let self, self.generation == current, self.sharing else { return }
+                    switch change {
+                    case let .add(endpoint):
+                        guard case let .service(name,_,_,_) = endpoint, name != self.imageServiceName else { return }
+                        self.imageServiceName = name
+                        // Match the actual registered control name, including Bonjour renames.
+                        // Image consent is independent; failure here cannot stop the pen lane.
+                        do { try self.imageReceiver.start(privateKey:key,serviceName:name) }
+                        catch { self.imageReceiver.stop() }
+                        self.authorizeImage()
+                    case let .remove(endpoint):
+                        guard case let .service(name,_,_,_) = endpoint, name == self.imageServiceName else { return }
+                        self.imageServiceName = nil; self.imageReceiver.stop()
+                    }
+                }
+            }
             listener.newConnectionHandler = { [weak self] connection in
                 Task { @MainActor in self?.accept(connection,key:key,generation:current) }
             }
@@ -79,6 +100,7 @@ import UIKit
     private func accept(_ connection: NWConnection,key: Data,generation current: UUID) {
         guard sharing, generation == current, peer == nil else { connection.cancel(); return }
         do {
+            imageReceiver.revoke(); hasConfiguration = false
             peerID = UUID(); let id = peerID
             let next = try PlankPencilRelayPeer(connection:connection,privateKey:key) { [weak self] event in
                 Task { @MainActor in
@@ -86,9 +108,12 @@ import UIKit
                     switch event {
                     case let .verification(code):
                         self.verification = code; self.status = "Compare this code with the PLANK client before approving."
-                    case .ready: self.verification = nil; self.status = "Client approved. Waiting for an active desktop."
+                    case .ready:
+                        self.verification = nil; self.status = "Client approved. Waiting for an active desktop."
+                        self.authorizeImage()
                     case .messagesAvailable: self.drain()
                     case let .ended(reason):
+                        self.imageReceiver.revoke(); self.hasConfiguration = false
                         self.retireInput(); self.peer = nil; self.active = false
                         self.listener?.newConnectionLimit = 1
                         self.verification = nil; self.status = reason + ". Select this iPad again in the PLANK client."
@@ -98,6 +123,20 @@ import UIKit
             peer = next; next.start()
         } catch { connection.cancel(); listener?.newConnectionLimit = 1; status = "Could not verify client identity." }
     }
+    private func authorizeImage() {
+        guard let peer else { return }
+        let current = generation, id = peerID
+        peer.sessionBinding { [weak self] binding in
+            Task { @MainActor in
+                guard let self, self.generation == current, self.peerID == id,
+                      self.peer != nil, let binding else { return }
+                self.imageReceiver.authorize(binding)
+                if self.hasConfiguration {
+                    self.imageReceiver.configureDimensions(width:self.width,height:self.height)
+                }
+            }
+        }
+    }
     private func drain() {
         guard let peer else { return }
         do {
@@ -105,6 +144,8 @@ import UIKit
                 guard case let .configuration(w,h,next) = message else { throw PlankPencilWireError.invalid }
                 // Retire the old contact before the pad mapping/admission changes.
                 retireInput(); width = Int(w); height = Int(h); active = next
+                hasConfiguration = true
+                imageReceiver.configureDimensions(width:width,height:height)
                 status = next ? "Connected. Draw in the outlined area." : "Connected. Bring the PLANK desktop into focus on the client."
                 pad?.setNeedsLayout()
             }
@@ -120,9 +161,11 @@ import UIKit
         if !peer.offer(.rightClick(x:x,y:y)) { peer.close(); active = false }
     }
     func stop() {
+        imageReceiver.stop(); imageServiceName = nil; hasConfiguration = false
         retireInput(); generation = UUID(); peerID = UUID(); active = false; sharing = false
         peer?.close(); peer = nil; verification = nil
-        listener?.newConnectionHandler = nil; listener?.stateUpdateHandler = nil; listener?.cancel(); listener = nil
+        listener?.newConnectionHandler = nil; listener?.stateUpdateHandler = nil
+        listener?.serviceRegistrationUpdateHandler = nil; listener?.cancel(); listener = nil
         adjustingPad = false; status = "Sharing is off"
     }
 }
@@ -206,12 +249,31 @@ struct PlankIPadPencilPadOptions: View {
                 } header: { Text("Appearance") } footer: {
                     Text("Changes the pad’s shading. Adjust display brightness in Control Center.")
                 }
+                PlankIPadPencilImageOptions(receiver:relay.imageReceiver)
                 Section { Button("Reset Pad Options") { relay.setPadSettings(.init()) } }
             }
             .navigationTitle("Pad Options").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement:.confirmationAction) { Button("Done") { dismiss() } } }
         }
         .preferredColorScheme(.dark)
+    }
+}
+private struct PlankIPadPencilImageOptions: View {
+    @ObservedObject var receiver: PlankIPadPencilImageReceiver
+    var body: some View {
+        Section {
+            Toggle("Receive desktop image",isOn:Binding(get:{ receiver.enabled },set:{ receiver.setEnabled($0) }))
+            if receiver.enabled {
+                VStack(alignment:.leading) {
+                    Text("Image intensity")
+                    Slider(value:Binding(get:{ receiver.intensity },set:{ receiver.setIntensity($0) }),in:0...1)
+                        .accessibilityLabel("Image intensity")
+                }
+                Text(receiver.status).font(.footnote).foregroundStyle(.secondary)
+            }
+        } header: { Text("Reference image") } footer: {
+            Text("Also enable image sharing in the connected PLANK client’s Apple Pencil settings. The image follows your drawing area and is a dimmable reference for painting.")
+        }
     }
 }
 struct PlankIPadPencilPad: UIViewRepresentable {
@@ -228,12 +290,15 @@ struct PlankIPadPencilPad: UIViewRepresentable {
     private var mappingSignature: String?
     private var receivedDowns = 0, acceptedDowns = 0, acceptedMoves = 0, acceptedUps = 0
     private var lastContactLog = -Double.infinity
-    private let outline = CAShapeLayer(), cursor = CAShapeLayer()
+    private let fill = CAShapeLayer(), outline = CAShapeLayer(), cursor = CAShapeLayer()
+    private let imageView = PlankIPadPencilImageView()
     private var viewport: PlankIPadViewport? { relay.padSettings.viewport(bounds:bounds,width:relay.width,height:relay.height) }
     init(relay: PlankIPadPencilRelay) {
         self.relay = relay; super.init(frame:.zero); relay.pad = self
         // Track Pencil independently when a finger or palm also touches the pad.
         isMultipleTouchEnabled = true; backgroundColor = .black
+        layer.addSublayer(fill)
+        imageView.configure(receiver:relay.imageReceiver); addSubview(imageView)
         outline.lineWidth = 1; layer.addSublayer(outline)
         layer.addSublayer(cursor)
         let hover = UIHoverGestureRecognizer(target:self,action:#selector(hovered(_:)))
@@ -252,9 +317,12 @@ struct PlankIPadPencilPad: UIViewRepresentable {
         }
         CATransaction.begin(); CATransaction.setDisableActions(true)
         let settings = relay.padSettings, white = settings.fillWhite
-        outline.fillColor = (settings.tone == .charcoal ? UIColor(white:white,alpha:1)
+        fill.fillColor = (settings.tone == .charcoal ? UIColor(white:white,alpha:1)
             : UIColor(red:white * 1.07,green:white,blue:white * 0.85,alpha:1)).cgColor
         outline.strokeColor = UIColor(white:0.28 + settings.glow * 0.2,alpha:1).cgColor
+        outline.fillColor = nil; fill.path = UIBezierPath(rect:rect).cgPath
+        fill.opacity = relay.canDraw ? 1 : 0.4
+        imageView.frame = rect
         cursor.fillColor = UIColor(white:0.6 + settings.glow * 0.2,alpha:1).cgColor
         outline.path = UIBezierPath(rect:rect).cgPath
         outline.opacity = relay.canDraw ? 1 : 0.4; CATransaction.commit()

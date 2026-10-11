@@ -5,9 +5,10 @@ requested publication of the completed development work. This checkpoint is
 for review; it does not change the shipping platform matrix or release packages.
 
 Subsequent feedback found menu overlap and remote Pencil interruption on editor
-entry. The local iPad32 correction is freshly compiled, signed and staged;
-its targeted device check is pending and separate from the accepted iPad31
-inspector gestures. See
+entry. Installed iPad33 is now accepted for duplicate movement, corner resizing
+and landscape main/editor toolbar clearance and published in the existing draft
+PR13 at `c3dfc42bb4272ab18616e022b441fdbbe9497bc1`. Editor peer continuity remains
+a separate physical gate. See
 [the current controls boundary](ipad-custom-controls.md#menu-protection-and-editor-continuity--ipad32).
 
 ## Review order
@@ -32,7 +33,8 @@ Retarget these slices upstream in dependency order after their bases are accepte
 
 | Target | Compiled runtime source | State |
 | --- | --- | --- |
-| iPad32 | `387d0d73ebbbc03fe3aa6506eaa63c3cee5bb83b` | Signed and staged; menu-clearance and editor-continuity device check pending |
+| iPad33 | `e7c8ecc354ae62890c2607e8735c92d103291fd6` | Signed, installed and independently verified; targeted move/resize and landscape toolbar clearance accepted |
+| iPad32 | `387d0d73ebbbc03fe3aa6506eaa63c3cee5bb83b` | Historical installed candidate, superseded by33; signed rollback retained |
 | iPad31 | `1a788801d8e48ebb3498e3c029ddee2d44afe227` | Signed, installed, exact running executable independently verified; targeted editor acceptance recorded |
 | Vision49 | `0a71d0c0cef026e74844dde495e186f799b32068` | Signed and installation verified; subsequent Pencil sharing accepted by the user |
 | Mac26 | `0a71d0c0cef026e74844dde495e186f799b32068` | Signed and staged; physical Pencil reception pending |
@@ -115,8 +117,9 @@ final Host receipt. The targeted physical iPad32 check remains pending.
   exact precision, audio/input lifetime and maintained-parent reconciliation.
   Periodic video pauses and the prior Host receive-queue overflow remain open;
   further Host input-backpressure package work remains held.
-- [Live image, dimming and magnification](ipad-live-image.md), plus Bluetooth
-  Pencil transport, remain separate planned features.
+- [Live reference image and dimming](ipad-live-image.md) is a separate implemented
+  development slice targeting iPad34 / Vision50 / Mac27; physical qualification
+  is pending. Magnification and Bluetooth Pencil transport remain planned.
 
 Build and focused check entry points are in the [iPad README](../../ios-native/README.md),
 [public native recipe](../../scripts/apple-native/README.md),

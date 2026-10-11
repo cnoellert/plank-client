@@ -3,6 +3,7 @@
 
 #if defined(PLANK_PENCIL_RELAY)
 #include "PlankPencilCrypto.h"
+#include "PlankPencilImageCrypto.h"
 #endif
 #include "PlankTransportBridge.h"
 #include "PlankVideoDecoder.h"

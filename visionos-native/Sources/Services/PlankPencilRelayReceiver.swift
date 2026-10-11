@@ -15,6 +15,10 @@ struct PlankDiscoveredPencilPad: Identifiable, Sendable {
     @Published private(set) var verification: String?
     @Published private(set) var selectedName: String?
     @Published private(set) var connected = false
+    @Published private(set) var imageSharingEnabled = false
+    let imageSender = PlankPencilImageSender()
+    private var imageBinding: PlankPencilSessionBinding?
+    private var imageStarted = false
     private weak var client: PlankCoreClient?
     private var browser: NWBrowser?
     private var discoveryOwners = Set<UUID>()
@@ -75,9 +79,12 @@ struct PlankDiscoveredPencilPad: Identifiable, Sendable {
                     guard let self, self.generation == current else { return }
                     switch event {
                     case let .verification(code): self.verification = code; self.status = "Compare this code with the iPad, then approve on both devices."
-                    case .ready: self.connected = true; self.verification = nil; self.status = "Pencil connected"; self.sync()
+                    case .ready:
+                        self.connected = true; self.verification = nil; self.status = "Pencil connected"; self.sync()
+                        self.authorizeImage(generation:current)
                     case .messagesAvailable: self.drain()
                     case let .ended(reason):
+                        self.stopImage()
                         self.retire(); self.peer = nil; self.chosenPad = nil; self.usedDesktop = false; self.admission = false; self.connected = false
                         self.verification = nil; self.selectedName = nil; self.status = reason
                     }
@@ -87,8 +94,44 @@ struct PlankDiscoveredPencilPad: Identifiable, Sendable {
         } catch { disconnect(); status = "Could not open Pencil connection." }
     }
     func approve() { guard verification != nil else { return }; verification = nil; peer?.approve(); status = "Waiting for iPad approval…" }
+    func setImageSharingEnabled(_ enabled: Bool) {
+        guard enabled != imageSharingEnabled else { return }
+        if !enabled {
+            imageSharingEnabled = false; imageStarted = false; imageSender.stop(); return
+        }
+        guard connected, peer != nil else { return }
+        imageSharingEnabled = true
+        if imageBinding == nil { authorizeImage(generation:generation) }
+        syncImage()
+    }
+    private func authorizeImage(generation current: UUID) {
+        peer?.sessionBinding { [weak self] binding in
+            Task { @MainActor in
+                guard let self, self.generation == current, self.connected,
+                      self.peer != nil, let binding else { return }
+                self.imageBinding = binding; self.syncImage()
+            }
+        }
+    }
+    private func syncImage() {
+        guard imageSharingEnabled, !imageStarted, connected, let client,
+              case .streaming = client.phase, let binding = imageBinding,
+              let pad = chosenPad else { return }
+        // Image authority belongs to this approved peer and desktop lifetime.
+        // A transient input-focus pause does not change image admission.
+        imageStarted = true
+        do {
+            try imageSender.start(client:client,binding:binding,endpoint:pad.endpoint,
+                                  privateKey:PlankPencilRelayKeys.privateKey())
+        } catch { imageSender.stop() }
+    }
+    private func stopImage() {
+        imageSharingEnabled = false; imageStarted = false; imageBinding = nil
+        imageSender.stop()
+    }
     func sync() {
         guard let client else { return }
+        syncImage()
         guard let peer else {
             if client.pencilRelayCanDraw, let chosenPad { connect(chosenPad) }
             return
@@ -153,6 +196,7 @@ struct PlankDiscoveredPencilPad: Identifiable, Sendable {
         retireStroke(); _ = deliveredKeys.retire(); client?.retirePencilRelayModifiers()
     }
     func endDesktop() {
+        stopImage()
         retire(); client?.resetPencilKeyOwnership(); admission = false
         guard usedDesktop else {
             peer?.configure(width:dimensions.width,height:dimensions.height,active:false)
@@ -165,6 +209,7 @@ struct PlankDiscoveredPencilPad: Identifiable, Sendable {
         status = "Pencil selected; waiting for the next supported desktop."
     }
     func disconnect() {
+        stopImage()
         retire(); generation = UUID(); peer?.close(); peer = nil; admission = false
         chosenPad = nil; usedDesktop = false
         connected = false; selectedName = nil; verification = nil; status = "Pencil sharing is off"

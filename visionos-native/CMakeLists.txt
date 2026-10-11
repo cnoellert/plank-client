@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.30)
 project(PlankVision LANGUAGES Swift C)
 
 set(CMAKE_Swift_LANGUAGE_VERSION 6)
-set(PLANK_VISION_BUILD_NUMBER "49" CACHE STRING "Monotonically increasing TestFlight build number")
+set(PLANK_VISION_BUILD_NUMBER "50" CACHE STRING "Monotonically increasing TestFlight build number")
 if(NOT PLANK_VISION_BUILD_NUMBER MATCHES "^[1-9][0-9]*$")
     message(FATAL_ERROR "PLANK_VISION_BUILD_NUMBER must be a positive integer")
 endif()
@@ -144,6 +144,10 @@ if(PLANK_RELAY_SOURCE_DIR)
     target_include_directories(PlankVision PRIVATE ../apple-native/Shared)
     target_sources(PlankVision PRIVATE
         ../apple-native/Shared/PlankPencilCrypto.c
+        ../apple-native/Shared/PlankPencilImageCrypto.c
+        ../apple-native/Shared/PlankPencilImageWire.swift
+        ../apple-native/Shared/PlankPencilImagePeer.swift
+        ../apple-native/Shared/PlankPencilImageSession.swift
         ../apple-native/Shared/PlankPencilRelayWire.swift
         ../apple-native/Shared/PlankPencilModifiers.swift
         ../apple-native/Shared/PlankPencilRelayKeys.swift
@@ -183,6 +187,7 @@ if(PLANK_OPUS_DIR)
     target_compile_definitions(PlankVision PRIVATE PLANK_OPUS_AUDIO=1)
 endif()
 target_link_libraries(PlankVision PRIVATE "-framework AVFAudio" "-framework CoreBluetooth")
+target_link_libraries(PlankVision PRIVATE "-framework CoreGraphics" "-framework ImageIO" "-framework UniformTypeIdentifiers")
 
 set(PLANK_FFMPEG_DIR "" CACHE PATH "Path to the visionOS FFmpeg installation")
 if(PLANK_FFMPEG_DIR)
