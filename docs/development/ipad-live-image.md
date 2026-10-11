@@ -1,13 +1,13 @@
 # iPad live reference image and magnification
 
-The first full-desktop image slice is implemented, freshly compiled and signed
-for iPad34 / Vision50 / Mac27 from
-`4a14a47e8f8fb62413f4a8c60f85fb5ecf72329a`. Independent artifact checks passed
-for versions, target architectures, profiles/signatures, dependency receipts and
-signed rollbacks. iPad34 and Vision50 are installed and their exact running
-executables independently verified; Mac27 remains staged and unlaunched.
-Physical image appearance, alignment and simultaneous input under image load
-remain pending.
+The current reference-image candidate is freshly compiled, signed and
+independently verified for iPad35 / Vision51 / Mac28 from
+`a102d8c8460fc851b4c55e84fc9acdafda17a3a9`. These candidates are staged, not
+installed or physically accepted. iPad34 / Vision50 remain the installed image
+baseline from `4a14a47e8f8fb62413f4a8c60f85fb5ecf72329a`; their exact running
+executables were independently verified at installation. The user rejected
+that baseline's picture latency and stretching. Mac27 and Mac28 remain staged
+and unlaunched. Image promotion remains held.
 Magnification and pan remain planned after the reference image is useful.
 
 ## October 10 physical usability result
@@ -18,7 +18,7 @@ slice is not accepted for promotion. Earlier Pencil and controls acceptance
 remains intact; a new Pencil slowdown was not reported as reproduced. Dimming,
 mapping corners and input under media load were not separately qualified.
 
-The current source caps image sampling at 10 fps, performs CPU resampling/JPEG
+The baseline source caps image sampling at 10 fps, performs CPU resampling/JPEG
 encoding, and paces media bytes at 2 MiB/s. The installed development apps were
 compiled with unoptimized Swift. These are plausible picture-delay costs;
 no correlated physical encode, transfer and presentation timings were recorded,
@@ -34,17 +34,57 @@ These are Mac encode measurements, not AVP performance or end-to-end latency.
 They justify investigating an optimized image conversion candidate before
 discarding the JPEG approach or raising its frame rate/bandwidth limits.
 
-Use full pad deliberately stretches the complete image and normalized Pencil
-mapping together. Match desktop uses one aspect-preserving rectangle for both.
+In that baseline, Use full pad deliberately stretches the complete image and
+normalized Pencil mapping together. Match desktop uses one aspect-preserving
+rectangle for both.
 The physical mode used in the reported trial is unrecorded, so that stretching
 path is not a conclusive diagnosis. Applying an image-only aspect fill/crop
 would break Pencil alignment. A uniform cropped drawing view requires a shared
 source crop/scale and matching inverse input transform. A separate visual-only
 magnifier can instead retain the established full-pad input mapping.
 
-The next decision is a measured performance and geometry approach; no follow-up
-build or repeated physical test is queued. The optional image choices remain
-default off, and the working input-only pad remains available.
+That assessment preceded the October11 candidate below. The optional image
+choices remain default off, and the working input-only pad remains available.
+
+## October 11 optimized candidate — iPad35 / Vision51 / Mac28
+
+Only the bounded pixel converter is compiled with `-O2`, without fast math or
+floating-point contraction. The applications retain normal Debug settings,
+including Swift `-Onone`, and the public recipe/dependency pins are unchanged.
+Conversion uses the existing premultiplied BGRA and actual identity `xf44`
+GBR10 channel/normalization conventions. Storage and dimension validation,
+JPEG admission/quality, decode checks, consent and transport limits remain
+unchanged.
+
+Sanitizer-backed converter and unchanged codec checks passed. Ten resampler
+comparisons and both synthetic JPEG outputs match the prior conversion byte
+for byte. On the build Mac, the same in-memory 3840×2160 to 1920×1080 workload
+gave median encode times of 11.986 ms for BGRA and 22.130 ms for GBR10 with
+Swift still unoptimized. These are Mac encode measurements, not AVP or
+end-to-end latency, and do not establish a physical usability repair.
+
+While **Receive desktop image** is enabled, picture and Pencil use one
+effective **Match desktop** rectangle inside the configured margins. The saved
+input-only mapping preference is preserved; disabling the image restores it.
+Waiting or failed image delivery does not independently change pen mapping.
+Consent transitions retire contact and held controls before changing geometry,
+then synchronously update the shared image/input rectangle before fresh input.
+Native policy/transition fixtures passed, including saved FullPad restoration
+and retention of the approved pen peer. Actual device alignment remains a gate.
+
+Sparse content-free samples record sender encode time/size, receiver pre-decode
+local age and decode time, and local age at accepted MainActor delivery. The
+last value precedes layer assignment and does not measure compositor completion
+or scanout. Local receive age includes assembly and worker waiting; it does not
+isolate network delay or compare unsynchronized device clocks. No images or
+typed text are logged or saved.
+
+All three signed artifacts passed independent version, architecture, profile,
+signature, source and exact dependency checks; signed34/50/27 rollbacks are
+retained. No candidate has been installed or launched. A new device trial is
+required for picture latency, proportional alignment, simultaneous Pencil and
+controls under media load, and image-off continuation. Existing input-only
+acceptance is carried forward. Zoom, pan and magnification are not implemented.
 
 ## First reference-image slice
 
@@ -55,9 +95,10 @@ In the connected Vision or Mac client's **Apple Pencil** settings, enable
 Pencil mapping, contact state, pad glow or system brightness. After desktop
 disconnect, the client requires a fresh image-sharing choice.
 
-The image is the entire already-decoded desktop composite. It occupies exactly
-the existing outlined Pencil viewport: **Match desktop** preserves its aspect;
-**Use full pad** stretches image and normalized input through the same rectangle.
+The image is the entire already-decoded desktop composite. In candidate35 it
+occupies exactly the aspect-preserving outlined Pencil viewport, with the same
+inverse input mapping. Image consent temporarily selects **Match desktop**;
+the saved **Use full pad** preference is available again when images are off.
 Margins, artist controls and the normal client-screen menus remain available.
 There is no additional fit, focused-display crop, zoom or pan in this slice.
 
@@ -133,8 +174,9 @@ pixel-center conventions explicitly. Pan/zoom or geometry changes retire an
 active stroke before switching transforms; do not move its target underneath
 the tip.
 
-Use full pad may stretch in Fit if image and input stretch together. Numbered
-pixel magnification should preserve uniform scale. Actual render backing size
+The current image candidate preserves aspect in Fit. A future stretch option
+would have to change image and input together; numbered pixel magnification
+should preserve uniform scale. Actual render backing size
 must honor the display scale; a source-sized drawable alone does not prove
 one-to-one pixels. A downscaled thumbnail enlarged to 200% cannot recover
 native detail. Use a sufficiently detailed full frame or native source crop.

@@ -33,6 +33,8 @@ Retarget these slices upstream in dependency order after their bases are accepte
 
 | Target | Compiled runtime source | State |
 | --- | --- | --- |
+| iPad35 / Vision51 | `a102d8c8460fc851b4c55e84fc9acdafda17a3a9` | Optimized conversion and proportional shared image/Pencil mapping: freshly compiled, signed, independently verified and staged; not installed; physical latency/alignment unqualified |
+| Mac28 | `a102d8c8460fc851b4c55e84fc9acdafda17a3a9` | Signed and independently verified, staged and unlaunched; physical Pencil reception/image sending pending |
 | iPad34 / Vision50 | `4a14a47e8f8fb62413f4a8c60f85fb5ecf72329a` | Separate dimmable reference-image slice: installed and exact running executables independently verified; user rejected picture latency/stretching as unsuitable, image promotion held |
 | Mac27 | `4a14a47e8f8fb62413f4a8c60f85fb5ecf72329a` | Signed and staged; physical Pencil reception and image sending pending |
 | iPad33 | `e7c8ecc354ae62890c2607e8735c92d103291fd6` | Signed, installed and independently verified; targeted move/resize and landscape toolbar clearance accepted |
@@ -119,10 +121,12 @@ final Host receipt. The targeted physical iPad32 check remains pending.
   exact precision, audio/input lifetime and maintained-parent reconciliation.
   Periodic video pauses and the prior Host receive-queue overflow remain open;
   further Host input-backpressure package work remains held.
-- [Live reference image and dimming](ipad-live-image.md) is a separate implemented,
-  compiled and signed development slice for iPad34 / Vision50 / Mac27; candidates
-  are installed on iPad/Vision and staged on Mac; the picture latency/stretching
-  trial was unsuitable and image promotion is held. Magnification and Bluetooth
+- [Live reference image and dimming](ipad-live-image.md) remains a separate
+  development slice. Installed iPad34 / Vision50 failed the picture usability
+  trial. The new iPad35 / Vision51 / Mac28 candidate is compiled, signed and
+  independently verified, but not installed: bounded optimized conversion,
+  proportional image/input geometry and sparse local phase timings require a
+  new physical trial. Image promotion remains held. Magnification and Bluetooth
   Pencil transport remain planned.
 
 Build and focused check entry points are in the [iPad README](../../ios-native/README.md),

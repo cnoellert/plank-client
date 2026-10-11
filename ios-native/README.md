@@ -20,15 +20,19 @@ and moving or resizing clears it out of the way.
 See [the current checkpoint and review handoff](../docs/development/ipad-client-checkpoint.md)
 for exact runtime revisions, accepted tests and remaining gates. Earlier build
 sections below retain the development history and are superseded by that record.
-The separate development image slice is freshly compiled, signed and independently
-verified for iPad34 / Vision50 / Mac27, runtime `4a14a47`. It adds
+The separate development image slice adds
 optional dimmable full-desktop references while Pencil Sharing, enabled from
 Pad Options and the receiver's Apple Pencil settings. Both ends require image
-consent; iPad34 and Vision50 are installed with exact running executables
-independently verified. Mac27 remains staged and unlaunched. Physical appearance,
-alignment and input under image load remain unqualified. The user reported that
-picture latency and stretching make this version unsuitable; image promotion
-is held pending a worthwhile performance/geometry approach.
+consent. Installed iPad34 / Vision50, runtime `4a14a47`, failed the user's
+picture latency/stretching trial. The October11 candidate, iPad35 / Vision51 /
+Mac28 from `a102d8c8460fc851b4c55e84fc9acdafda17a3a9`, is freshly compiled,
+signed, independently verified and staged, not installed or launched. Only its
+bounded pixel converter is optimized; image consent uses proportional picture
+and Pencil mapping while preserving the saved input-only mapping preference.
+Sparse local phase timings support the next device trial. Mac encode checks
+are substantially faster but do not establish AVP latency or a physical fix.
+Picture usefulness, alignment and simultaneous input under image load remain
+unqualified; image promotion is held. Mac27 also remains staged and unlaunched.
 See [the image boundary and next magnification slice](../docs/development/ipad-live-image.md).
 
 ## Current keyboard behavior — build 17
