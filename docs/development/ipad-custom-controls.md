@@ -545,3 +545,10 @@ Device inventories verify version33 and its exact running executable. The
 passive navigation sampler is active. Installation and logging do not establish
 physical movement or spacing acceptance; the targeted landscape check remains
 open.
+
+The artist subsequently accepted build33 and requested commit/push, resolving
+the requested duplicate movement, corner resizing and landscape main/editor
+toolbar check. The precise build32 device cause remains uncorrelated; this
+acceptance does not qualify editor peer continuity, OS cancellation or final
+Host release. Live image reference for Pencil Sharing is the next feature
+slice, described in [the image plan](ipad-live-image.md).
