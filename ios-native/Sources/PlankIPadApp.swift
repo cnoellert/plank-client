@@ -47,7 +47,9 @@ struct PlankIPadRoot: View {
     }
     private var hasWorkingSurface: Bool { client.hasActiveDesktopSession || sharePencil }
     var body: some View {
-        Group {
+        // Keep one layout owner while the full-window drawing surface and
+        // native navigation screens change underneath the presentation host.
+        ZStack {
             if hasWorkingSurface { workingSurface }
             else { idleScreen }
         }
@@ -66,7 +68,7 @@ struct PlankIPadRoot: View {
         }
         .ignoresSafeArea(.keyboard,edges:hasWorkingSurface ? .bottom : [])
         .preferredColorScheme(sharePencil ? .dark : nil)
-        .statusBarHidden(hideBars)
+        .statusBarHidden(hideBars && !editingCustomControls)
         .fullScreenCover(isPresented:$editingCustomControls,onDismiss:customControlsEditorDismissed) {
             PlankIPadCustomControlsEditor(store:customControls,referenceSurfaceSize:controlWindowSize,
                 surface:sharePencil ? .pencilSharing : .desktop)
@@ -135,6 +137,7 @@ struct PlankIPadRoot: View {
                           scrollCredentials(using: proxy)
                       }
                     }
+            .background { PlankIPadNavigationDiagnostics(role:"idle") }
             .navigationTitle("PLANK iPad Pilot")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

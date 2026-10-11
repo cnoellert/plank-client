@@ -122,3 +122,184 @@ final class PlankIPadWindowMetricsView: UIView {
         }
     }
 }
+
+/// A passive background probe for the two native navigation presentations.
+/// It observes public UIKit geometry; it never changes layout or navigation.
+struct PlankIPadNavigationDiagnostics: UIViewRepresentable {
+    private let role: String
+    init(role: String) {
+        // Do not put an arbitrary caller-provided label into device logs.
+        self.role = role == "idle" || role == "editor" ? role : "unavailable"
+    }
+    func makeUIView(context: Context) -> PlankIPadNavigationDiagnosticsView {
+        PlankIPadNavigationDiagnosticsView(role:role)
+    }
+    func updateUIView(_ view: PlankIPadNavigationDiagnosticsView,context: Context) {
+        view.setRole(role)
+        view.requestSample()
+    }
+    static func dismantleUIView(_ view: PlankIPadNavigationDiagnosticsView,coordinator: ()) {
+        view.retire()
+    }
+}
+
+@MainActor
+final class PlankIPadNavigationDiagnosticsView: UIView {
+    private static let responderLimit = 64
+    private static let parentLimit = 32
+    private static let sampleLimit = 128
+    private static let emissionLimit = 16
+    private static let sampleDelay: TimeInterval = 0.1
+    private static let emissionInterval: TimeInterval = 0.25
+    private var role: String
+    private var generation: UInt64 = 0
+    private var pending = false
+    private var retired = false
+    private var samples = 0
+    private var emissions = 0
+    private var candidate: String?
+    private var previous: String?
+    private var lastEmission: TimeInterval = -Double.infinity
+
+    init(role: String) {
+        self.role = role == "idle" || role == "editor" ? role : "unavailable"
+        super.init(frame:.zero)
+        isUserInteractionEnabled = false
+        isAccessibilityElement = false
+        backgroundColor = .clear
+    }
+    required init?(coder: NSCoder) {
+        role = "unavailable"
+        super.init(coder:coder)
+        isUserInteractionEnabled = false
+        isAccessibilityElement = false
+        backgroundColor = .clear
+    }
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window == nil {
+            generation &+= 1
+            pending = false
+            candidate = nil
+        } else {
+            requestSample()
+        }
+    }
+    override func layoutSubviews() { super.layoutSubviews(); requestSample() }
+    override func safeAreaInsetsDidChange() { super.safeAreaInsetsDidChange(); requestSample() }
+    func setRole(_ value: String) {
+        let validated = value == "idle" || value == "editor" ? value : "unavailable"
+        guard role != validated else { return }
+        role = validated
+        candidate = nil
+    }
+    func retire() {
+        retired = true
+        generation &+= 1
+        pending = false
+        candidate = nil
+    }
+    func requestSample() {
+        guard !retired,!pending,window != nil,
+              samples < Self.sampleLimit,emissions < Self.emissionLimit else { return }
+        pending = true
+        generation &+= 1
+        let scheduledGeneration = generation
+        // Read after UIKit's layout callback has returned. A second matching
+        // deferred sample is required before publishing a changed snapshot.
+        DispatchQueue.main.asyncAfter(deadline:.now() + Self.sampleDelay) { [weak self] in
+            guard let self,!self.retired,self.generation == scheduledGeneration else { return }
+            self.pending = false
+            self.sample()
+        }
+    }
+    private func sample() {
+        guard let window,!retired,samples < Self.sampleLimit,
+              emissions < Self.emissionLimit else { return }
+        samples += 1
+        let snapshot = snapshot(in:window)
+        guard candidate == snapshot else {
+            candidate = snapshot
+            requestSample()
+            return
+        }
+        guard previous != snapshot else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        guard now - lastEmission >= Self.emissionInterval else {
+            requestSample()
+            return
+        }
+        previous = snapshot
+        lastEmission = now
+        emissions += 1
+        NSLog("%@","PLANK iPad navigation layout emission=\(emissions) \(snapshot)")
+    }
+    private func snapshot(in window: UIWindow) -> String {
+        let owner = owningController()
+        let navigation = owningNavigationController(from:owner)
+        let ownerView = owner?.viewIfLoaded
+        let navigationView = navigation?.viewIfLoaded
+        // Accessing navigationBar is avoided until the controller is loaded.
+        let bar = navigation?.isViewLoaded == true ? navigation?.navigationBar : nil
+        let status = window.windowScene?.statusBarManager
+        let fields = [
+            "role=\(role)",
+            "window_bounds=\(Self.rect(window.bounds))",
+            "window_safe=\(Self.insets(window.safeAreaInsets))",
+            "probe_frame_window=\(frameInWindow(self,window:window))",
+            "probe_safe=\(Self.insets(safeAreaInsets))",
+            "owner_available=\(owner == nil ? "unavailable" : "true")",
+            "owner_frame_window=\(frameInWindow(ownerView,window:window))",
+            "owner_bounds=\(ownerView.map { Self.rect($0.bounds) } ?? "unavailable")",
+            "owner_safe=\(ownerView.map { Self.insets($0.safeAreaInsets) } ?? "unavailable")",
+            "navigation_available=\(navigation == nil ? "unavailable" : "true")",
+            "navigation_controller_frame_window=\(frameInWindow(navigationView,window:window))",
+            "navigation_controller_safe=\(navigationView.map { Self.insets($0.safeAreaInsets) } ?? "unavailable")",
+            "navigation_bar_frame_window=\(frameInWindow(bar,window:window))",
+            "navigation_bar_policy_hidden=\(navigation.map { Self.available($0.isNavigationBarHidden) } ?? "unavailable")",
+            "navigation_bar_hidden=\(bar.map { Self.available($0.isHidden) } ?? "unavailable")",
+            "status_visible=\(status.map { Self.available(!$0.isStatusBarHidden) } ?? "unavailable")",
+            "status_frame_native=\(status.map { Self.rect($0.statusBarFrame) } ?? "unavailable")",
+            "status_frame_space=\(status == nil ? "unavailable" : "unverified")",
+            // UIStatusBarManager's public header does not identify the frame's
+            // coordinate space. Do not guess a screen-to-window conversion.
+            "status_frame_window=\(status == nil ? "unavailable" : "unavailable_coordinate_space")"
+        ]
+        return fields.joined(separator:" ")
+    }
+    private func owningController() -> UIViewController? {
+        var responder: UIResponder? = self
+        var visited = Set<ObjectIdentifier>()
+        for _ in 0..<Self.responderLimit {
+            guard let current = responder,visited.insert(ObjectIdentifier(current)).inserted else { return nil }
+            if let controller = current as? UIViewController { return controller }
+            responder = current.next
+        }
+        return nil
+    }
+    private func owningNavigationController(from owner: UIViewController?) -> UINavigationController? {
+        var controller = owner
+        var visited = Set<ObjectIdentifier>()
+        for _ in 0..<Self.parentLimit {
+            guard let current = controller,visited.insert(ObjectIdentifier(current)).inserted else { return nil }
+            if let navigation = current as? UINavigationController { return navigation }
+            if let navigation = current.navigationController { return navigation }
+            controller = current.parent
+        }
+        return nil
+    }
+    private func frameInWindow(_ view: UIView?,window: UIWindow) -> String {
+        guard let view else { return "unavailable" }
+        guard view.window === window else { return "unavailable_window" }
+        return Self.rect(view.convert(view.bounds,to:window))
+    }
+    private static func available(_ value: Bool) -> String { value ? "true" : "false" }
+    private static func rect(_ value: CGRect) -> String {
+        String(format:"(%.1f,%.1f,%.1f,%.1f)",Double(value.origin.x),Double(value.origin.y),
+               Double(value.size.width),Double(value.size.height))
+    }
+    private static func insets(_ value: UIEdgeInsets) -> String {
+        String(format:"(%.1f,%.1f,%.1f,%.1f)",Double(value.top),Double(value.left),
+               Double(value.bottom),Double(value.right))
+    }
+}

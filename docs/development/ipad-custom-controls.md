@@ -494,3 +494,36 @@ real OS interruption matrix or final Host release. The corrected iPad32 device
 target was freshly compiled, signed and independently verified; signed iPad31
 is retained for rollback. Build32 is staged, not installed, and its menu-clearance
 and editor-continuity physical check remains pending.
+
+Build32 was subsequently installed and its exact version and running executable
+were independently verified. Its new physical check exposed a regression:
+editor controls, including copies, stayed still during attempted moves and
+corner resizing. Landscape editor Cancel/Done and the idle client toolbar also
+overlapped system status indicators. Menu-clearance and editor-continuity
+acceptance are therefore still open; build31's accepted inspector result is
+retained separately.
+
+## Device editor investigation — iPad33
+
+The current saved seven-control library permits movement and resizing in pure
+geometry checks. Native simulator replay also passes moving, copying and
+resizing with Undo/Done using the production editor and the complete production
+root. Stable native navigation bars sit below the simulator's measured system
+safe area. These checks run on iPadOS27; the physical iPad uses26.5. They have
+not reproduced the reported physical failure or established its cause.
+
+The candidate gives the root one stable layout container across the idle and
+drawing screens. The editor explicitly shows system status indicators and the
+presenter does not hide them while editing. This is a compatibility correction
+candidate, not a confirmed fix for physical gesture delivery or idle spacing.
+
+Bounded passive diagnostics record anonymous editor gesture callbacks, changed
+or unchanged placement proposals, native frame updates and geometry changes
+during a gesture. Navigation probes record system/window/controller/bar frames
+and unavailable measurements explicitly. Counters do not publish view changes,
+intercept touches, retain touch objects or record labels, key assignments,
+typed text, identities or artist control coordinates. Saved layout bodies,
+snapping, menu protection, input admission and sharing transport remain intact.
+The next physical run must distinguish missing callbacks, unchanged draft
+proposals and mismatched rendered frames before any further gesture or resolver
+change is selected. No physical acceptance is claimed for this candidate.

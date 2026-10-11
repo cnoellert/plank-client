@@ -663,6 +663,8 @@ struct PlankIPadCustomControlsEditor: View {
     @State private var resizeMode = false
     @State private var canvasSize = CGSize.zero
     @State private var snapGuides: [PlankControlSnap.Guide] = []
+    // Reference-only counters do not publish view updates or retain controls.
+    @State private var gestureDiagnostics = PlankIPadEditorGestureDiagnostics()
     private enum NameTarget { case layout(UUID), control(UUID) }
     @State private var nameTarget: NameTarget?
     @State private var nameDraft = ""
@@ -708,6 +710,8 @@ struct PlankIPadCustomControlsEditor: View {
                     .clipped()
                     .onAppear { canvasSize = geometry.size }
                     .onChange(of:geometry.size) { _,value in
+                        gestureDiagnostics.count(.canvasChanges)
+                        if dragStart != nil || resizeStart != nil { gestureDiagnostics.count(.activeCanvasChanges) }
                         canvasSize = value; dragStart = nil; resizeStart = nil; snapGuides = []
                     }
                 }
@@ -719,6 +723,7 @@ struct PlankIPadCustomControlsEditor: View {
                     .padding(.horizontal).padding(.vertical,10)
                     .frame(maxWidth:.infinity).background(.bar)
             }
+            .background { PlankIPadNavigationDiagnostics(role:"editor") }
             .navigationTitle("Edit Controls")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -747,6 +752,9 @@ struct PlankIPadCustomControlsEditor: View {
             nameActions(for:target)
         } message: { _ in Text(nameMessage) }
         .preferredColorScheme(.dark)
+        .statusBarHidden(false)
+        .onAppear { gestureDiagnostics.report(reason:0,force:true) }
+        .onDisappear { gestureDiagnostics.report(reason:3,force:true) }
     }
 
     private var editorToolbar: some View {
@@ -906,10 +914,16 @@ struct PlankIPadCustomControlsEditor: View {
         .frame(width:frame.width,height:frame.height)
         .contentShape(Rectangle())
         .position(x:frame.midX,y:frame.midY)
-        .onTapGesture { select(control.id) }
+        .onGeometryChange(for:CGRect.self) { $0.frame(in:.named("plank-custom-controls-editor-canvas")) } action: { _ in
+            gestureDiagnostics.count(.frameChanges)
+        }
+        .onTapGesture { gestureDiagnostics.count(.taps); select(control.id) }
         .gesture(DragGesture(minimumDistance:4,coordinateSpace:.named("plank-custom-controls-editor-canvas"))
             .onChanged { value in
-                guard !resizeMode else { return }
+                gestureDiagnostics.count(.moves)
+                guard !resizeMode else {
+                    gestureDiagnostics.count(.moveModeBlocks); gestureDiagnostics.report(); return
+                }
                 if dragStart == nil {
                     remember(); materializeResolvedPlacements(in:geometry.referenceBounds)
                     select(control.id,showInspector:false)
@@ -924,9 +938,16 @@ struct PlankIPadCustomControlsEditor: View {
                 let result = PlankControlSnap.move(placement:next,in:bounds,peers:peerFrames(excluding:control.id,in:bounds),
                                                   gutter:6,threshold:8 / max(geometry.scale,0.01))
                 snapGuides = result.guides
+                let previous = selectedLayout.controls.first(where:{ $0.id == control.id })?.placement(landscape:editingLandscape)
                 setPlacement(result.placement,id:control.id)
+                let current = selectedLayout.controls.first(where:{ $0.id == control.id })?.placement(landscape:editingLandscape)
+                gestureDiagnostics.count(previous == current ? .unchangedProposals : .changedProposals)
+                gestureDiagnostics.report()
             }
-            .onEnded { _ in dragStart = nil; snapGuides = [] })
+            .onEnded { _ in
+                dragStart = nil; snapGuides = []
+                gestureDiagnostics.count(.ends); gestureDiagnostics.report(reason:2)
+            })
         .accessibilityElement(children:.ignore)
         .accessibilityLabel("\(control.label), \(control.binding.title)")
         .accessibilityValue(unavailable ? "Needs room. Move or resize to use this control." : "")
@@ -942,6 +963,7 @@ struct PlankIPadCustomControlsEditor: View {
             .frame(width:44,height:44).contentShape(Rectangle())
             .highPriorityGesture(DragGesture(minimumDistance:0,coordinateSpace:.named("plank-custom-controls-editor-canvas"))
                 .onChanged { value in
+                    gestureDiagnostics.count(.resizes)
                     if resizeStart == nil {
                         remember(); materializeResolvedPlacements(in:geometry.referenceBounds)
                         hideControlInspector()
@@ -954,9 +976,16 @@ struct PlankIPadCustomControlsEditor: View {
                         translation:geometry.referenceTranslation(value.translation),in:bounds,
                         peers:peerFrames(excluding:control.id,in:bounds),gutter:6,threshold:8 / max(geometry.scale,0.01))
                     snapGuides = result.guides
+                    let previous = selectedLayout.controls.first(where:{ $0.id == control.id })?.placement(landscape:editingLandscape)
                     setPlacement(result.placement,id:control.id)
+                    let current = selectedLayout.controls.first(where:{ $0.id == control.id })?.placement(landscape:editingLandscape)
+                    gestureDiagnostics.count(previous == current ? .unchangedProposals : .changedProposals)
+                    gestureDiagnostics.report()
                 }
-                .onEnded { _ in resizeStart = nil; snapGuides = [] })
+                .onEnded { _ in
+                    resizeStart = nil; snapGuides = []
+                    gestureDiagnostics.count(.ends); gestureDiagnostics.report(reason:2)
+                })
             .accessibilityHidden(true)
     }
 
@@ -1169,6 +1198,7 @@ struct PlankIPadCustomControlsEditor: View {
         narrowInspector = false
     }
     private func deselectControl() {
+        gestureDiagnostics.count(.deselections)
         selectedControlID = nil
         hideControlInspector()
         dragStart = nil; resizeStart = nil; snapGuides = []
@@ -1208,6 +1238,7 @@ struct PlankIPadCustomControlsEditor: View {
     }
     private func duplicateControl() {
         guard let original = selectedControl, selectedLayout.controls.count < PlankControlLayout.maximumControls else { return }
+        gestureDiagnostics.count(.duplicates)
         remember(); var layout = selectedLayout
         var copied = original; copied.id = UUID()
         copied.portrait.x = min(copied.portrait.x + 0.04,1)
@@ -1260,5 +1291,29 @@ struct PlankIPadCustomControlsEditor: View {
             y = below <= maxY ? below : (above >= minY ? above : minY)
         } else { y = frame.midY }
         return CGPoint(x:min(max(x,minX),maxX),y:min(max(y,minY),maxY))
+    }
+}
+
+/// Bounded, anonymous editor diagnostics for a device-only gesture failure.
+/// There are no published properties, touch objects, labels or stored positions.
+@MainActor private final class PlankIPadEditorGestureDiagnostics {
+    enum Counter: Int, CaseIterable {
+        case taps, moves, moveModeBlocks, resizes, changedProposals, unchangedProposals
+        case frameChanges, canvasChanges, activeCanvasChanges, deselections, duplicates, ends
+    }
+    private var totals = Array(repeating:0,count:Counter.allCases.count)
+    private var emissions = 0
+    private var lastReport = -Double.infinity
+    func count(_ counter: Counter) {
+        totals[counter.rawValue] = min(Int(Int32.max),totals[counter.rawValue] + 1)
+    }
+    func report(reason: Int = 1,force: Bool = false) {
+        let now = ProcessInfo.processInfo.systemUptime
+        // Reserve the last slot for the editor's final summary.
+        guard emissions < (reason == 3 ? 24 : 23),force || now - lastReport >= 1 else { return }
+        emissions += 1; lastReport = now
+        NSLog("PLANK editor gestures reason=%d taps=%d moves=%d moveModeBlocks=%d resizes=%d changedProposals=%d unchangedProposals=%d frameChanges=%d canvasChanges=%d activeCanvasChanges=%d deselections=%d duplicates=%d ends=%d",
+            reason,totals[0],totals[1],totals[2],totals[3],totals[4],totals[5],
+            totals[6],totals[7],totals[8],totals[9],totals[10],totals[11])
     }
 }
