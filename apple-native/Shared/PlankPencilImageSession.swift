@@ -94,6 +94,9 @@ private final class PlankPencilImageEncoderWorker: @unchecked Sendable {
     private struct Admission { let at: UInt64; let bytes: Int }
     private var admissions: [Admission] = []
     private var reported: PlankPencilImageEncoderState?
+    // Bounded, content-free samples. These are local encode durations, never
+    // subtracted from a clock on the iPad or written into image records.
+    private var diagnosticSample = 0
 
     init(peer: PlankPencilImagePeer, state: @escaping @Sendable (PlankPencilImageEncoderState) -> Void) {
         self.peer = peer; self.state = state
@@ -141,8 +144,16 @@ private final class PlankPencilImageEncoderWorker: @unchecked Sendable {
         let item = pending!; pending = nil; lastEncodedAt = now
         lock.unlock()
         do {
+            let encodeStarted = DispatchTime.now().uptimeNanoseconds
             let encoded = try PlankPencilReferenceImageCodec.encode(item.frame)
             let completed = DispatchTime.now().uptimeNanoseconds
+            if diagnosticSample == 0, completed >= encodeStarted {
+                NSLog("PLANK reference image encode: milliseconds=%.2f bytes=%d source=%dx%d output=%dx%d",
+                      Double(completed - encodeStarted) / 1_000_000,
+                      encoded.jpegData.count, encoded.sourceWidth, encoded.sourceHeight,
+                      encoded.encodedWidth, encoded.encodedHeight)
+            }
+            diagnosticSample = (diagnosticSample + 1) % 30
             lock.lock()
             let valid = !closed && ready && revision == item.revision
             lock.unlock()

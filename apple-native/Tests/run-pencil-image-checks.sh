@@ -52,9 +52,20 @@ body = source[start:end]
 assert body.count('{') == 1 and body.count('}') == 1
 (output / 'Frame.swift').write_text('import Foundation\nimport CoreVideo\n' + body + '\n')
 PY
+# Only this native conversion component is optimized; Swift stays in its normal
+# Debug configuration. Exercise direct C admission and unaligned/endian storage.
+conversion="$repo/visionos-native/Bridge"
+xcrun --sdk macosx clang -O2 -fno-fast-math -ffp-contract=off \
+    -fsanitize=address,undefined -fno-omit-frame-pointer -I"$conversion" \
+    "$conversion/PlankPencilImageConversion.c" \
+    "$repo/visionos-native/Tests/test_pencil_image_conversion.c" -o "$output/conversion-checks"
+"$output/conversion-checks"
+xcrun --sdk macosx clang -O2 -fno-fast-math -ffp-contract=off -fsanitize=address \
+    -c "$conversion/PlankPencilImageConversion.c" -o "$output/PlankPencilImageConversion.o"
 xcrun --sdk macosx swiftc -swift-version 6 -strict-concurrency=complete -sanitize=address \
+    -import-objc-header "$repo/visionos-native/Bridge/PlankPencilImageConversion.h" \
     -parse-as-library "$output/Frame.swift" \
     "$repo/visionos-native/Sources/Services/PlankPencilReferenceImageCodec.swift" \
     "$repo/visionos-native/Tests/PlankPencilReferenceImageCodecTests.swift" \
-    -o "$output/codec-checks"
+    "$output/PlankPencilImageConversion.o" -o "$output/codec-checks"
 "$output/codec-checks"

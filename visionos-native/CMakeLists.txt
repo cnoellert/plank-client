@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.30)
 project(PlankVision LANGUAGES Swift C)
 
 set(CMAKE_Swift_LANGUAGE_VERSION 6)
-set(PLANK_VISION_BUILD_NUMBER "50" CACHE STRING "Monotonically increasing TestFlight build number")
+set(PLANK_VISION_BUILD_NUMBER "51" CACHE STRING "Monotonically increasing TestFlight build number")
 if(NOT PLANK_VISION_BUILD_NUMBER MATCHES "^[1-9][0-9]*$")
     message(FATAL_ERROR "PLANK_VISION_BUILD_NUMBER must be a positive integer")
 endif()
@@ -21,6 +21,8 @@ add_executable(PlankVision MACOSX_BUNDLE
     Bridge/PlankRawHidFrame.h
     Bridge/PlankVideoDecoder.c
     Bridge/PlankVideoDecoder.h
+    Bridge/PlankPencilImageConversion.c
+    Bridge/PlankPencilImageConversion.h
     Sources/PlankVisionApp.swift
     ../apple-native/Shared/PlankControlKeyOwnership.swift
     Sources/Models/PlankTopologyDecoder.swift
@@ -55,6 +57,10 @@ add_executable(PlankVision MACOSX_BUNDLE
     Sources/Views/SettingsView.swift
     PrivacyInfo.xcprivacy
 )
+# Keep the bounded pixel conversion optimized in the normal Debug recipe.
+# Other application sources retain their existing build configuration.
+set_source_files_properties(Bridge/PlankPencilImageConversion.c PROPERTIES
+    COMPILE_OPTIONS "-O2;-fno-fast-math;-ffp-contract=off")
 set_source_files_properties(PrivacyInfo.xcprivacy PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
 
 # visionOS requires a layered app icon. Render the existing PLANK artwork into

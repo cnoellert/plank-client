@@ -49,19 +49,16 @@ nonisolated enum PlankPencilReferenceImageCodec {
             let count = try storageSize(stride: frame.bytesPerRow, height: frame.height,
                                         minimumStride: frame.width * 4)
             guard frame.pixels.count >= count else { throw Failure.invalidSourceStorage }
-            frame.pixels.withUnsafeBytes { source in
+            let converted = frame.pixels.withUnsafeBytes { source in
                 output.withUnsafeMutableBytes { destination in
-                    resample(sourceWidth: frame.width, sourceHeight: frame.height,
-                             destination: destination, width: width, height: height) { x, y in
-                        let offset = y * frame.bytesPerRow + x * 4
-                        // This is the exact little-endian premultiplied-first
-                        // BGRA interpretation used by RemoteDesktopView. Keep
-                        // premultiplied RGB (black backdrop) and make JPEG opaque.
-                        return SIMD3(Double(source[offset]), Double(source[offset + 1]),
-                                     Double(source[offset + 2]))
-                    }
+                    plank_pencil_image_convert_bgra8(
+                        source.baseAddress?.assumingMemoryBound(to: UInt8.self), source.count, frame.bytesPerRow,
+                        UInt32(frame.width), UInt32(frame.height),
+                        destination.baseAddress?.assumingMemoryBound(to: UInt8.self), destination.count,
+                        UInt32(width), UInt32(height))
                 }
             }
+            guard converted == 1 else { throw Failure.invalidSourceStorage }
         }
         let image = try bgraImage(output, width: width, height: height)
         // A noisy frame can exceed the wire bound. Retry at a finite number of
@@ -174,46 +171,15 @@ nonisolated enum PlankPencilReferenceImageCodec {
               let blueRed = CVPixelBufferGetBaseAddressOfPlane(buffer, 1) else {
             throw Failure.unavailablePixelStorage
         }
-        output.withUnsafeMutableBytes { destination in
-            resample(sourceWidth: sourceWidth, sourceHeight: sourceHeight,
-                     destination: destination, width: width, height: height) { x, y in
-                let g = UInt16(littleEndian: green.loadUnaligned(fromByteOffset: y * greenStride + x * 2, as: UInt16.self))
-                let offset = y * blueRedStride + x * 4
-                let b = UInt16(littleEndian: blueRed.loadUnaligned(fromByteOffset: offset, as: UInt16.self))
-                let r = UInt16(littleEndian: blueRed.loadUnaligned(fromByteOffset: offset + 2, as: UInt16.self))
-                // Metal reads r16Unorm/rg16Unorm then multiplies by
-                // 65535/65472. Equivalently divide the raw word by 65472.
-                return SIMD3(min(255, Double(b) * 255 / 65472),
-                             min(255, Double(g) * 255 / 65472),
-                             min(255, Double(r) * 255 / 65472))
-            }
+        let converted = output.withUnsafeMutableBytes { destination in
+            plank_pencil_image_convert_gbr10(
+                green.assumingMemoryBound(to: UInt8.self), greenCount, greenStride,
+                blueRed.assumingMemoryBound(to: UInt8.self), blueRedCount, blueRedStride,
+                UInt32(sourceWidth), UInt32(sourceHeight),
+                destination.baseAddress?.assumingMemoryBound(to: UInt8.self), destination.count,
+                UInt32(width), UInt32(height))
         }
-    }
-
-    nonisolated private static func resample(
-        sourceWidth: Int, sourceHeight: Int, destination: UnsafeMutableRawBufferPointer,
-        width: Int, height: Int, sample: (Int, Int) -> SIMD3<Double>
-    ) {
-        let scaleX = Double(sourceWidth) / Double(width)
-        let scaleY = Double(sourceHeight) / Double(height)
-        for y in 0..<height {
-            let sourceY = max(0, min(Double(sourceHeight - 1), (Double(y) + 0.5) * scaleY - 0.5))
-            let top = Int(sourceY), bottom = min(sourceHeight - 1, top + 1)
-            let vertical = sourceY - Double(top)
-            for x in 0..<width {
-                let sourceX = max(0, min(Double(sourceWidth - 1), (Double(x) + 0.5) * scaleX - 0.5))
-                let left = Int(sourceX), right = min(sourceWidth - 1, left + 1)
-                let horizontal = sourceX - Double(left)
-                let upper = sample(left, top) * (1 - horizontal) + sample(right, top) * horizontal
-                let lower = sample(left, bottom) * (1 - horizontal) + sample(right, bottom) * horizontal
-                let value = upper * (1 - vertical) + lower * vertical
-                let offset = (y * width + x) * 4
-                destination[offset] = UInt8(value.x.rounded())
-                destination[offset + 1] = UInt8(value.y.rounded())
-                destination[offset + 2] = UInt8(value.z.rounded())
-                destination[offset + 3] = 255
-            }
-        }
+        guard converted == 1 else { throw Failure.invalidSourceStorage }
     }
 
     nonisolated private static func bgraImage(_ data: Data, width: Int, height: Int) throws -> CGImage {

@@ -4,7 +4,7 @@ if(NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     message(FATAL_ERROR "Use an iOS device or simulator SDK")
 endif()
 set(CMAKE_Swift_LANGUAGE_VERSION 6)
-set(PLANK_IPAD_BUILD_NUMBER "34" CACHE STRING "Separate iPad pilot build")
+set(PLANK_IPAD_BUILD_NUMBER "35" CACHE STRING "Separate iPad pilot build")
 set(VISION "${CMAKE_CURRENT_SOURCE_DIR}/../visionos-native")
 foreach(required PLANK_TRANSPORT_DIR PLANK_FFMPEG_DIR PLANK_OPUS_DIR PLANK_RELAY_SOURCE_DIR PLANK_RELAY_SODIUM_PREFIX)
     if(NOT ${required})
@@ -22,10 +22,13 @@ add_executable(PlankIPad MACOSX_BUNDLE
     ${VISION}/Bridge/PlankTransportBridge.c
     ${VISION}/Bridge/PlankRawHidFrame.c
     ${VISION}/Bridge/PlankVideoDecoder.c
+    ${VISION}/Bridge/PlankPencilImageConversion.c
     ${VISION}/Sources/Views/PlankMetalVideoView.swift
     Sources/PlankIPadApp.swift Sources/PlankIPadInput.swift
     Sources/PlankIPadInputPolicy.swift Sources/PlankIPadVideo.swift
     Sources/PlankIPadKeys.swift Sources/PlankIPadKeyboardViewport.swift ${VISION}/PrivacyInfo.xcprivacy)
+set_source_files_properties(${VISION}/Bridge/PlankPencilImageConversion.c PROPERTIES
+    COMPILE_OPTIONS "-O2;-fno-fast-math;-ffp-contract=off")
 target_sources(PlankIPad PRIVATE Sources/PlankIPadDisplayOptions.swift Sources/PlankIPadPencilPolicy.swift
     Sources/PlankIPadPencilRelay.swift Sources/PlankIPadPencilPadSettings.swift Sources/PlankIPadPencilImage.swift
     Sources/PlankIPadCustomControls.swift Sources/PlankIPadCustomControlModel.swift

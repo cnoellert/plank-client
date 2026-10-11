@@ -21,6 +21,12 @@ import UIKit
     private var imageServiceName: String?
     private var hasConfiguration = false
     weak var pad: PlankIPadPencilPadView?
+    init() {
+        imageReceiver.enabledWillChange = { [weak self] in self?.retireInput() }
+        imageReceiver.enabledDidChange = { [weak self] in
+            self?.pad?.setNeedsLayout(); self?.pad?.layoutIfNeeded()
+        }
+    }
     func setPadSettings(_ value: PlankIPadPencilPadSettings) {
         let next = value.validated
         guard next != padSettings else { return }
@@ -224,15 +230,7 @@ struct PlankIPadPencilPadOptions: View {
                     }
                     if let stopSharing { Button("Stop Sharing",role:.destructive,action:stopSharing) }
                 }
-                Section {
-                    Picker("Mapping",selection:binding(\.mapping)) {
-                        ForEach(PlankIPadPencilPadSettings.Mapping.allCases,id:\.self) { Text($0.title).tag($0) }
-                    }.pickerStyle(.segmented)
-                } header: { Text("Drawing area") } footer: {
-                    Text(relay.padSettings.mapping == .matchDesktop
-                         ? "Keeps the desktop’s proportions inside your margins."
-                         : "Maps your entire chosen area to the desktop. Horizontal and vertical movement may scale differently.")
-                }
+                PlankIPadPencilMappingOptions(relay:relay,receiver:relay.imageReceiver)
                 Section {
                     margin("Left",\.left); margin("Right",\.right)
                     margin("Top",\.top); margin("Bottom",\.bottom)
@@ -258,6 +256,31 @@ struct PlankIPadPencilPadOptions: View {
             .toolbar { ToolbarItem(placement:.confirmationAction) { Button("Done") { dismiss() } } }
         }
         .preferredColorScheme(.dark)
+    }
+}
+private struct PlankIPadPencilMappingOptions: View {
+    @ObservedObject var relay: PlankIPadPencilRelay
+    @ObservedObject var receiver: PlankIPadPencilImageReceiver
+    private var mapping: Binding<PlankIPadPencilPadSettings.Mapping> {
+        Binding(get:{ relay.padSettings.effectiveMapping(referenceImageEnabled:receiver.enabled) },set:{ value in
+            guard !receiver.enabled else { return }
+            var next = relay.padSettings; next.mapping = value; relay.setPadSettings(next)
+        })
+    }
+    var body: some View {
+        Section {
+            Picker("Mapping",selection:mapping) {
+                ForEach(PlankIPadPencilPadSettings.Mapping.allCases,id:\.self) { Text($0.title).tag($0) }
+            }.pickerStyle(.segmented).disabled(receiver.enabled)
+        } header: { Text("Drawing area") } footer: {
+            if receiver.enabled {
+                Text("With image reception on, the picture and Pencil use the desktop’s proportions inside your margins. Turning it off restores “\(relay.padSettings.mapping.title)”.")
+            } else {
+                Text(relay.padSettings.mapping == .matchDesktop
+                     ? "Keeps the desktop’s proportions inside your margins."
+                     : "Maps your entire chosen area to the desktop. Horizontal and vertical movement may scale differently.")
+            }
+        }
     }
 }
 private struct PlankIPadPencilImageOptions: View {
@@ -294,7 +317,10 @@ struct PlankIPadPencilPad: UIViewRepresentable {
     private var lastContactLog = -Double.infinity
     private let fill = CAShapeLayer(), outline = CAShapeLayer(), cursor = CAShapeLayer()
     private let imageView = PlankIPadPencilImageView()
-    private var viewport: PlankIPadViewport? { relay.padSettings.viewport(bounds:bounds,width:relay.width,height:relay.height) }
+    private var viewport: PlankIPadViewport? {
+        relay.padSettings.viewport(bounds:bounds,width:relay.width,height:relay.height,
+                                  referenceImageEnabled:relay.imageReceiver.enabled)
+    }
     init(relay: PlankIPadPencilRelay) {
         self.relay = relay; super.init(frame:.zero); relay.pad = self
         // Track Pencil independently when a finger or palm also touches the pad.
@@ -330,7 +356,8 @@ struct PlankIPadPencilPad: UIViewRepresentable {
         outline.opacity = relay.canDraw ? 1 : 0.4; CATransaction.commit()
         // Geometry only, never stroke positions: distinguish local remapping
         // from a downstream workstation/application transform on the next run.
-        let signature = "mode=\(settings.mapping.rawValue) bounds=\(bounds) area=\(rect) desktop=\(relay.width)x\(relay.height)"
+        let effective = settings.effectiveMapping(referenceImageEnabled:relay.imageReceiver.enabled)
+        let signature = "mode=\(effective.rawValue) saved=\(settings.mapping.rawValue) image=\(relay.imageReceiver.enabled) bounds=\(bounds) area=\(rect) desktop=\(relay.width)x\(relay.height)"
         if signature != mappingSignature {
             mappingSignature = signature
             NSLog("PLANK Pencil pad mapping %@",signature)

@@ -8,7 +8,14 @@ import UIKit
 /// Optional, foreground reference-image consent is separate from Pencil consent.
 /// Image frames reach passive UIKit subscribers without publishing SwiftUI state.
 @MainActor final class PlankIPadPencilImageReceiver: ObservableObject {
-    @Published private(set) var enabled = false
+    @Published private(set) var enabled = false {
+        willSet { if newValue != enabled { enabledWillChange?() } }
+        didSet { if oldValue != enabled { enabledDidChange?() } }
+    }
+    // The drawing owner retires its old contact before either UI consent or
+    // receiver teardown changes the effective mapping, then updates geometry.
+    var enabledWillChange: (() -> Void)?
+    var enabledDidChange: (() -> Void)?
     @Published private(set) var intensity = 0.35
     @Published private(set) var status = "Image overlay is off"
     private var privateKey: Data?
@@ -24,6 +31,7 @@ import UIKit
     private var image: CGImage?
     private var receivedAt: UInt64 = 0
     private var subscribers: [ObjectIdentifier: PlankIPadPencilImageWeakView] = [:]
+    private var presentationDiagnosticSample = 0
     private static let maximumAge: UInt64 = 1_500_000_000
 
     /// Makes the image service available for this foreground sharing lifetime.
@@ -110,6 +118,13 @@ import UIKit
                 self.image = decoded.image; self.receivedAt = decoded.receivedAt
                 if self.status != "Receiving reference image" { self.status = "Receiving reference image" }
                 self.updateSubscribers(); self.startExpiry()
+                if self.presentationDiagnosticSample == 0 {
+                    // First authenticated chunk to accepted main-actor delivery;
+                    // this is neither end-to-end latency nor layer completion.
+                    NSLog("PLANK reference image presentation: localAgeMilliseconds=%.2f",
+                          Double(now - decoded.receivedAt) / 1_000_000)
+                }
+                self.presentationDiagnosticSample = (self.presentationDiagnosticSample + 1) % 30
             case let .failure(revision):
                 guard self.decoder?.isCurrent(revision) == true else { return }
                 self.endMedia(); self.status = "Reference image unavailable. Pencil sharing is unchanged."
@@ -148,6 +163,7 @@ import UIKit
     }
     private func endMedia() {
         peerID = UUID()
+        presentationDiagnosticSample = 0
         decoder?.invalidate(); decoder = nil
         mailbox?.invalidate(); mailbox = nil
         peer?.close(); peer = nil
@@ -194,8 +210,8 @@ import UIKit
     init(_ view: PlankIPadPencilImageView) { self.view = view }
 }
 
-/// Its owner places this view in the EXISTING Pencil viewport rectangle. Resize
-/// therefore follows Match Desktop or Full Pad, without a second fit/crop map.
+/// Its owner places this view in the same aspect-preserving Pencil rectangle
+/// used while image reception is enabled, without a second fit/crop map.
 @MainActor final class PlankIPadPencilImageView: UIView {
     private weak var receiver: PlankIPadPencilImageReceiver?
     private var subscribed = false
@@ -285,6 +301,7 @@ private final class PlankIPadPencilImageDecoder: @unchecked Sendable {
     private var desktopID: UUID?
     private var generation: UInt64 = 0, frameNumber: UInt64 = 0
     private var requiresNewGeneration = false
+    private var diagnosticSample = 0
     init(dimensions: (width: Int, height: Int)?, presentation: PlankIPadPencilImagePresentationMailbox) {
         self.dimensions = dimensions; self.presentation = presentation
     }
@@ -324,12 +341,22 @@ private final class PlankIPadPencilImageDecoder: @unchecked Sendable {
         pending = nil; lock.unlock()
         do {
             let descriptor = item.frame.descriptor
+            let decodeStarted = DispatchTime.now().uptimeNanoseconds
             let image = try PlankPencilReferenceImageCodec.decode(item.frame.jpegData,
                 expectedWidth: descriptor.encodedWidth, expectedHeight: descriptor.encodedHeight)
             let now = DispatchTime.now().uptimeNanoseconds
             lock.lock(); let valid = !closed && revision == item.revision; lock.unlock()
             if valid, now >= item.frame.receivedAtUptimeNanoseconds,
                now - item.frame.receivedAtUptimeNanoseconds < 1_500_000_000 {
+                if diagnosticSample == 0, now >= decodeStarted,
+                   decodeStarted >= item.frame.receivedAtUptimeNanoseconds {
+                    // Pre-decode age includes assembly and local queue wait.
+                    // No pixels, peer identity, typed text or remote clock.
+                    NSLog("PLANK reference image decode: preDecodeLocalAgeMilliseconds=%.2f decodeMilliseconds=%.2f bytes=%d",
+                          Double(decodeStarted - item.frame.receivedAtUptimeNanoseconds) / 1_000_000,
+                          Double(now - decodeStarted) / 1_000_000, item.frame.jpegData.count)
+                }
+                diagnosticSample = (diagnosticSample + 1) % 30
                 presentation.offer(.image(.init(image: image, receivedAt: item.frame.receivedAtUptimeNanoseconds, revision: item.revision)))
             }
         } catch {

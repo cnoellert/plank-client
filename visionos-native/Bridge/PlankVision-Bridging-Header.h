@@ -10,6 +10,7 @@
 #include "PlankAudioDecoder.h"
 #include "PlankAudioRing.h"
 #include "PlankRawHidFrame.h"
+#include "PlankPencilImageConversion.h"
 
 #if defined(PLANK_TABLET_RELAY)
 #include "client_link.h"
