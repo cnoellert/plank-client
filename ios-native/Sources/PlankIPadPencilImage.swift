@@ -207,6 +207,7 @@ import UIKit
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
     deinit {
+        let receiver = receiver
         let id = ObjectIdentifier(self)
         if let receiver {
             Task { @MainActor [weak receiver] in receiver?.unsubscribe(id: id) }
