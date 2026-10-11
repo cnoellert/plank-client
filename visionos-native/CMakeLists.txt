@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.30)
 project(PlankVision LANGUAGES Swift C)
 
 set(CMAKE_Swift_LANGUAGE_VERSION 6)
-set(PLANK_VISION_BUILD_NUMBER "1" CACHE STRING "Monotonically increasing TestFlight build number")
+set(PLANK_VISION_BUILD_NUMBER "49" CACHE STRING "Monotonically increasing TestFlight build number")
 if(NOT PLANK_VISION_BUILD_NUMBER MATCHES "^[1-9][0-9]*$")
     message(FATAL_ERROR "PLANK_VISION_BUILD_NUMBER must be a positive integer")
 endif()
@@ -22,6 +22,7 @@ add_executable(PlankVision MACOSX_BUNDLE
     Bridge/PlankVideoDecoder.c
     Bridge/PlankVideoDecoder.h
     Sources/PlankVisionApp.swift
+    ../apple-native/Shared/PlankControlKeyOwnership.swift
     Sources/Models/PlankTopologyDecoder.swift
     Sources/Models/HostBookmark.swift
     Sources/Models/PlankAudioFormat.swift
@@ -138,7 +139,17 @@ if(PLANK_RELAY_SOURCE_DIR)
     target_compile_definitions(PlankVision PRIVATE PLANK_TABLET_RELAY=1)
     target_compile_options(PlankVision PRIVATE
         "$<$<COMPILE_LANGUAGE:Swift>:-DPLANK_TABLET_RELAY>")
+    target_compile_definitions(PlankVision PRIVATE PLANK_PENCIL_RELAY=1)
+    target_compile_options(PlankVision PRIVATE "$<$<COMPILE_LANGUAGE:Swift>:-DPLANK_PENCIL_RELAY_RECEIVER>")
+    target_include_directories(PlankVision PRIVATE ../apple-native/Shared)
     target_sources(PlankVision PRIVATE
+        ../apple-native/Shared/PlankPencilCrypto.c
+        ../apple-native/Shared/PlankPencilRelayWire.swift
+        ../apple-native/Shared/PlankPencilModifiers.swift
+        ../apple-native/Shared/PlankPencilRelayKeys.swift
+        ../apple-native/Shared/PlankPencilRelayPeer.swift
+        Sources/Services/PlankPencilRelayReceiver.swift
+        Sources/Views/PlankPencilRelaySettings.swift
         Sources/Models/PlankDrawingHandoff.swift
         Sources/Models/DrawingRegistrationRequest.swift
         Sources/Models/DrawingRegistrationReceipt.swift

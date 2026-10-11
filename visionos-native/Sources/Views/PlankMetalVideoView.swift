@@ -165,10 +165,14 @@ final class PlankMetalVideoView: UIView {
                 succeeded: buffer.status == .completed
             )
         }
+#if !os(iOS) || !targetEnvironment(simulator)
+        // The iOS simulator omits drawable presentation callbacks. Device
+        // presentation and frame timing stay unchanged on iPad and Vision.
         let submittedFrameID = frameID
         drawable.addPresentedHandler { shown in
             PlankTimingCapture.shared.presented(frameID: submittedFrameID, time: shown.presentedTime)
         }
+#endif
         command.present(drawable)
         PlankTimingCapture.shared.submitted()
         command.commit()
