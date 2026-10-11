@@ -524,6 +524,18 @@ and unavailable measurements explicitly. Counters do not publish view changes,
 intercept touches, retain touch objects or record labels, key assignments,
 typed text, identities or artist control coordinates. Saved layout bodies,
 snapping, menu protection, input admission and sharing transport remain intact.
-The next physical run must distinguish missing callbacks, unchanged draft
-proposals and mismatched rendered frames before any further gesture or resolver
-change is selected. No physical acceptance is claimed for this candidate.
+The next physical run must distinguish missing callbacks and unchanged draft
+proposals, with visible movement checked separately, before any further gesture
+or resolver change is selected. The local `frameChanges` counter does not
+qualify rendered movement: native replay moved a control while that counter
+stayed unchanged. No physical acceptance is claimed for this candidate.
+
+Final runtime `e7c8ecc354ae62890c2607e8735c92d103291fd6` passes the three
+scoped native movement/copy/resize cases with the current saved library. Undo
+and Done remain usable, and each case publishes its saved draft exactly once.
+Nine stable idle/editor toolbar observations place buttons below the measured
+system safe area. Anonymous diagnostic payloads were checked in the simulator;
+the isolated simulator was shut down afterward. The fresh iPad device build
+compiled and was signed as build33. Signed build32 remains available for
+rollback. Build33 is staged and has not been installed; the physical26.5 check
+for movement, resizing and landscape toolbar spacing remains open.
