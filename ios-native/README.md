@@ -20,10 +20,13 @@ and moving or resizing clears it out of the way.
 See [the current checkpoint and review handoff](../docs/development/ipad-client-checkpoint.md)
 for exact runtime revisions, accepted tests and remaining gates. Earlier build
 sections below retain the development history and are superseded by that record.
-The separate development image slice targets iPad34 / Vision50 / Mac27. It adds
+The separate development image slice is freshly compiled, signed and independently
+verified for iPad34 / Vision50 / Mac27, runtime `4a14a47`. It adds
 optional dimmable full-desktop references while Pencil Sharing, enabled from
 Pad Options and the receiver's Apple Pencil settings. Both ends require image
-consent; current installed33/49 are unchanged until an authorized update.
+consent; candidates are staged and current installed33/49 are unchanged until an
+authorized update. Physical appearance, alignment and input under image load
+remain pending.
 See [the image boundary and next magnification slice](../docs/development/ipad-live-image.md).
 
 ## Current keyboard behavior — build 17

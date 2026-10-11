@@ -1,8 +1,12 @@
 # iPad live reference image and magnification
 
-The first full-desktop image slice is implemented in development source for
-iPad34 / Vision50 / Mac27. Device compilation, signing and physical qualification
-remain separate gates. Magnification and pan remain the next slice.
+The first full-desktop image slice is implemented, freshly compiled and signed
+for iPad34 / Vision50 / Mac27 from
+`4a14a47e8f8fb62413f4a8c60f85fb5ecf72329a`. Independent artifact checks passed
+for versions, target architectures, profiles/signatures, dependency receipts and
+signed rollbacks. These candidates are staged, not installed; physical image
+appearance, alignment and simultaneous input under image load remain pending.
+Magnification and pan remain the next slice.
 
 ## First reference-image slice
 
