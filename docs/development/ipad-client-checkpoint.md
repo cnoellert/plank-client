@@ -33,7 +33,8 @@ Retarget these slices upstream in dependency order after their bases are accepte
 
 | Target | Compiled runtime source | State |
 | --- | --- | --- |
-| iPad34 / Vision50 / Mac27 | `4a14a47e8f8fb62413f4a8c60f85fb5ecf72329a` | Separate dimmable reference-image slice: freshly compiled, signed and independently verified; staged, installation and physical image qualification pending |
+| iPad34 / Vision50 | `4a14a47e8f8fb62413f4a8c60f85fb5ecf72329a` | Separate dimmable reference-image slice: freshly compiled, signed, installed and exact running executables independently verified; physical image qualification pending |
+| Mac27 | `4a14a47e8f8fb62413f4a8c60f85fb5ecf72329a` | Signed and staged; physical Pencil reception and image sending pending |
 | iPad33 | `e7c8ecc354ae62890c2607e8735c92d103291fd6` | Signed, installed and independently verified; targeted move/resize and landscape toolbar clearance accepted |
 | iPad32 | `387d0d73ebbbc03fe3aa6506eaa63c3cee5bb83b` | Historical installed candidate, superseded by33; signed rollback retained |
 | iPad31 | `1a788801d8e48ebb3498e3c029ddee2d44afe227` | Signed, installed, exact running executable independently verified; targeted editor acceptance recorded |
@@ -120,7 +121,7 @@ final Host receipt. The targeted physical iPad32 check remains pending.
   further Host input-backpressure package work remains held.
 - [Live reference image and dimming](ipad-live-image.md) is a separate implemented,
   compiled and signed development slice for iPad34 / Vision50 / Mac27; candidates
-  are staged and physical qualification is pending. Magnification and Bluetooth
+  are installed on iPad/Vision and staged on Mac; physical qualification is pending. Magnification and Bluetooth
   Pencil transport remain planned.
 
 Build and focused check entry points are in the [iPad README](../../ios-native/README.md),

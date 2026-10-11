@@ -4,8 +4,10 @@ The first full-desktop image slice is implemented, freshly compiled and signed
 for iPad34 / Vision50 / Mac27 from
 `4a14a47e8f8fb62413f4a8c60f85fb5ecf72329a`. Independent artifact checks passed
 for versions, target architectures, profiles/signatures, dependency receipts and
-signed rollbacks. These candidates are staged, not installed; physical image
-appearance, alignment and simultaneous input under image load remain pending.
+signed rollbacks. iPad34 and Vision50 are installed and their exact running
+executables independently verified; Mac27 remains staged and unlaunched.
+Physical image appearance, alignment and simultaneous input under image load
+remain pending.
 Magnification and pan remain the next slice.
 
 ## First reference-image slice
