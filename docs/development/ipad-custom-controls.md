@@ -644,6 +644,8 @@ Build38 runtime `000c72132e9d21c5bbff8d06443e1ad7fe0fb966` changes only these
 two guards and its build number. Root/editor, saved layouts, accepted geometry,
 image and receiver code remain unchanged; 414 native/recipe files match37. Fresh
 device compilation, signing and independent runtime/profile/dependency checks
-pass. The M5 candidate is staged, not installed; signed37 rollback is retained.
-The remaining physical check is connected client naming with the same selected
-layout. Do not repeat accepted snapping or previous input tests.
+pass. The artist confirmed disconnected; the M5 update installed/open with exact
+38/0.1.0 and its running executable path verified. Signed37 rollback is retained.
+The focused physical question is connected client naming on a non-first saved
+layout with selection retained; acceptance remains pending. Do not repeat
+accepted snapping or previous input tests.
