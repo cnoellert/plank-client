@@ -10,6 +10,9 @@ import GameController
     @Published private(set) var heldControlIDs = Set<UUID>()
     @Published private(set) var inputEpoch: UInt64 = 0
     @Published private(set) var inputFailure: String?
+    @Published private(set) var ignoreFingerInput: Bool
+    private let defaults: UserDefaults
+    private static let ignoreFingerInputKey = "plank.ipad.ignoreFingerInput"
     func updateWheelDiagnostics(_ value: String) { wheelDiagnostics = value }
     var enabled = false {
         didSet {
@@ -28,7 +31,18 @@ import GameController
     private var pencil = PlankIPadPencilPolicy()
     var pencilTouching: Bool { pencil.touching }
     var hasHeldButtons: Bool { !held.buttons.isEmpty }
-    init(client: PlankCoreClient) { self.client = client }
+    init(client: PlankCoreClient, defaults: UserDefaults = .standard) {
+        self.client = client; self.defaults = defaults
+        ignoreFingerInput = defaults.bool(forKey: Self.ignoreFingerInputKey)
+    }
+    func setIgnoreFingerInput(_ ignored: Bool) {
+        guard ignored != ignoreFingerInput else { return }
+        // A finger owns only its active pointer contact. Keep independently
+        // held Artist/hardware keys, Pencil and physical-pointer input intact.
+        if ignored { surface?.retireDirectContact() }
+        ignoreFingerInput = ignored
+        defaults.set(ignored, forKey: Self.ignoreFingerInputKey)
+    }
     func clearInputFailure() { inputFailure = nil }
     private func admitKeys(_ change: PlankControlKeyOwnership.Change) -> Bool {
         guard !isHandlingInputFailure else { return false }
@@ -333,6 +347,11 @@ struct PlankIPadCanvas: UIViewRepresentable {
         clearPointerContact(); keyboardPolicy.reset()
     }
     func clearPointerContact() { activeTouch = nil; pointerButtons.removeAll(); wheel.reset() }
+    func retireDirectContact() {
+        guard activeTouch?.type == .direct else { return }
+        router.button(1, pressed: false)
+        activeTouch = nil
+    }
     @objc private func keyboardChanged() {
         router.release()
         attachKeyboard()
@@ -487,7 +506,9 @@ struct PlankIPadCanvas: UIViewRepresentable {
             return
         }
         guard activeTouch == nil, let viewport,
-              let touch = touches.first(where: { $0.type == .direct || $0.type == .indirectPointer }),
+              let touch = touches.first(where: {
+                  $0.type == .indirectPointer || ($0.type == .direct && !router.ignoreFingerInput)
+              }),
               router.pointer(touch.location(in: self), viewport: viewport, dragging: false) else { return }
         activeTouch = touch
         if touch.type == .indirectPointer {
@@ -497,6 +518,7 @@ struct PlankIPadCanvas: UIViewRepresentable {
     }
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = activeTouch, touches.contains(touch), let viewport else { return }
+        if touch.type == .direct && router.ignoreFingerInput { retireDirectContact(); return }
         if touch.type == .pencil {
             // Coalesced actual samples retain acquisition order. Timestamp policy
             // excludes duplicated final samples; predicted/late estimates stay local.
@@ -513,6 +535,7 @@ struct PlankIPadCanvas: UIViewRepresentable {
     }
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard let touch = activeTouch, touches.contains(touch) else { return }
+        if touch.type == .direct && router.ignoreFingerInput { retireDirectContact(); return }
         if touch.type == .pencil {
             if let viewport {
                 for sample in (event?.coalescedTouches(for: touch) ?? []).sorted(by: { $0.timestamp < $1.timestamp }) {

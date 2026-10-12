@@ -77,7 +77,7 @@ struct PlankIPadRoot: View {
         .sheet(isPresented:$add) { PlankIPadBookmarkEditor(store:store,client:client,host:.init(name:"",address:"",spatialDisplaySize:PlankIPadDisplayOptions.defaultSize),isNew:true) }
         .sheet(item:$editing) { host in PlankIPadBookmarkEditor(store:store,client:client,host:host,isNew:false) }
         .sheet(isPresented:$controls) {
-            if sharePencil { PlankIPadPencilPadOptions(relay:pencilRelay,stopSharing:stopPencilSharing) }
+            if sharePencil { PlankIPadPencilPadOptions(relay:pencilRelay,router:router,stopSharing:stopPencilSharing) }
             else { PlankIPadControls(client:client,router:router) }
         }
         .onAppear { selectedID = store.hosts.first?.id; updateAdmission() }
@@ -147,6 +147,8 @@ struct PlankIPadRoot: View {
                     Menu {
                         Button { startPencilSharing() } label: { Label("Share Apple Pencil",systemImage:"pencil.tip.crop.circle") }
                             .disabled(busy || scenePhase != .active)
+                        Toggle("Ignore finger input",isOn:Binding(
+                            get:{ router.ignoreFingerInput },set:{ router.setIgnoreFingerInput($0) }))
                     } label: { Label("Client Options",systemImage:"slider.horizontal.3") }
                     Button { add = true } label: { Label("Add Workstation",systemImage:"plus") }.disabled(busy)
                 }
@@ -450,6 +452,7 @@ struct PlankIPadControls: View {
     var body: some View {
         NavigationStack {
             Form {
+                PlankIPadTouchOptions(router:router,sharing:false)
                 Section("Audio") {
                     Toggle("Mute", isOn: $muted)
                     Slider(value: $volume, in: 0...1) { Text("Volume") }
@@ -494,4 +497,23 @@ struct PlankIPadControls: View {
         }
     }
     private func applyAudio() { PlankAudioOutput.shared.setVolume(Float(volume), muted: muted) }
+}
+
+/// Finger filtering belongs to the desktop input source. Local menus and
+/// independently owned Artist Controls remain interactive in either mode.
+struct PlankIPadTouchOptions: View {
+    @ObservedObject var router: PlankIPadInputRouter
+    var sharing: Bool
+    var body: some View {
+        Section {
+            Toggle("Ignore finger input",isOn:Binding(
+                get:{ router.ignoreFingerInput },set:{ router.setIgnoreFingerInput($0) }))
+        } header: { Text("Touch") } footer: {
+            if sharing {
+                Text("Pencil Sharing already ignores fingers outside Artist Controls. This preference also blocks finger clicks and drags when using the iPad desktop.")
+            } else {
+                Text("Blocks finger clicks and drags on the remote desktop. Artist Controls, Pencil, mouse and keyboard remain available.")
+            }
+        }
+    }
 }

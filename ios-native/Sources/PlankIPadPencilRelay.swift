@@ -200,6 +200,7 @@ struct PlankIPadPencilConsent: View {
 }
 struct PlankIPadPencilPadOptions: View {
     @ObservedObject var relay: PlankIPadPencilRelay
+    @ObservedObject var router: PlankIPadInputRouter
     var stopSharing: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     private func binding<Value>(_ key: WritableKeyPath<PlankIPadPencilPadSettings,Value>) -> Binding<Value> {
@@ -223,6 +224,7 @@ struct PlankIPadPencilPadOptions: View {
     var body: some View {
         NavigationStack {
             Form {
+                PlankIPadTouchOptions(router:router,sharing:true)
                 Section("Apple Pencil Sharing") {
                     Text(relay.status).foregroundStyle(.secondary)
                     if let code = relay.verification {
