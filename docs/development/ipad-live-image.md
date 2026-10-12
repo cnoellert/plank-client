@@ -211,6 +211,10 @@ deliberate **Hand** navigation control and a small full-desktop navigator.
 Here 2× means twice Fit, rather than a native-pixel percentage. Existing
 100%/200%/300% ideas mean source-pixel magnification and should be named
 separately if added later. No zoom runtime is implemented by this proposal.
+Center the initial doubled view on the last valid Pencil hover position, or
+the desktop center when hover is unavailable. The navigator can select another
+area deliberately. This proposal avoids moving the view continuously under
+the Pencil while drawing.
 
 The primary zoom is an operating workspace: picture, cursor, Pencil, mouse and
 squeeze positions use the same crop/scale and inverse mapping. Artist Controls

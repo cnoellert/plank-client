@@ -578,3 +578,41 @@ Stand-in touch delivery and a recording Host qualify local admission/ordering,
 not physical palm rejection or final Host receipt. The new device check is the
 filter's off/on behavior and Artist/Pencil coexistence, not a repeat of earlier
 editor, wheel, keyboard or pressure acceptance.
+
+## Local layout naming and chrome-safe rows — iPad37
+
+On installed iPad36, the artist reported that Rename Layout does not open while
+connected to a desktop or sharing Pencil. Exact native simulator Menu/alert
+comparisons did not reproduce the physical iPadOS26.6 failure; keyboard coverage
+is not the reported symptom and no root keyboard policy is changed.
+
+Build37 runtime `535c48667d35bafcd322f692ae07703d579040cc` places layout naming
+in the editor hierarchy, directly below its toolbar. A focused native text field
+has Cancel and Save actions; Save edits only the local draft and the editor's
+Done publishes it. Layout selection and geometry editing pause during naming.
+Button labels retain their accepted native alert. This removes layout naming's
+native-dialog dependency without claiming the precise device cause was found.
+
+The top-row displacement is reproduced geometrically: snapping a key to the
+whole-window top edge puts it above the protected menu area. The resolver then
+translates its connected group, staggering neighbors. Move and resize now snap
+to measured usable chrome edges before group resolution, while keeping saved
+anchors in the same full-window coordinates. The group resolver, saved sizes
+and library schema are unchanged. Repeated row/materialization checks preserve
+six-point gutters, neighbor positions, dimensions, deterministic editor/live
+placement and compact menu exclusion.
+
+Native production editor replay passes local naming in idle, connected desktop
+and active Pencil Sharing: automatic focus, typing above the docked keyboard,
+Cancel, draft-only Save, one-step undo, and one publication on editor Done.
+The same stand-in stream or approved peer remains available after Done. Native
+simulator delivery and stubbed transport do not prove physical iPadOS behavior
+or final Host receipt.
+
+Fresh native device compilation, signing and independent target/profile/
+runtime/resource/dependency verification pass. Signed37 is staged for the new
+M5; installed36/Vision52 and signed36 rollback remain untouched. Physical
+connected/sharing naming and top-row drag acceptance remain required. No
+receiver, image, input-admission, keyboard, Host, network or dependency change
+accompanies this local editor correction. Zoom remains a separate proposal in
+[the live-image discussion](ipad-live-image.md#october-11-zoom-proposal--discussion-before-implementation).

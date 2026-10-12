@@ -33,8 +33,9 @@ Retarget these slices upstream in dependency order after their bases are accepte
 
 | Target | Compiled runtime source | State |
 | --- | --- | --- |
+| iPad37 | `535c48667d35bafcd322f692ae07703d579040cc` | Local inline layout rename and chrome-safe editor rows; freshly built/signed/independently verified and staged for new M5; not installed, physical check pending |
 | iPad36 | `7a5fe82d14f47c073e308af63a73ac6c6cb42014` | Built, signed and installed/open on new M5; exact version/running path independently verified; physical finger-filter acceptance pending |
-| Vision52 / Mac29 | `e8b928ffd8b253edc959c7669b2cc23b50aa99f2` | Image-only recovery: Vision52 installed/running and independently verified; Mac29 staged/unlaunched; physical repair unqualified |
+| Vision52 / Mac29 | `e8b928ffd8b253edc959c7669b2cc23b50aa99f2` | Image-only recovery: Vision52 installed/running; artist reports picture visible with better latency, below expectations; image promotion held; Mac29 staged/unlaunched |
 | iPad35 / Vision51 | `a102d8c8460fc851b4c55e84fc9acdafda17a3a9` | Optimized conversion and proportional shared image/Pencil mapping: iPad35 installed/open and independently verified on new M5/iPadOS26.6; Vision51 staged; physical image latency/alignment unqualified |
 | Mac28 | `a102d8c8460fc851b4c55e84fc9acdafda17a3a9` | Signed and independently verified, staged and unlaunched; physical Pencil reception/image sending pending |
 | iPad34 / Vision50 | `4a14a47e8f8fb62413f4a8c60f85fb5ecf72329a` | Separate dimmable reference-image slice: installed and exact running executables independently verified; user rejected picture latency/stretching as unsuitable, image promotion held |
