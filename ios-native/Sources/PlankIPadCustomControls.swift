@@ -669,6 +669,7 @@ struct PlankIPadCustomControlsEditor: View {
     @State private var nameTarget: NameTarget?
     @State private var nameDraft = ""
     @State private var namingFromInspector = false
+    @FocusState private var layoutNameFocused: Bool
 
     init(store: PlankIPadCustomControlsStore, referenceSurfaceSize: CGSize = .zero,
          surface: PlankIPadControlSurface = .desktop) {
@@ -689,6 +690,10 @@ struct PlankIPadCustomControlsEditor: View {
     }
     private var usesSheetInspector: Bool { previewGeometry(in:canvasSize).previewFrame.width < 620 }
     private var inspectorPresented: Bool { usesSheetInspector ? narrowInspector : inspectorVisible }
+    private var isRenamingLayout: Bool {
+        if case .layout = nameTarget { return true }
+        return false
+    }
     private var unavailableEditingCount: Int {
         let bounds = previewGeometry(in:canvasSize).referenceBounds
         return controlResolution(in:bounds).unavailableIDs.count
@@ -699,13 +704,16 @@ struct PlankIPadCustomControlsEditor: View {
     var body: some View {
         NavigationStack {
             VStack(spacing:0) {
-                editorToolbar
+                editorToolbar.disabled(isRenamingLayout)
+                if case let .layout(id) = nameTarget {
+                    layoutNameEditor(id:id)
+                }
                 GeometryReader { geometry in
                     ZStack(alignment:.topLeading) {
                         Color(white:0.035)
                             .contentShape(Rectangle())
                             .onTapGesture(perform:deselectControl)
-                        canvas(in:geometry.size)
+                        canvas(in:geometry.size).allowsHitTesting(!isRenamingLayout)
                     }
                     .clipped()
                     .onAppear { canvasSize = geometry.size }
@@ -730,7 +738,7 @@ struct PlankIPadCustomControlsEditor: View {
                 ToolbarItem(placement:.cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement:.confirmationAction) {
                     Button("Done") { store.replace(draft); dismiss() }.fontWeight(.semibold)
-                        .disabled(!draft.isValid)
+                        .disabled(!draft.isValid || isRenamingLayout)
                 }
             }
             .sheet(isPresented:$narrowInspector,onDismiss:hideControlInspector) {
@@ -936,7 +944,8 @@ struct PlankIPadCustomControlsEditor: View {
                 next.x = min(max(next.x + translation.width / max(bounds.width,1),0),1)
                 next.y = min(max(next.y + translation.height / max(bounds.height,1),0),1)
                 let result = PlankControlSnap.move(placement:next,in:bounds,peers:peerFrames(excluding:control.id,in:bounds),
-                                                  gutter:6,threshold:8 / max(geometry.scale,0.01))
+                                                  gutter:6,threshold:8 / max(geometry.scale,0.01),
+                                                  chrome:store.chromeGeometry(referenceSize:bounds.size,surface:surface))
                 snapGuides = result.guides
                 let previous = selectedLayout.controls.first(where:{ $0.id == control.id })?.placement(landscape:editingLandscape)
                 setPlacement(result.placement,id:control.id)
@@ -974,7 +983,8 @@ struct PlankIPadCustomControlsEditor: View {
                     let bounds = geometry.referenceBounds
                     let result = PlankControlSnap.resize(original:original,corner:corner,
                         translation:geometry.referenceTranslation(value.translation),in:bounds,
-                        peers:peerFrames(excluding:control.id,in:bounds),gutter:6,threshold:8 / max(geometry.scale,0.01))
+                        peers:peerFrames(excluding:control.id,in:bounds),gutter:6,threshold:8 / max(geometry.scale,0.01),
+                        chrome:store.chromeGeometry(referenceSize:bounds.size,surface:surface))
                     snapGuides = result.guides
                     let previous = selectedLayout.controls.first(where:{ $0.id == control.id })?.placement(landscape:editingLandscape)
                     setPlacement(result.placement,id:control.id)
@@ -1136,9 +1146,37 @@ struct PlankIPadCustomControlsEditor: View {
         if case .layout = nameTarget { return "This name identifies the saved arrangement of controls." }
         return "The label shown on this button. Its key and behavior stay unchanged."
     }
+    private func layoutNameEditor(id: UUID) -> some View {
+        VStack(alignment:.leading,spacing:8) {
+            Text("Rename Layout").font(.headline)
+            HStack(spacing:12) {
+                TextField("Layout name",text:$nameDraft)
+                    .textInputAutocapitalization(.sentences).autocorrectionDisabled()
+                    .textFieldStyle(.roundedBorder).submitLabel(.done)
+                    .focused($layoutNameFocused)
+                    .accessibilityLabel("Layout name")
+                    .onSubmit { saveName(nameDraft,for:.layout(id)) }
+                Button("Cancel") { layoutNameFocused = false; nameTarget = nil }
+                    .accessibilityLabel("Cancel rename")
+                Button("Save") { saveName(nameDraft,for:.layout(id)) }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityLabel("Save layout name")
+                    .disabled(nameDraft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding(.horizontal,16).padding(.vertical,10)
+        .background(.bar)
+        .task(id:id) { layoutNameFocused = true }
+    }
     private func namePresentation(fromInspector: Bool) -> Binding<Bool> {
-        Binding(get:{ nameTarget != nil && namingFromInspector == fromInspector },set:{ presented in
-            if !presented && namingFromInspector == fromInspector { nameTarget = nil }
+        // Layout naming stays in this editor hierarchy. Only button-label
+        // editing uses the existing native alert on its visible inspector.
+        Binding(get:{
+            if case .control = nameTarget { return namingFromInspector == fromInspector }
+            return false
+        },set:{ presented in
+            if !presented && namingFromInspector == fromInspector,
+               case .control = nameTarget { nameTarget = nil }
         })
     }
     @ViewBuilder private func nameActions(for target: NameTarget) -> some View {
@@ -1150,6 +1188,7 @@ struct PlankIPadCustomControlsEditor: View {
             .disabled(nameDraft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty)
     }
     private func beginNameEdit(_ target: NameTarget) {
+        layoutNameFocused = false
         switch target {
         case let .layout(id):
             guard let layout = draft.layouts.first(where:{ $0.id == id }) else { return }
@@ -1158,7 +1197,10 @@ struct PlankIPadCustomControlsEditor: View {
             guard let control = selectedLayout.controls.first(where:{ $0.id == id }) else { return }
             nameDraft = control.label
         }
-        namingFromInspector = narrowInspector
+        if case .layout = target {
+            hideControlInspector()
+            namingFromInspector = false
+        } else { namingFromInspector = narrowInspector }
         nameTarget = target
     }
     private func saveName(_ value: String,for target: NameTarget) {
@@ -1173,6 +1215,7 @@ struct PlankIPadCustomControlsEditor: View {
             guard let index = layout.controls.firstIndex(where:{ $0.id == id }) else { return }
             remember(); layout.controls[index].label = String(text.prefix(40)); replaceDraft(layout)
         }
+        layoutNameFocused = false
         nameTarget = nil
     }
     private var keyBinding: Binding<UInt16> {

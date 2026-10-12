@@ -7,10 +7,11 @@ import CoreGraphics
         labelChecks()
         geometryChecks()
         chromeReservationChecks()
+        chromeSafeSnapChecks()
         ownershipChecks()
         failedAdmissionChecks()
         receiverChecks()
-        print("PASS custom controls: bounded saved layouts, legacy migration, independent Space size, reference/live preview parity, translated snapped groups around measured chrome, explicit unavailable/recoverable fit, stable gutter/alignment/size snapping, anchored resizing, finite bindings, overlapping ownership, physical repeat, combo order, atomic rejection, fail-closed input epochs and stale-change protection")
+        print("PASS custom controls: bounded saved layouts, legacy migration, independent Space size, reference/live preview parity, translated snapped groups around measured chrome, explicit unavailable/recoverable fit, stable gutter/alignment/size snapping, chrome-safe edge-row dragging/resizing without peer displacement, anchored resizing, finite bindings, overlapping ownership, physical repeat, combo order, atomic rejection, fail-closed input epochs and stale-change protection")
     }
     private static func labelChecks() {
         let source = PlankControlLayout.defaults().controls.first { $0.binding.code == 0x20 }!
@@ -248,6 +249,104 @@ import CoreGraphics
                                                  reservedRects:[.null,CGRect(x:0,y:0,width:CGFloat.infinity,height:44)])
         precondition(PlankControlPlacementResolver.resolve(controls:keys,landscape:true,chrome:invalid).unavailableIDs.count == keys.count)
         precondition(invalid.reservedRects.isEmpty)
+    }
+    private static func chromeSafeSnapChecks() {
+        func close(_ a: CGFloat,_ b: CGFloat) -> Bool { abs(a - b) < 0.000_01 }
+        func same(_ a: CGRect,_ b: CGRect) -> Bool {
+            close(a.minX,b.minX) && close(a.minY,b.minY) && close(a.width,b.width) && close(a.height,b.height)
+        }
+        let bounds = CGRect(x:0,y:0,width:1376,height:1032)
+        let chrome = PlankControlChromeGeometry(bounds:bounds,
+            usableBounds:CGRect(x:0,y:86,width:1376,height:926))
+        func key(_ frame: CGRect,in area: CGRect = bounds) -> PlankCustomControl {
+            let placement = PlankControlPlacement(frame:frame,in:area)
+            return PlankCustomControl(label:"F1",binding:.init(code:0x70),portrait:placement,landscape:placement)
+        }
+        let peer = key(CGRect(x:930,y:92,width:200,height:110))
+        let proposal = PlankControlPlacement(frame:CGRect(x:724,y:6,width:200,height:110),in:bounds)
+        // This reconstructs the reported stagger: the old whole-window snap
+        // put one key above the menu. Its tall rectangle still touched the
+        // safe peers, so protecting chrome translated the entire cluster.
+        let oldSnap = PlankControlSnap.move(placement:proposal,in:bounds,peers:[peer.landscape.frame(in:bounds)])
+        let oldKey = key(oldSnap.placement.frame(in:bounds))
+        let oldResolution = PlankControlPlacementResolver.resolve(controls:[oldKey,peer],landscape:true,chrome:chrome)
+        precondition(close(oldResolution.frames[oldKey.id]!.minY,92)
+            && close(oldResolution.frames[peer.id]!.minY,178),
+            "The fixture must reproduce the former one-menu-height stagger")
+        let snap = PlankControlSnap.move(placement:proposal,in:bounds,peers:[peer.landscape.frame(in:bounds)],chrome:chrome)
+        precondition(same(snap.placement.frame(in:bounds),CGRect(x:724,y:92,width:200,height:110)),
+            "A top-row drag snaps to the measured chrome-safe edge before group resolution")
+        precondition(snap.guides.contains { $0.axis == .horizontal && $0.kind == .edge && close($0.position,92) })
+        var keys = [key(snap.placement.frame(in:bounds)),peer,key(CGRect(x:1136,y:92,width:200,height:110))]
+        let expected = keys.map { $0.landscape.frame(in:bounds) }
+        let initial = keys
+        for _ in 0..<30 {
+            // The editor materializes live positions at gesture start, then
+            // publishes proposals normalized against the original whole window.
+            let peers = Array(keys.dropFirst()).map { $0.landscape.frame(in:bounds) }
+            keys[0].landscape = PlankControlSnap.move(placement:proposal,in:bounds,peers:peers,chrome:chrome).placement
+            let resolved = PlankControlPlacementResolver.resolve(controls:keys,landscape:true,chrome:chrome)
+            precondition(resolved.unavailableIDs.isEmpty)
+            for index in keys.indices {
+                let frame = resolved.frames[keys[index].id]!
+                precondition(same(frame,expected[index]),"Repeated top-edge drags may not translate or stagger safe peers")
+                keys[index].landscape = PlankControlPlacement(frame:frame,in:bounds)
+            }
+            precondition(close(expected[1].minX - expected[0].maxX,6)
+                && close(expected[2].minX - expected[1].maxX,6))
+            precondition(resolved == PlankControlPlacementResolver.resolve(controls:Array(keys.reversed()),landscape:true,chrome:chrome),
+                "Chrome-safe row placement remains independent of saved array order")
+        }
+        precondition(keys.map(\.landscape.width) == initial.map(\.landscape.width)
+            && keys.map(\.landscape.height) == initial.map(\.landscape.height),
+            "Dragging a row cannot alter any saved key dimension")
+        let geometry = PlankControlPreviewGeometry(referenceSize:bounds.size,availableSize:CGSize(width:920,height:760))
+        for frame in expected {
+            let preview = geometry.preview(frame:frame)
+            precondition(close(preview.minX / geometry.scale,frame.minX)
+                && close(preview.minY / geometry.scale,frame.minY),
+                "Chrome-safe drag results use the same window rectangles in editor and live overlay")
+        }
+        // Chrome-aware resizing uses the same safe edge while preserving the
+        // opposite corner; growing upward cannot pull a snapped row past it.
+        let resized = PlankControlSnap.resize(original:keys[0].landscape,corner:0,
+            translation:CGSize(width:0,height:-90),in:bounds,peers:Array(expected.dropFirst()),chrome:chrome)
+        precondition(same(resized.placement.frame(in:bounds),expected[0]),
+            "The top corner cannot resize upward through measured menu chrome")
+        let lower = key(CGRect(x:100,y:200,width:200,height:110))
+        let resizedToEdge = PlankControlSnap.resize(original:lower.landscape,corner:0,
+            translation:CGSize(width:0,height:-103),in:bounds,peers:[],chrome:chrome)
+        let resizedFrame = resizedToEdge.placement.frame(in:bounds)
+        precondition(close(resizedFrame.minY,92) && close(resizedFrame.maxY,310)
+            && close(resizedFrame.maxX,300),"Resize snaps to the usable top while its opposite corner stays fixed")
+        let unknown = PlankControlChromeGeometry.unmeasured(size:bounds.size)
+        precondition(PlankControlSnap.move(placement:proposal,in:bounds,peers:[],chrome:unknown).placement == proposal)
+        precondition(PlankControlSnap.resize(original:proposal,corner:0,translation:CGSize(width:12,height:12),
+            in:bounds,peers:[],chrome:unknown).placement == proposal,
+            "Unmeasured chrome must not invent an unrestricted editor area")
+        // A compact floating toolbar is still an obstacle in the common
+        // resolver. Its whole snapped row moves uniformly, never into chrome.
+        let floating = CGRect(x:1020,y:12,width:344,height:44)
+        let compact = PlankControlChromeGeometry(bounds:bounds,usableBounds:CGRect(x:0,y:0,width:1376,height:1012),
+            reservedRects:[floating])
+        let compactKeys = [key(CGRect(x:724,y:6,width:200,height:110)),
+                           key(CGRect(x:930,y:6,width:200,height:110)),key(CGRect(x:1136,y:6,width:200,height:110))]
+        let compactResolution = PlankControlPlacementResolver.resolve(controls:compactKeys,landscape:true,chrome:compact)
+        precondition(compactResolution.unavailableIDs.isEmpty)
+        for control in compactKeys {
+            let frame = compactResolution.frames[control.id]!
+            let overlap = frame.intersection(floating.insetBy(dx:-6,dy:-6))
+            precondition(overlap.isNull || overlap.width <= 0.000_01 || overlap.height <= 0.000_01,
+                "A resolved key stays clear of compact menu buttons and their gutter")
+            precondition(close(frame.minY,compactResolution.frames[compactKeys[0].id]!.minY),
+                "Compact chrome translates a snapped row as one aligned group")
+        }
+        var compactDraft = compactKeys
+        for index in compactDraft.indices {
+            compactDraft[index].landscape = PlankControlPlacement(frame:compactResolution.frames[compactDraft[index].id]!,in:bounds)
+        }
+        precondition(compactResolution == PlankControlPlacementResolver.resolve(controls:compactDraft,landscape:true,chrome:compact),
+            "Materializing a compact-toolbar result cannot shift it again")
     }
     private static func modelChecks() throws {
         // The accepted mapping table is the authority for the assignable catalog.

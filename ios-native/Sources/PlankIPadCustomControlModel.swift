@@ -267,32 +267,46 @@ enum PlankControlSnap {
             return $0.guide.end < $1.guide.end
         }
     }
+    /// The saved anchor still belongs to the whole surface. When chrome is
+    /// measured, dragging snaps to its usable edges before group resolution;
+    /// a proposal cannot pull a safe row above the menu and translate its peers.
     static func move(placement: PlankControlPlacement, in bounds: CGRect, peers: [CGRect],
-                     gutter: CGFloat = 6, threshold: CGFloat = 8) -> Result {
+                     gutter: CGFloat = 6, threshold: CGFloat = 8,
+                     chrome: PlankControlChromeGeometry? = nil) -> Result {
         guard placement.isValid, valid(bounds) else { return Result(placement:placement,guides:[]) }
         let gap = gutter.isFinite ? max(0,gutter) : 6
         let tolerance = threshold.isFinite ? max(0,threshold) : 8
+        let edges = chrome?.usableBounds.intersection(bounds) ?? bounds
+        let allowed = chrome == nil ? bounds : edges.insetBy(dx:gap,dy:gap)
+        guard valid(edges), valid(allowed) else { return Result(placement:placement,guides:[]) }
         var result = clampedPlacement(placement,in:bounds)
         var frame = result.frame(in:bounds)
+        if chrome != nil {
+            guard frame.width <= allowed.width, frame.height <= allowed.height else {
+                return Result(placement:placement,guides:[])
+            }
+            frame.origin.x = min(max(frame.minX,allowed.minX),allowed.maxX - frame.width)
+            frame.origin.y = min(max(frame.minY,allowed.minY),allowed.maxY - frame.height)
+        }
         var x: [Candidate] = [], y: [Candidate] = []
         func add(_ axis: Axis, target: CGFloat, source: CGFloat, position: CGFloat,
                  span: ClosedRange<CGFloat>, kind: Kind, priority: Int) {
             let delta = target - source
             let shifted = axis == .vertical ? frame.offsetBy(dx:delta,dy:0) : frame.offsetBy(dx:0,dy:delta)
-            guard shifted.minX >= bounds.minX - 0.000_001, shifted.maxX <= bounds.maxX + 0.000_001,
-                  shifted.minY >= bounds.minY - 0.000_001, shifted.maxY <= bounds.maxY + 0.000_001 else { return }
+            guard shifted.minX >= allowed.minX - 0.000_001, shifted.maxX <= allowed.maxX + 0.000_001,
+                  shifted.minY >= allowed.minY - 0.000_001, shifted.maxY <= allowed.maxY + 0.000_001 else { return }
             let candidate = Candidate(delta:delta,guide:Guide(axis:axis,position:position,
                 start:span.lowerBound,end:span.upperBound,kind:kind),priority:priority)
             if axis == .vertical { x.append(candidate) } else { y.append(candidate) }
         }
-        add(.vertical,target:bounds.minX + gap,source:frame.minX,position:bounds.minX + gap,
-            span:bounds.minY...bounds.maxY,kind:.edge,priority:0)
-        add(.vertical,target:bounds.maxX - gap,source:frame.maxX,position:bounds.maxX - gap,
-            span:bounds.minY...bounds.maxY,kind:.edge,priority:0)
-        add(.horizontal,target:bounds.minY + gap,source:frame.minY,position:bounds.minY + gap,
-            span:bounds.minX...bounds.maxX,kind:.edge,priority:0)
-        add(.horizontal,target:bounds.maxY - gap,source:frame.maxY,position:bounds.maxY - gap,
-            span:bounds.minX...bounds.maxX,kind:.edge,priority:0)
+        add(.vertical,target:edges.minX + gap,source:frame.minX,position:edges.minX + gap,
+            span:edges.minY...edges.maxY,kind:.edge,priority:0)
+        add(.vertical,target:edges.maxX - gap,source:frame.maxX,position:edges.maxX - gap,
+            span:edges.minY...edges.maxY,kind:.edge,priority:0)
+        add(.horizontal,target:edges.minY + gap,source:frame.minY,position:edges.minY + gap,
+            span:edges.minX...edges.maxX,kind:.edge,priority:0)
+        add(.horizontal,target:edges.maxY - gap,source:frame.maxY,position:edges.maxY - gap,
+            span:edges.minX...edges.maxX,kind:.edge,priority:0)
         for peer in peers.filter(valid) {
             if intervalGap(frame.minY...frame.maxY,peer.minY...peer.maxY) <= gap + tolerance {
                 let span = min(frame.minY,peer.minY)...max(frame.maxY,peer.maxY)
@@ -326,19 +340,30 @@ enum PlankControlSnap {
     /// changes size; its diagonally opposite corner remains fixed throughout.
     static func resize(original: PlankControlPlacement, corner: Int, translation: CGSize,
                        in bounds: CGRect, peers: [CGRect], gutter: CGFloat = 6,
-                       threshold: CGFloat = 8) -> Result {
+                       threshold: CGFloat = 8,
+                       chrome: PlankControlChromeGeometry? = nil) -> Result {
         guard original.isValid, valid(bounds), (0...3).contains(corner),
               translation.width.isFinite, translation.height.isFinite else {
             return Result(placement:original,guides:[])
         }
         let gap = gutter.isFinite ? max(0,gutter) : 6
         let tolerance = threshold.isFinite ? max(0,threshold) : 8
+        let edges = chrome?.usableBounds.intersection(bounds) ?? bounds
+        let allowed = chrome == nil ? bounds : edges.insetBy(dx:gap,dy:gap)
+        guard valid(edges), valid(allowed) else { return Result(placement:original,guides:[]) }
         let initial = original.frame(in:bounds)
         let left = corner % 2 == 0, top = corner < 2
         let fixed = CGPoint(x:left ? initial.maxX : initial.minX,y:top ? initial.maxY : initial.minY)
         let minimum = CGFloat(PlankControlPlacement.minimumDimension)
-        let maximumWidth = min(CGFloat(PlankControlPlacement.maximumWidth),left ? fixed.x - bounds.minX : bounds.maxX - fixed.x)
-        let maximumHeight = min(CGFloat(PlankControlPlacement.maximumHeight),top ? fixed.y - bounds.minY : bounds.maxY - fixed.y)
+        let maximumWidth = min(CGFloat(PlankControlPlacement.maximumWidth),left ? fixed.x - allowed.minX : allowed.maxX - fixed.x)
+        let maximumHeight = min(CGFloat(PlankControlPlacement.maximumHeight),top ? fixed.y - allowed.minY : allowed.maxY - fixed.y)
+        if chrome != nil {
+            guard fixed.x >= allowed.minX, fixed.x <= allowed.maxX,
+                  fixed.y >= allowed.minY, fixed.y <= allowed.maxY,
+                  maximumWidth >= minimum, maximumHeight >= minimum else {
+                return Result(placement:original,guides:[])
+            }
+        }
         let width = min(max(minimum,initial.width + (left ? -translation.width : translation.width)),max(minimum,maximumWidth))
         let height = min(max(minimum,initial.height + (top ? -translation.height : translation.height)),max(minimum,maximumHeight))
         var frame = CGRect(x:left ? fixed.x - width : fixed.x,y:top ? fixed.y - height : fixed.y,width:width,height:height)
@@ -353,10 +378,10 @@ enum PlankControlSnap {
                 guide:Guide(axis:axis,position:position,start:span.lowerBound,end:span.upperBound,kind:kind),priority:priority)
             if axis == .vertical { x.append(candidate) } else { y.append(candidate) }
         }
-        let edgeX = left ? bounds.minX + gap : bounds.maxX - gap
-        let edgeY = top ? bounds.minY + gap : bounds.maxY - gap
-        add(.vertical,target:edgeX,position:edgeX,span:bounds.minY...bounds.maxY,kind:.edge,priority:0)
-        add(.horizontal,target:edgeY,position:edgeY,span:bounds.minX...bounds.maxX,kind:.edge,priority:0)
+        let edgeX = left ? edges.minX + gap : edges.maxX - gap
+        let edgeY = top ? edges.minY + gap : edges.maxY - gap
+        add(.vertical,target:edgeX,position:edgeX,span:edges.minY...edges.maxY,kind:.edge,priority:0)
+        add(.horizontal,target:edgeY,position:edgeY,span:edges.minX...edges.maxX,kind:.edge,priority:0)
         for peer in peers.filter(valid) {
             if intervalGap(frame.minY...frame.maxY,peer.minY...peer.maxY) <= gap + tolerance {
                 let span = min(frame.minY,peer.minY)...max(frame.maxY,peer.maxY)
