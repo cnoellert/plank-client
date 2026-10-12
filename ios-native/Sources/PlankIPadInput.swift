@@ -205,7 +205,7 @@ struct PlankIPadCanvas: UIViewRepresentable {
         didSet { if oldValue != functionKeyMode { router.release() } }
     }
 
-    override var canBecomeFirstResponder: Bool { true }
+    override var canBecomeFirstResponder: Bool { router.enabled }
     // There is no local document. Permit Backspace against the remote text,
     // even when this view has never received a character itself.
     var hasText: Bool { true }
@@ -407,7 +407,9 @@ struct PlankIPadCanvas: UIViewRepresentable {
     }
 
     func resumeKeyboard() {
-        guard window != nil else { return }
+        // A retained desktop can receive late lifecycle/Pencil callbacks while
+        // the editor owns local typing. Suspended input must not take focus.
+        guard window != nil, router.enabled else { return }
         if router.softwareKeyboardPresented {
             if !keyboardEntry.isFirstResponder {
                 transferringKeyboardFocus = true
