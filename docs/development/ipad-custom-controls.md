@@ -647,5 +647,53 @@ device compilation, signing and independent runtime/profile/dependency checks
 pass. The artist confirmed disconnected; the M5 update installed/open with exact
 38/0.1.0 and its running executable path verified. Signed37 rollback is retained.
 The focused physical question is connected client naming on a non-first saved
-layout with selection retained; acceptance remains pending. Do not repeat
+layout with selection retained. The artist subsequently reported that naming
+still fails when the PLANK window fills the iPad; returning to a smaller window
+allows it. Windowed Artist Controls also have inconsistent scaling. Build38's
+physical naming check therefore failed. Do not repeat
 accepted snapping or previous input tests.
+
+## Same-window naming and responsive controls — iPad39
+
+Build39 runtime `549bd8e4fef1f8cfdc46fc2624eb352fdbc44957` keeps the editor in
+the app's existing window. Entering direct-client editing explicitly makes the
+desktop surrender its own keyboard responders before local editing begins.
+The layout chooser closes before a native local name field takes focus, with a
+bounded window/scene handoff. Cancel preserves the saved library; Save changes
+the editor draft; Done publishes once. A valid workstation selection survives
+root reappearance. Sharing keeps its existing adjusting-pad admission boundary.
+
+Artist Controls now project a common reference canvas uniformly into the actual
+window. Positions, sizes, gutters and label appearance scale together. Actual
+scene orientation selects the arrangement, so a narrow landscape window does
+not silently choose portrait. Editor and live overlay share the transform,
+including inverse drag/resize coordinates and protected menu areas. At full
+reference size, placement exactly matches the accepted build37 resolver.
+
+Optional per-layout portrait/landscape reference extents preserve version1
+decoding. Legacy layouts use the measured current physical screen transiently;
+passive window changes never rewrite saved layouts. Explicit editor Done records
+the selected layout's missing extents, and copying retains them. Historical
+layouts without this metadata cannot reveal their original device dimensions.
+Finger targets expand to44 points only where measured chrome and neighboring
+targets allow it. Unsafe keys keep their visual arrangement but are unavailable
+until the window is enlarged; visual sizes are not individually clamped.
+
+Three native simulator cases pass actual chooser/rename, automatic local typing,
+keyboard clearance, full/compact resize while naming, non-first draft continuity,
+Cancel and one Done publication. The exact production input view relinquishes
+and later resumes keyboard ownership. Model checks pass legacy migration,
+projection round trips, identity placement, orientation choice and safe hit
+regions. Independent native overlay checks pass frame/font scaling, finger and
+Pencil routing, indirect pass-through and balanced geometry retirement. Four
+hundred nine native/recipe files remain byte-identical to build38 outside the
+seven scoped runtime/test paths.
+
+These checks use simulator27, controlled window bounds and transport stand-ins.
+They do not reproduce the physical iPadOS26.6 fullscreen fault or qualify Stage
+Manager, genuine OS cancellation, Host receipt or small-window readability.
+The fresh iPad39 device app compiles and is signed for the new M5; build38 is
+retained for rollback. Installation and the targeted physical fullscreen naming
+and full/smaller/full layout check remain pending. Vision52, image transport,
+Host, network, identities and dependency pins are unchanged. The agreed Fit/2×
+zoom slice waits for this editor/window qualification.

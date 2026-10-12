@@ -275,8 +275,9 @@ color/channel path; dimmed reference images are not a qualified color surface.
 ## Order and targeted qualification
 
 1. Dimmable live image with measured frame age and bounded media transport.
-2. Discuss shared Fit / 2× View transform and deliberate local Hand navigation;
-   implement only after the artist agrees on the operating interaction.
+2. Implement the artist-approved shared Fit / 2× View transform and deliberate
+   local Hand navigation after fullscreen naming and windowed controls are
+   qualified. No zoom runtime is included in iPad39.
 3. Assess sharper source-region media as a separate negotiated slice.
 4. Optional visual-only near-tip magnifier.
 
