@@ -6,7 +6,9 @@ independently verified; Vision52 is installed/running and Mac29 is staged. iPad3
 `7a5fe82d14f47c073e308af63a73ac6c6cb42014` adds the finger-input option without
 changing the optimized35 image receiver, and is installed/open on the new M5.
 iPad35 from `a102d8c8460fc851b4c55e84fc9acdafda17a3a9` was its prior installed
-baseline; image usability remains unaccepted. Older iPad34 / Vision50 from
+baseline. The October 11 artist trial confirms the picture appears and latency
+is better, but below the hoped responsiveness; overall image promotion remains
+held. Older iPad34 / Vision50 from
 `4a14a47e8f8fb62413f4a8c60f85fb5ecf72329a` were independently verified at
 installation. Old Air34 remains unchanged; Vision50 is superseded. The user rejected
 that baseline's picture latency and stretching. Mac27, Mac28 and Mac29 remain staged
@@ -46,7 +48,7 @@ would break Pencil alignment. A uniform cropped drawing view requires a shared
 source crop/scale and matching inverse input transform. A separate visual-only
 magnifier can instead retain the established full-pad input mapping.
 
-That assessment preceded the October11 candidate below. The optional image
+That assessment preceded the October 11 candidate below. The optional image
 choices remain default off, and the working input-only pad remains available.
 
 ## October 11 optimized candidate — iPad35 / Vision51 / Mac28
@@ -116,9 +118,18 @@ synchronous start failure, non-streaming state, capped delay and weak owner
 release. Native Vision and Mac builds/signing/dependency/library-closure checks
 also pass. iPad36 and Vision52 were then installed under the artist's readiness
 confirmation; exact app versions and running paths are independently verified.
-The sender-first image-startup trial is requested and pending. Actual Bonjour
-timing, picture recovery and latency remain physical
-gates; this is not a confirmed explanation or repair of the M5 report.
+The requested image trial now reports a visible picture and better latency,
+below the artist's hoped responsiveness. This resolves the appearance/delay
+question without establishing the original missing-picture cause or complete
+image usability. Actual alignment, dimming and simultaneous input under image
+load remain separate gates. No new Pencil slowdown was reported.
+
+Sparse first/every30 successful-frame samples from this trial give a median
+sender encode time of 38.12 ms and receiver decode time of 11.63 ms. Receiver-local
+age at delivery entry has a median 137.60 ms, including assembly/worker wait after
+the first authenticated chunk. These samples are not synchronized across
+devices and exclude source capture, transfer before the first chunk, compositor
+and scanout; adding the medians does not establish end-to-end latency.
 
 ## First reference-image slice
 
@@ -192,11 +203,36 @@ controls remain available. The direct iPad client should use the same image
 and input geometry. Image intensity changes appearance, not pen mapping or
 system brightness.
 
-Offer **Fit / 100% / 200% / 300%** and deliberate pan. Numbered magnification
-means source pixels per display pixel: 100% is one source pixel per display
-pixel; 200% and 300% enlarge that pixel two and three times. These are not
-multiples of Fit. A future offset near-tip magnifier can provide a visual aid
-without moving the full canvas during a stroke.
+### October 11 zoom proposal — discussion before implementation
+
+The artist requests a doubled view for viewing and operation in both direct
+iPad Desktop and Pencil Sharing. Recommend **Fit / 2× View** first, with a
+deliberate **Hand** navigation control and a small full-desktop navigator.
+Here 2× means twice Fit, rather than a native-pixel percentage. Existing
+100%/200%/300% ideas mean source-pixel magnification and should be named
+separately if added later. No zoom runtime is implemented by this proposal.
+
+The primary zoom is an operating workspace: picture, cursor, Pencil, mouse and
+squeeze positions use the same crop/scale and inverse mapping. Artist Controls
+stay at their saved physical size and location. Hold zoom/pan requests until
+the active Pencil stroke or pointer drag ends; the target must not move under
+a held contact. Keep intentionally held modifiers owned until their real
+release, rather than releasing them solely for a local view change. Rotation
+or session/geometry replacement still retires contact before forced changes.
+
+Hand-mode contacts are local navigation, available even with Ignore finger
+input enabled, and exclude Artist-control hit regions. Do not infer a pan from
+an ordinary first finger that has already sent a remote click. Avoid automatic
+follow-pan during drawing. A later view-only loupe beside the tip could enlarge
+detail without changing the established drawing coordinates.
+
+Direct Desktop retains the decoded original frame and can crop locally without
+another stream. Sharing currently receives a full-frame JPEG with a 1920-pixel
+long edge; enlarging it cannot recover missing detail or reduce picture delay.
+For sharp shared magnification, a later negotiated media extension would request
+a bounded source region from AVP/Mac and carry crop/generation metadata. Current
+image messages require full-frame identity crop, so that would be a separate
+protocol slice. It does not require a new Host contract or workstation session.
 
 ## Geometry and image quality
 
@@ -204,9 +240,10 @@ One immutable transform must drive the image, cursor and inverse pen mapping.
 It includes the selected output's source crop and offset, active pad after
 margins, zoom/pan, display scale and session/geometry generation. Input adds
 crop offsets back and normalizes against the full Host input extent. Define
-pixel-center conventions explicitly. Pan/zoom or geometry changes retire an
-active stroke before switching transforms; do not move its target underneath
-the tip.
+pixel-center conventions explicitly. Voluntary pan/zoom waits for contact
+release before switching transforms; forced geometry changes retire the contact
+first. Do not move a stroke's target underneath the tip. Missing or stale pictures
+clear the image without silently changing the current crop or input mapping.
 
 The current image candidate preserves aspect in Fit. A future stretch option
 would have to change image and input together; numbered pixel magnification
@@ -233,8 +270,10 @@ color/channel path; dimmed reference images are not a qualified color surface.
 ## Order and targeted qualification
 
 1. Dimmable live image with measured frame age and bounded media transport.
-2. Shared Fit/100%/200%/300% transform and deliberate pan.
-3. Optional visual-only near-tip magnifier.
+2. Discuss shared Fit / 2× View transform and deliberate local Hand navigation;
+   implement only after the artist agrees on the operating interaction.
+3. Assess sharper source-region media as a separate negotiated slice.
+4. Optional visual-only near-tip magnifier.
 
 Verify transform round trips and crop/margin corners, nonzero output offsets,
 native pixel patterns, contact retirement, rotation/keyboard geometry, stale
