@@ -24,16 +24,42 @@ The separate development image slice adds
 optional dimmable full-desktop references while Pencil Sharing, enabled from
 Pad Options and the receiver's Apple Pencil settings. Both ends require image
 consent. Installed iPad34 / Vision50, runtime `4a14a47`, failed the user's
-picture latency/stretching trial. The October11 candidate, iPad35 / Vision51 /
-Mac28 from `a102d8c8460fc851b4c55e84fc9acdafda17a3a9`, is freshly compiled,
-signed, independently verified and staged, not installed or launched. Only its
+picture latency/stretching trial. The October11 iPad35 / Vision51 / Mac28
+candidate from `a102d8c8460fc851b4c55e84fc9acdafda17a3a9` was freshly compiled,
+signed and independently verified. iPad35 is now installed and open on the new
+iPad Pro 13-inch (M5), iPadOS26.6; Vision51 and Mac28 remain staged. Only its
 bounded pixel converter is optimized; image consent uses proportional picture
 and Pencil mapping while preserving the saved input-only mapping preference.
 Sparse local phase timings support the next device trial. Mac encode checks
 are substantially faster but do not establish AVP latency or a physical fix.
 Picture usefulness, alignment and simultaneous input under image load remain
-unqualified; image promotion is held. Mac27 also remains staged and unlaunched.
+unqualified; image promotion is held. A subsequent sharing trial on the new
+iPad reports no picture; receive consent and active Pencil are logged, with no
+accepted image frames. Current sender/receiver status is still needed to isolate
+that report. Vision52 / Mac29 from `e8b928ffd8b253edc959c7669b2cc23b50aa99f2`
+add image-only retry after failed startup, preserving current consent and pen
+authority. Both are freshly built, signed, independently verified and staged,
+not installed or launched. Mac27 also remains staged and unlaunched.
 See [the image boundary and next magnification slice](../docs/development/ipad-live-image.md).
+
+## Finger input filter — build 36 candidate
+
+**Ignore finger input** is available in Client Options, desktop Session Controls
+and sharing Pad Options. It persists locally and defaults off. When enabled it
+blocks finger/palm clicks and drags on the remote desktop, including retiring an
+already held finger drag. Artist Controls, Pencil, physical mouse/wheel and
+keyboard remain usable. Local menus and text fields remain interactive. Pencil
+Sharing already ignores fingers outside Artist Controls; this preference also
+applies when returning to the direct iPad desktop.
+
+iPad36 from `7a5fe82d14f47c073e308af63a73ac6c6cb42014` is freshly built, signed
+for the new M5 and independently verified, but not installed. Focused exact
+router/contact-body checks pass; physical UIKit delivery and Host receipt remain
+separate. Reproduce the bounded source checks without a device:
+
+```sh
+python3 ios-native/Tests/run-finger-input-checks.py
+```
 
 ## Current keyboard behavior — build 17
 

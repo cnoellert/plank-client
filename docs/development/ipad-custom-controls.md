@@ -552,3 +552,27 @@ toolbar check. The precise build32 device cause remains uncorrelated; this
 acceptance does not qualify editor peer continuity, OS cancellation or final
 Host release. Live image reference for Pencil Sharing is the next feature
 slice, described in [the image plan](ipad-live-image.md).
+
+## Finger input filter — iPad36
+
+The artist requested an option to ignore touch commands outside Artist Controls.
+**Ignore finger input** now appears in Client Options, desktop Session Controls
+and sharing Pad Options. The saved preference defaults off. It filters direct
+finger/palm contacts before remote pointer dispatch, leaving Artist Controls,
+Pencil, physical mouse/wheel and keyboard admission intact. Local menus, editor
+widgets and text fields remain interactive. The sharing pad already accepts
+only Pencil outside its independent Artist Controls; the preference also covers
+the direct desktop when switching back to it.
+
+Enabling the filter retires only an active finger's mouse-button ownership and
+clears that contact. Late movement/releases cannot reposition or click the Host,
+and re-enabling requires a fresh contact. It does not latch cancelled controls,
+retire unrelated held modifiers or change saved layouts, geometry or visibility.
+
+Candidate36 runtime `7a5fe82d14f47c073e308af63a73ac6c6cb42014` passed focused
+exact-router/contact checks and fresh native compilation/signing, including the
+new M5 device profile. It is independently verified and staged, not installed.
+Stand-in touch delivery and a recording Host qualify local admission/ordering,
+not physical palm rejection or final Host receipt. The new device check is the
+filter's off/on behavior and Artist/Pencil coexistence, not a repeat of earlier
+editor, wheel, keyboard or pressure acceptance.

@@ -1,12 +1,15 @@
 # iPad live reference image and magnification
 
-The current reference-image candidate is freshly compiled, signed and
-independently verified for iPad35 / Vision51 / Mac28 from
-`a102d8c8460fc851b4c55e84fc9acdafda17a3a9`. These candidates are staged, not
-installed or physically accepted. iPad34 / Vision50 remain the installed image
+The current reference-image sender candidates are Vision52 / Mac29 from
+`e8b928ffd8b253edc959c7669b2cc23b50aa99f2`, freshly compiled, signed and
+independently verified, but staged and uninstalled. iPad36 from
+`7a5fe82d14f47c073e308af63a73ac6c6cb42014` adds the finger-input option without
+changing the optimized35 image receiver, and is likewise staged. iPad35 from
+`a102d8c8460fc851b4c55e84fc9acdafda17a3a9` is installed/open on the new M5;
+image usability remains unaccepted. Old iPad34 / Vision50 retain their installed image
 baseline from `4a14a47e8f8fb62413f4a8c60f85fb5ecf72329a`; their exact running
 executables were independently verified at installation. The user rejected
-that baseline's picture latency and stretching. Mac27 and Mac28 remain staged
+that baseline's picture latency and stretching. Mac27, Mac28 and Mac29 remain staged
 and unlaunched. Image promotion remains held.
 Magnification and pan remain planned after the reference image is useful.
 
@@ -81,10 +84,38 @@ typed text are logged or saved.
 
 All three signed artifacts passed independent version, architecture, profile,
 signature, source and exact dependency checks; signed34/50/27 rollbacks are
-retained. No candidate has been installed or launched. A new device trial is
+retained. At that checkpoint no candidate was installed or launched; iPad35 was
+subsequently installed and independently verified on the new M5. A new device trial is
 required for picture latency, proportional alignment, simultaneous Pencil and
 controls under media load, and image-off continuation. Existing input-only
 acceptance is carried forward. Zoom, pan and magnification are not implemented.
+
+## Image startup recovery — Vision52 / Mac29
+
+The new M5 trial reports no image when reception is enabled. Logs establish
+receive consent and an active Pencil connection, with no accepted decoded image.
+They do not identify sender consent, transport or dimension/freshness admission
+as the actual cause. Current image status on both devices is requested. Input
+and image wire/crypto bytes match the prior compatible versions.
+
+A separate confirmed startup defect is reproduced locally: the sender's
+one-attempt latch survives an image connection failure. If the client enables
+sharing before iPad reception, later receiver availability cannot restart media
+without toggling the client choice off/on. Vision52 / Mac29 retire that latch
+and schedule one weak retry task, at 1/2/4/8-second capped delays. Each attempt
+revalidates explicit share consent, the current approved pen binding and the
+streaming desktop. Turning sharing off, replacing the binding or ending the pen
+or desktop invalidates pending tasks and stale callbacks. Pencil and Artist
+Control ownership and the encoder worker are unchanged; both image consent
+choices and all existing authentication/dimension/age checks remain required.
+
+Nine exact-production-body cases pass with real MainActor tasks and cancellation,
+using stand-in peers, listener, client and encoder. They cover sender-first
+failure then availability, stale callbacks, consent off, binding/desktop changes,
+synchronous start failure, non-streaming state, capped delay and weak owner
+release. Native Vision and Mac builds/signing/dependency/library-closure checks
+also pass. Actual Bonjour timing, picture recovery and latency remain physical
+gates; this is not a confirmed explanation or repair of the M5 report.
 
 ## First reference-image slice
 

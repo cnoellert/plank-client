@@ -33,7 +33,9 @@ Retarget these slices upstream in dependency order after their bases are accepte
 
 | Target | Compiled runtime source | State |
 | --- | --- | --- |
-| iPad35 / Vision51 | `a102d8c8460fc851b4c55e84fc9acdafda17a3a9` | Optimized conversion and proportional shared image/Pencil mapping: freshly compiled, signed, independently verified and staged; not installed; physical latency/alignment unqualified |
+| iPad36 | `7a5fe82d14f47c073e308af63a73ac6c6cb42014` | Persistent finger-input filter with Artist/Pencil/peripheral input preserved; built, signed for new M5, independently verified and staged; not installed |
+| Vision52 / Mac29 | `e8b928ffd8b253edc959c7669b2cc23b50aa99f2` | Image-only recovery after failed startup; built, signed, independently verified and staged; not installed/launched; physical repair unqualified |
+| iPad35 / Vision51 | `a102d8c8460fc851b4c55e84fc9acdafda17a3a9` | Optimized conversion and proportional shared image/Pencil mapping: iPad35 installed/open and independently verified on new M5/iPadOS26.6; Vision51 staged; physical image latency/alignment unqualified |
 | Mac28 | `a102d8c8460fc851b4c55e84fc9acdafda17a3a9` | Signed and independently verified, staged and unlaunched; physical Pencil reception/image sending pending |
 | iPad34 / Vision50 | `4a14a47e8f8fb62413f4a8c60f85fb5ecf72329a` | Separate dimmable reference-image slice: installed and exact running executables independently verified; user rejected picture latency/stretching as unsuitable, image promotion held |
 | Mac27 | `4a14a47e8f8fb62413f4a8c60f85fb5ecf72329a` | Signed and staged; physical Pencil reception and image sending pending |
@@ -69,6 +71,9 @@ publication. Private signing profiles, device receipts and logs are excluded.
   selection, touch-and-hold editing, visibility and transparency are in the toolbar.
   Empty-space taps dismiss the inspector; tapping a control reopens it; moves
   and resizes hide it without dropping selection or gesture state.
+- Candidate36 adds persistent **Ignore finger input** for remote desktop
+  finger clicks/drags. Artist controls, Pencil and physical peripherals remain
+  available; local controls/forms retain their touch behavior.
 
 ## Recorded evidence
 
@@ -84,6 +89,13 @@ pad options and simultaneous finger shortcuts/Pencil drawing are accepted.
 Subsequent user checks accepted naming, credential visibility, transparency,
 shared placement/menu flow, layout shortcuts and the iPad31 inspector refinement.
 These are targeted development passes, not the full platform/interruption matrix.
+
+New M5 installation of35 is independently verified; it does not transfer the
+older device's complete hardware qualification. Candidate36 checks execute the
+production router and contact bodies with recording Host/stand-in touch delivery,
+covering persistence, finger-drag release and stale callbacks, re-enabling input
+and preservation of Artist/hardware keys, Pencil and physical mouse/wheel. Its
+native device app compiles; actual OS touch delivery and Host receipt are pending.
 
 Focused layout/migration/contact/ownership, wire/atomic admission, sanitizer
 crypto and consented TCP loopback checks passed during development. Fresh target
@@ -123,10 +135,11 @@ final Host receipt. The targeted physical iPad32 check remains pending.
   further Host input-backpressure package work remains held.
 - [Live reference image and dimming](ipad-live-image.md) remains a separate
   development slice. Installed iPad34 / Vision50 failed the picture usability
-  trial. The new iPad35 / Vision51 / Mac28 candidate is compiled, signed and
-  independently verified, but not installed: bounded optimized conversion,
-  proportional image/input geometry and sparse local phase timings require a
-  new physical trial. Image promotion remains held. Magnification and Bluetooth
+  trial. iPad35 is installed on the new M5; its missing-picture report is not
+  isolated by current sender/receiver status yet. Vision52 / Mac29 add recovery
+  from the reproduced startup latch defect; source fixtures pass but candidates
+  remain staged. Optimized conversion, proportional geometry and sparse phase
+  timings still require a physical trial. Image promotion remains held. Magnification and Bluetooth
   Pencil transport remain planned.
 
 Build and focused check entry points are in the [iPad README](../../ios-native/README.md),
