@@ -97,27 +97,40 @@ struct PlankIPadWorkingSurface<Content: View, Controls: View, Toolbar: View, Flo
 /// A public UIKit window measure also gives the idle editor the same reference
 /// as a working surface. It never derives dimensions from a toolbar or sheet.
 struct PlankIPadWindowMetrics: UIViewRepresentable {
+    var sceneChanged: (CGSize,Bool) -> Void = { _,_ in }
     let changed: (CGSize,UIEdgeInsets) -> Void
     func makeUIView(context: Context) -> PlankIPadWindowMetricsView {
-        let view = PlankIPadWindowMetricsView(); view.changed = changed; return view
+        let view = PlankIPadWindowMetricsView(); view.changed = changed; view.sceneChanged = sceneChanged; return view
     }
-    func updateUIView(_ view: PlankIPadWindowMetricsView,context: Context) { view.changed = changed; view.report() }
+    func updateUIView(_ view: PlankIPadWindowMetricsView,context: Context) {
+        view.changed = changed; view.sceneChanged = sceneChanged; view.report()
+    }
 }
 final class PlankIPadWindowMetricsView: UIView {
     var changed: (CGSize,UIEdgeInsets) -> Void = { _,_ in }
+    var sceneChanged: (CGSize,Bool) -> Void = { _,_ in }
     private var previousSize = CGSize.zero
     private var previousInsets = UIEdgeInsets.zero
+    private var previousScreenSize = CGSize.zero
+    private var previousLandscape: Bool?
     override func didMoveToWindow() { super.didMoveToWindow(); report() }
     override func layoutSubviews() { super.layoutSubviews(); report() }
     override func safeAreaInsetsDidChange() { super.safeAreaInsetsDidChange(); report() }
     func report() {
         guard let window else { return }
         let size = window.bounds.size, insets = window.safeAreaInsets
-        guard size != previousSize || insets != previousInsets else { return }
+        let screenSize = window.windowScene?.screen.bounds.size ?? size
+        let orientation = window.windowScene?.interfaceOrientation
+        let landscape = orientation?.isLandscape == true ? true
+            : orientation?.isPortrait == true ? false : (previousLandscape ?? (screenSize.width >= screenSize.height))
+        guard size != previousSize || insets != previousInsets
+                || screenSize != previousScreenSize || landscape != previousLandscape else { return }
         previousSize = size; previousInsets = insets
+        previousScreenSize = screenSize; previousLandscape = landscape
         // Defer the observable SwiftUI update out of UIKit's layout pass.
         DispatchQueue.main.async { [weak self] in
             guard let self,self.window != nil else { return }
+            self.sceneChanged(screenSize,landscape)
             self.changed(size,insets)
         }
     }

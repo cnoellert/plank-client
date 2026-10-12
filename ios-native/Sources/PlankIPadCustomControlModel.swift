@@ -2,7 +2,8 @@ import Foundation
 import CoreGraphics
 
 /// Anchors belong to the whole available surface, independently of pen margins.
-/// Each key keeps its own point size when reordered, copied or moved.
+/// Each key keeps its own reference-canvas point size when reordered, copied
+/// or moved. A window projection scales the whole saved arrangement uniformly.
 struct PlankControlPlacement: Codable, Equatable, Sendable {
     static let minimumDimension = 44.0
     static let maximumWidth = 480.0
@@ -445,19 +446,180 @@ struct PlankCustomControl: Codable, Equatable, Identifiable, Sendable {
     mutating func useBindingLabel() { label = automaticLabel }
 }
 
+/// An explicit authored canvas, independent of later Stage Manager windows.
+/// Optional layout fields preserve the original v1 JSON when no extent is saved.
+struct PlankControlReferenceExtent: Codable, Equatable, Sendable {
+    static let maximumDimension = 16_384.0
+    var width: Double
+    var height: Double
+    init(size: CGSize) { width = size.width; height = size.height }
+    var size: CGSize { CGSize(width:width,height:height) }
+    var isValid: Bool {
+        width.isFinite && height.isFinite && width > 1 && height > 1
+            && width <= Self.maximumDimension && height <= Self.maximumDimension
+    }
+    func matches(landscape: Bool) -> Bool {
+        isValid && (landscape ? width >= height : width <= height)
+    }
+}
+
+/// Shared projection for live Artist Controls and the editor. The whole authored
+/// canvas has one uniform scale; measured current chrome is mapped back before
+/// resolving controls. Fitting the already-reduced usable area a second time
+/// would shrink unchanged fullscreen controls, so the full canvas is fit once.
+struct PlankControlSurfaceGeometry: Equatable, Sendable {
+    let referenceBounds: CGRect
+    let windowBounds: CGRect
+    let viewportFrame: CGRect
+    let scale: CGFloat
+    let referenceChrome: PlankControlChromeGeometry
+    init(referenceSize: CGSize, chrome: PlankControlChromeGeometry) {
+        let extent = PlankControlReferenceExtent(size:referenceSize)
+        guard extent.isValid, PlankControlChromeGeometry.valid(chrome.bounds) else {
+            referenceBounds = .zero; windowBounds = chrome.bounds
+            viewportFrame = .zero; scale = 1
+            referenceChrome = .unmeasured(size:.zero)
+            return
+        }
+        let reference = CGRect(origin:.zero,size:referenceSize)
+        let value = min(chrome.bounds.width / reference.width,chrome.bounds.height / reference.height)
+        let viewport = CGRect(x:chrome.bounds.midX - reference.width * value / 2,
+                              y:chrome.bounds.midY - reference.height * value / 2,
+                              width:reference.width * value,height:reference.height * value)
+        referenceBounds = reference; windowBounds = chrome.bounds
+        viewportFrame = viewport; scale = value
+        func inverse(_ frame: CGRect) -> CGRect {
+            guard PlankControlChromeGeometry.valid(frame) else { return .zero }
+            return CGRect(x:(frame.minX - viewport.minX) / value,
+                          y:(frame.minY - viewport.minY) / value,
+                          width:frame.width / value,height:frame.height / value)
+        }
+        referenceChrome = PlankControlChromeGeometry(bounds:reference,
+            usableBounds:inverse(chrome.usableBounds.intersection(viewport)),
+            reservedRects:chrome.reservedRects.map(inverse))
+    }
+    var hasValidTransform: Bool {
+        PlankControlChromeGeometry.valid(referenceBounds)
+            && PlankControlChromeGeometry.valid(viewportFrame) && scale.isFinite && scale > 0
+    }
+    var isUsable: Bool { hasValidTransform && PlankControlChromeGeometry.valid(referenceChrome.usableBounds) }
+    func forward(frame: CGRect) -> CGRect {
+        guard hasValidTransform, PlankControlChromeGeometry.valid(frame) else { return .zero }
+        return CGRect(x:viewportFrame.minX + frame.minX * scale,
+                      y:viewportFrame.minY + frame.minY * scale,
+                      width:frame.width * scale,height:frame.height * scale)
+    }
+    func inverse(frame: CGRect) -> CGRect {
+        guard hasValidTransform, PlankControlChromeGeometry.valid(frame) else { return .zero }
+        return CGRect(x:(frame.minX - viewportFrame.minX) / scale,
+                      y:(frame.minY - viewportFrame.minY) / scale,
+                      width:frame.width / scale,height:frame.height / scale)
+    }
+    func referenceTranslation(_ translation: CGSize) -> CGSize {
+        guard hasValidTransform, translation.width.isFinite, translation.height.isFinite else { return .zero }
+        return CGSize(width:translation.width / scale,height:translation.height / scale)
+    }
+}
+
+/// Visual frames remain exact scaled geometry, even when a tiny window cannot
+/// safely provide finger targets. Hit expansion never moves or enlarges a key's
+/// drawing; unsafe targets are unavailable rather than overlapping by array order.
+struct PlankControlResponsiveResolution: Equatable, Sendable {
+    let geometry: PlankControlSurfaceGeometry
+    var frames: [UUID: CGRect]
+    var fingerHitFrames: [UUID: CGRect]
+    var unavailableIDs: Set<UUID>
+    static func resolve(layout: PlankControlLayout, landscape: Bool,
+                        chrome: PlankControlChromeGeometry, legacyReferenceSize: CGSize) -> Self {
+        let extent = layout.referenceExtent(landscape:landscape,legacySize:legacyReferenceSize)
+        let geometry = PlankControlSurfaceGeometry(referenceSize:extent?.size ?? .zero,chrome:chrome)
+        let controls = Array(layout.controls.prefix(PlankControlLayout.maximumControls))
+        guard geometry.isUsable else {
+            return Self(geometry:geometry,frames:[:],fingerHitFrames:[:],unavailableIDs:Set(controls.map(\.id)))
+        }
+        let canonical = PlankControlPlacementResolver.resolve(controls:controls,landscape:landscape,
+            chrome:geometry.referenceChrome)
+        let frames = canonical.frames.mapValues { geometry.forward(frame:$0) }
+        var candidates: [UUID: CGRect] = [:]
+        var unavailable = canonical.unavailableIDs
+        let usable = chrome.usableBounds
+        func overlaps(_ a: CGRect,_ b: CGRect) -> Bool {
+            let intersection = a.intersection(b)
+            return !intersection.isNull && intersection.width > 0.000_001 && intersection.height > 0.000_001
+        }
+        for control in controls {
+            guard let visual = frames[control.id] else { continue }
+            let width = max(CGFloat(PlankControlPlacement.minimumDimension),visual.width)
+            let height = max(CGFloat(PlankControlPlacement.minimumDimension),visual.height)
+            var hit = CGRect(x:width == visual.width ? visual.minX : visual.midX - width / 2,
+                             y:height == visual.height ? visual.minY : visual.midY - height / 2,
+                             width:width,height:height)
+            if width <= usable.width {
+                hit.origin.x = min(max(hit.minX,usable.minX),usable.maxX - width)
+            }
+            if height <= usable.height {
+                hit.origin.y = min(max(hit.minY,usable.minY),usable.maxY - height)
+            }
+            candidates[control.id] = hit
+            if !usable.contains(hit) || !hit.contains(visual)
+                || chrome.reservedRects.contains(where:{ overlaps(hit,$0) }) {
+                unavailable.insert(control.id)
+            }
+        }
+        // Check every proposed target, including a target already unavailable
+        // at chrome, so a valid neighbor cannot capture its visible button.
+        for i in controls.indices {
+            guard let a = candidates[controls[i].id] else { continue }
+            for j in controls.indices where j > i {
+                guard let b = candidates[controls[j].id], overlaps(a,b) else { continue }
+                unavailable.insert(controls[i].id); unavailable.insert(controls[j].id)
+            }
+        }
+        return Self(geometry:geometry,frames:frames,
+            fingerHitFrames:candidates.filter { !unavailable.contains($0.key) },unavailableIDs:unavailable)
+    }
+}
+
 struct PlankControlLayout: Codable, Equatable, Identifiable, Sendable {
     static let maximumControls = 32
     var id: UUID
     var name: String
     var controls: [PlankCustomControl]
-    init(id: UUID = UUID(), name: String, controls: [PlankCustomControl]) {
+    var portraitReference: PlankControlReferenceExtent?
+    var landscapeReference: PlankControlReferenceExtent?
+    init(id: UUID = UUID(), name: String, controls: [PlankCustomControl],
+         portraitReference: PlankControlReferenceExtent? = nil,
+         landscapeReference: PlankControlReferenceExtent? = nil) {
         self.id = id; self.name = name; self.controls = controls
+        self.portraitReference = portraitReference; self.landscapeReference = landscapeReference
     }
     var isValid: Bool {
         !name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty && name.count <= 48
             && !name.unicodeScalars.contains { CharacterSet.controlCharacters.contains($0) }
             && controls.count <= Self.maximumControls && controls.allSatisfy(\.isValid)
             && Set(controls.map(\.id)).count == controls.count
+            && (portraitReference?.matches(landscape:false) ?? true)
+            && (landscapeReference?.matches(landscape:true) ?? true)
+    }
+    /// Legacy dimensions are supplied by the current physical scene, never
+    /// inferred from the resized app window or written during decoding/rendering.
+    func referenceExtent(landscape: Bool, legacySize: CGSize) -> PlankControlReferenceExtent? {
+        if let saved = landscape ? landscapeReference : portraitReference {
+            return saved.matches(landscape:landscape) ? saved : nil
+        }
+        let measured = PlankControlReferenceExtent(size:legacySize)
+        guard measured.isValid else { return nil }
+        let oriented = (landscape ? legacySize.width >= legacySize.height : legacySize.width <= legacySize.height)
+            ? legacySize : CGSize(width:legacySize.height,height:legacySize.width)
+        return PlankControlReferenceExtent(size:oriented)
+    }
+    /// Only an explicit accepted edit calls this; passive window changes,
+    /// library loading and preview projection cannot adopt a new canvas extent.
+    @discardableResult mutating func materializeReferenceExtent(landscape: Bool,size: CGSize) -> Bool {
+        let value = PlankControlReferenceExtent(size:size)
+        guard value.matches(landscape:landscape) else { return false }
+        if landscape { landscapeReference = value } else { portraitReference = value }
+        return true
     }
     static func defaults(shortcuts: [PlankPencilModifier] = PlankPencilModifier.allCases,
                          name: String = "Artist Controls") -> Self {

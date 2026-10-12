@@ -50,11 +50,22 @@ struct PlankIPadRoot: View {
         // Keep one layout owner while the full-window drawing surface and
         // native navigation screens change underneath the presentation host.
         ZStack {
-            if hasWorkingSurface { workingSurface }
-            else { idleScreen }
+            Group {
+                if hasWorkingSurface { workingSurface }
+                else { idleScreen }
+            }
+            .allowsHitTesting(!editingCustomControls)
+            .accessibilityHidden(editingCustomControls)
+            if editingCustomControls {
+                PlankIPadCustomControlsEditor(store:customControls,referenceSurfaceSize:controlWindowSize,
+                    surface:sharePencil ? .pencilSharing : .desktop,
+                    close:{ editingCustomControls = false })
+                    .background(Color(uiColor:.systemBackground).ignoresSafeArea())
+                    .zIndex(1)
+            }
         }
         .background {
-            PlankIPadWindowMetrics { size,insets in
+            PlankIPadWindowMetrics(sceneChanged:customControls.reportScene) { size,insets in
                 // Cache real window changes even while an editor covers idle
                 // content, so its next entry cannot reuse a stale orientation.
                 reportControlWindow(size)
@@ -66,24 +77,21 @@ struct PlankIPadRoot: View {
                 }
             }
         }
-        .ignoresSafeArea(.keyboard,edges:hasWorkingSurface ? .bottom : [])
+        .ignoresSafeArea(.keyboard,edges:hasWorkingSurface && !editingCustomControls ? .bottom : [])
         .preferredColorScheme(sharePencil ? .dark : nil)
         .statusBarHidden(hideBars && !editingCustomControls)
-        .fullScreenCover(isPresented:$editingCustomControls,onDismiss:customControlsEditorDismissed) {
-            PlankIPadCustomControlsEditor(store:customControls,referenceSurfaceSize:controlWindowSize,
-                surface:sharePencil ? .pencilSharing : .desktop)
-                .interactiveDismissDisabled()
-        }
         .sheet(isPresented:$add) { PlankIPadBookmarkEditor(store:store,client:client,host:.init(name:"",address:"",spatialDisplaySize:PlankIPadDisplayOptions.defaultSize),isNew:true) }
         .sheet(item:$editing) { host in PlankIPadBookmarkEditor(store:store,client:client,host:host,isNew:false) }
         .sheet(isPresented:$controls) {
             if sharePencil { PlankIPadPencilPadOptions(relay:pencilRelay,router:router,stopSharing:stopPencilSharing) }
             else { PlankIPadControls(client:client,router:router) }
         }
-        .onAppear { selectedID = store.hosts.first?.id; updateAdmission() }
+        .onAppear { if host == nil { selectedID = store.hosts.first?.id }; updateAdmission() }
         .onChange(of:store.hosts) { _,hosts in if selectedID == nil { selectedID = hosts.first?.id } }
         .onChange(of:controls) { _,_ in updateAdmission() }
-        .onChange(of:editingCustomControls) { _,_ in updateAdmission() }
+        .onChange(of:editingCustomControls) { _,editing in
+            if editing { updateAdmission() } else { customControlsEditorDismissed() }
+        }
         .onChange(of:sharePencil) { _,_ in updateAdmission() }
         .onChange(of:client.phase) { _,_ in
             if sharePencil && client.hasActiveDesktopSession { stopPencilSharing() }
@@ -106,7 +114,7 @@ struct PlankIPadRoot: View {
                             if let message = router.inputFailure {
                                 Text(message).foregroundStyle(.orange).multilineTextAlignment(.center)
                             }
-                            Button { editingCustomControls = true } label: {
+                            Button(action:editCustomControls) {
                                 Label("Custom Controls",systemImage:"rectangle.grid.2x2")
                             }.buttonStyle(.bordered).disabled(busy)
                             if store.hosts.isEmpty {
@@ -324,7 +332,8 @@ struct PlankIPadRoot: View {
         showingCustomControls.toggle()
     }
     private func editCustomControls() {
-        if sharePencil { pencilRelay.setAdjustingPad(true) } else { router.release() }
+        credentialFocus = nil
+        if sharePencil { pencilRelay.setAdjustingPad(true) } else { router.enabled = false }
         editingCustomControls = true
     }
     private func customControlsEditorDismissed() {

@@ -18,6 +18,7 @@ import GameController
         didSet {
             if !enabled {
                 setSoftwareKeyboardPresented(false)
+                surface?.suspendKeyboard()
                 surface?.publishWheelDiagnostics(); release()
             }
             else if !oldValue, !isHandlingInputFailure { keySession.reopen(); surface?.resumeKeyboard() }
@@ -417,6 +418,14 @@ struct PlankIPadCanvas: UIViewRepresentable {
                 transferringKeyboardFocus = false
             }
         } else if !isFirstResponder { becomeFirstResponder() }
+    }
+    func suspendKeyboard() {
+        // A hardware canvas can still own focus even when the software-keyboard
+        // flag is already false. Surrender only our own two responders.
+        transferringKeyboardFocus = true
+        defer { transferringKeyboardFocus = false }
+        if keyboardEntry.isFirstResponder { keyboardEntry.resignFirstResponder() }
+        if isFirstResponder { resignFirstResponder() }
     }
     func softwareKeyboardResigned() {
         guard !transferringKeyboardFocus else { return }

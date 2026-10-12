@@ -8,10 +8,11 @@ import CoreGraphics
         geometryChecks()
         chromeReservationChecks()
         chromeSafeSnapChecks()
+        try responsiveGeometryChecks()
         ownershipChecks()
         failedAdmissionChecks()
         receiverChecks()
-        print("PASS custom controls: bounded saved layouts, legacy migration, independent Space size, reference/live preview parity, translated snapped groups around measured chrome, explicit unavailable/recoverable fit, stable gutter/alignment/size snapping, chrome-safe edge-row dragging/resizing without peer displacement, anchored resizing, finite bindings, overlapping ownership, physical repeat, combo order, atomic rejection, fail-closed input epochs and stale-change protection")
+        print("PASS custom controls: bounded saved layouts, legacy migration, independent Space size, reference/live preview parity, translated snapped groups around measured chrome, explicit unavailable/recoverable fit, stable gutter/alignment/size snapping, chrome-safe edge-row dragging/resizing without peer displacement, explicit reference extents, uniform responsive placement and safe expanded finger targets, anchored resizing, finite bindings, overlapping ownership, physical repeat, combo order, atomic rejection, fail-closed input epochs and stale-change protection")
     }
     private static func labelChecks() {
         let source = PlankControlLayout.defaults().controls.first { $0.binding.code == 0x20 }!
@@ -347,6 +348,140 @@ import CoreGraphics
         }
         precondition(compactResolution == PlankControlPlacementResolver.resolve(controls:compactDraft,landscape:true,chrome:compact),
             "Materializing a compact-toolbar result cannot shift it again")
+    }
+    private static func responsiveGeometryChecks() throws {
+        func close(_ a: CGFloat,_ b: CGFloat) -> Bool { abs(a - b) < 0.000_01 }
+        func same(_ a: CGRect,_ b: CGRect) -> Bool {
+            close(a.minX,b.minX) && close(a.minY,b.minY) && close(a.width,b.width) && close(a.height,b.height)
+        }
+        func overlaps(_ a: CGRect,_ b: CGRect) -> Bool {
+            let i = a.intersection(b)
+            return !i.isNull && i.width > 0.000_01 && i.height > 0.000_01
+        }
+        let reference = CGSize(width:1376,height:1032)
+        let referenceBounds = CGRect(origin:.zero,size:reference)
+        func key(_ frame: CGRect) -> PlankCustomControl {
+            let p = PlankControlPlacement(frame:frame,in:referenceBounds)
+            return .init(label:"F1",binding:.init(code:0x70),portrait:p,landscape:p)
+        }
+        let row = [500.0,706,912,1118].map { key(CGRect(x:$0,y:92,width:200,height:110)) }
+        var layout = PlankControlLayout(name:"Batch",controls:row)
+        let legacy = layout
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        let originalData = try encoder.encode(PlankCustomControlLibrary(layouts:[layout]))
+        let decoded = try JSONDecoder().decode(PlankCustomControlLibrary.self,from:originalData)
+        precondition(decoded.isValid && decoded.selectedLayout == legacy)
+        let roundTripData = try encoder.encode(decoded)
+        precondition(roundTripData == originalData,
+            "Legacy v1 JSON round trips without adding reference metadata or changing saved controls")
+        precondition(!String(data:originalData,encoding:.utf8)!.contains("Reference"))
+        let plistEncoder = PropertyListEncoder()
+        let legacyPlist = try plistEncoder.encode(decoded)
+        let plistDecoded = try PropertyListDecoder().decode(PlankCustomControlLibrary.self,from:legacyPlist)
+        precondition(plistDecoded == decoded && plistDecoded.isValid,
+            "Legacy Codable layouts remain valid when carried by a property-list preference snapshot")
+        precondition(layout.referenceExtent(landscape:true,legacySize:reference)?.size == reference)
+        precondition(layout.referenceExtent(landscape:false,legacySize:reference)?.size == CGSize(width:1032,height:1376))
+        precondition(layout == legacy,"Measured legacy fallback is transient and cannot write metadata")
+        precondition(layout.materializeReferenceExtent(landscape:true,size:reference))
+        precondition(layout.controls == legacy.controls && layout.portraitReference == nil)
+        precondition(layout.referenceExtent(landscape:true,legacySize:CGSize(width:854,height:673))?.size == reference,
+            "A saved extent cannot change when the app window is resized")
+        let explicit = layout
+        for invalid in [CGSize.zero,CGSize(width:CGFloat.nan,height:1032),CGSize(width:1376,height:CGFloat.infinity),
+                        CGSize(width:16_385,height:1032),CGSize(width:1032,height:1376)] {
+            precondition(!layout.materializeReferenceExtent(landscape:true,size:invalid) && layout == explicit)
+        }
+        let copied = layout.copied()
+        precondition(copied.landscapeReference == layout.landscapeReference && copied.portraitReference == nil)
+        let savedData = try encoder.encode(PlankCustomControlLibrary(layouts:[layout]))
+        let decodedSaved = try JSONDecoder().decode(PlankCustomControlLibrary.self,from:savedData)
+        precondition(decodedSaved.isValid)
+        let explicitPlist = try plistEncoder.encode(decodedSaved)
+        let plistSaved = try PropertyListDecoder().decode(PlankCustomControlLibrary.self,from:explicitPlist)
+        precondition(plistSaved == decodedSaved && plistSaved.selectedLayout.landscapeReference?.size == reference)
+        var corrupt = layout
+        corrupt.landscapeReference = PlankControlReferenceExtent(size:CGSize(width:0,height:1032))
+        precondition(!corrupt.isValid && corrupt.referenceExtent(landscape:true,legacySize:reference) == nil,
+            "An invalid explicit extent is rejected, never silently replaced by a fallback")
+        for size in [reference,CGSize(width:854,height:673),CGSize(width:375,height:486),reference] {
+            let bounds = CGRect(origin:.zero,size:size)
+            let top: CGFloat = size == reference ? 86 : 64
+            let chrome = PlankControlChromeGeometry(bounds:bounds,
+                usableBounds:CGRect(x:0,y:top,width:size.width,height:size.height - top - 10))
+            let value = PlankControlResponsiveResolution.resolve(layout:layout,landscape:true,chrome:chrome,
+                legacyReferenceSize:CGSize(width:854,height:673))
+            precondition(value.geometry.isUsable && value.frames.count == row.count && value.unavailableIDs.isEmpty)
+            precondition(value.geometry.referenceBounds == referenceBounds)
+            precondition(value.fingerHitFrames.count == row.count)
+            for control in row {
+                let visual = value.frames[control.id]!, hit = value.fingerHitFrames[control.id]!
+                precondition(chrome.usableBounds.contains(visual) && chrome.usableBounds.contains(hit))
+                precondition(hit.contains(visual) && hit.width >= 44 && hit.height >= 44)
+                let restored = value.geometry.inverse(frame:visual)
+                precondition(close(restored.width,200) && close(restored.height,110))
+                precondition(same(value.geometry.forward(frame:restored),visual),"Editor inverse/forward mapping cannot drift")
+                for other in row where other.id != control.id {
+                    precondition(!overlaps(hit,value.fingerHitFrames[other.id]!))
+                }
+            }
+            precondition(close(value.frames[row[1].id]!.minX - value.frames[row[0].id]!.maxX,6 * value.geometry.scale),
+                "One uniform transform preserves the six-point authored gutter")
+            var reversed = layout; reversed.controls.reverse()
+            precondition(value == PlankControlResponsiveResolution.resolve(layout:reversed,landscape:true,
+                chrome:chrome,legacyReferenceSize:reference),"Target safety must not depend on saved array order")
+            if size == reference {
+                let baseline = PlankControlPlacementResolver.resolve(controls:row,landscape:true,chrome:chrome)
+                precondition(value.frames == baseline.frames,"Unchanged fullscreen preserves accepted37 frames exactly")
+            }
+            let moved = value.geometry.referenceTranslation(CGSize(width:12 * value.geometry.scale,height:-9 * value.geometry.scale))
+            precondition(close(moved.width,12) && close(moved.height,-9))
+            precondition(layout == explicit,"Resize/projection cannot rewrite saved dimensions, anchors or reference extents")
+        }
+        let full = CGRect(origin:.zero,size:reference)
+        for obstacles in [[],[CGRect(x:1020,y:12,width:344,height:44)],
+                          [CGRect(x:310,y:80,width:560,height:180)]] {
+            let chrome = PlankControlChromeGeometry(bounds:full,
+                usableBounds:CGRect(x:0,y:0,width:1376,height:1012),reservedRects:obstacles)
+            let baseline = PlankControlPlacementResolver.resolve(controls:row,landscape:true,chrome:chrome)
+            let responsive = PlankControlResponsiveResolution.resolve(layout:layout,landscape:true,chrome:chrome,
+                legacyReferenceSize:reference)
+            precondition(responsive.frames == baseline.frames,
+                "Fullscreen compact toolbar/consent placement shares the accepted chrome resolver")
+            for hit in responsive.fingerHitFrames.values {
+                precondition(obstacles.allSatisfy { !overlaps(hit,$0) })
+            }
+        }
+        let smallBounds = CGRect(x:0,y:0,width:375,height:486)
+        let smallChrome = PlankControlChromeGeometry(bounds:smallBounds,usableBounds:CGRect(x:0,y:64,width:375,height:412))
+        var dense = layout
+        dense.controls += [500.0,706,912,1118].map { key(CGRect(x:$0,y:208,width:200,height:110)) }
+        let tiny = PlankControlResponsiveResolution.resolve(layout:dense,landscape:true,chrome:smallChrome,
+            legacyReferenceSize:reference)
+        precondition(tiny.frames.count == 8 && tiny.fingerHitFrames.isEmpty && tiny.unavailableIDs == Set(dense.controls.map(\.id)),
+            "Dense tiny-window controls keep exact visual geometry but cannot gain ambiguous expanded hit targets")
+        let portrait = PlankControlResponsiveResolution.resolve(layout:layout,landscape:false,chrome:smallChrome,
+            legacyReferenceSize:reference)
+        precondition(portrait.geometry.referenceBounds.size == CGSize(width:1032,height:1376),
+            "The caller chooses the saved arrangement independently of current window aspect")
+        let mediumBounds = CGRect(x:0,y:0,width:854,height:673)
+        let mediumChrome = PlankControlChromeGeometry(bounds:mediumBounds,usableBounds:CGRect(x:0,y:64,width:854,height:599))
+        let short = key(CGRect(x:500,y:300,width:200,height:52))
+        let shortLayout = PlankControlLayout(name:"Short",controls:[short],landscapeReference:.init(size:reference))
+        let shortResult = PlankControlResponsiveResolution.resolve(layout:shortLayout,landscape:true,chrome:mediumChrome,
+            legacyReferenceSize:reference)
+        let visible = shortResult.frames[short.id]!
+        precondition(visible.height < 44 && shortResult.fingerHitFrames[short.id]!.height == 44,
+            "A medium-window visual key may safely gain a finger target without changing its visual size")
+        let obstacle = CGRect(x:visible.minX,y:visible.maxY + 4,width:40,height:10)
+        let nearbyChrome = PlankControlChromeGeometry(bounds:mediumBounds,usableBounds:mediumChrome.usableBounds,reservedRects:[obstacle])
+        let blockedHit = PlankControlResponsiveResolution.resolve(layout:shortLayout,landscape:true,chrome:nearbyChrome,
+            legacyReferenceSize:reference)
+        precondition(same(blockedHit.frames[short.id]!,visible) && blockedHit.unavailableIDs == [short.id]
+            && blockedHit.fingerHitFrames.isEmpty,"Finger hit expansion may not capture the compact menu even when visual clearance is safe")
+        let unknown = PlankControlResponsiveResolution.resolve(layout:layout,landscape:true,
+            chrome:.unmeasured(size:reference),legacyReferenceSize:reference)
+        precondition(unknown.frames.isEmpty && unknown.fingerHitFrames.isEmpty && unknown.unavailableIDs == Set(row.map(\.id)))
     }
     private static func modelChecks() throws {
         // The accepted mapping table is the authority for the assignable catalog.
