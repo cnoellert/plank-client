@@ -26,7 +26,7 @@ Pad Options and the receiver's Apple Pencil settings. Both ends require image
 consent. Installed iPad34 / Vision50, runtime `4a14a47`, failed the user's
 picture latency/stretching trial. The October11 iPad35 / Vision51 / Mac28
 candidate from `a102d8c8460fc851b4c55e84fc9acdafda17a3a9` was freshly compiled,
-signed and independently verified. iPad35 is now installed and open on the new
+signed and independently verified. iPad35 was installed and open on the new
 iPad Pro 13-inch (M5), iPadOS26.6; Vision51 and Mac28 remain staged. Only its
 bounded pixel converter is optimized; image consent uses proportional picture
 and Pencil mapping while preserving the saved input-only mapping preference.
@@ -38,8 +38,9 @@ iPad reports no picture; receive consent and active Pencil are logged, with no
 accepted image frames. Current sender/receiver status is still needed to isolate
 that report. Vision52 / Mac29 from `e8b928ffd8b253edc959c7669b2cc23b50aa99f2`
 add image-only retry after failed startup, preserving current consent and pen
-authority. Both are freshly built, signed, independently verified and staged,
-not installed or launched. Mac27 also remains staged and unlaunched.
+authority. Both are freshly built, signed and independently verified. Vision52
+is now installed/running; Mac29 remains staged and unlaunched. Mac27 also remains
+staged and unlaunched.
 See [the image boundary and next magnification slice](../docs/development/ipad-live-image.md).
 
 ## Finger input filter — build 36 candidate
@@ -53,7 +54,9 @@ Sharing already ignores fingers outside Artist Controls; this preference also
 applies when returning to the direct iPad desktop.
 
 iPad36 from `7a5fe82d14f47c073e308af63a73ac6c6cb42014` is freshly built, signed
-for the new M5 and independently verified, but not installed. Focused exact
+for the new M5 and independently verified, then installed/open after the artist
+confirmed test readiness. Exact app/process inventories verify36 and Vision52.
+The new image-startup test is pending; touch acceptance follows separately. Focused exact
 router/contact-body checks pass; physical UIKit delivery and Host receipt remain
 separate. Reproduce the bounded source checks without a device:
 

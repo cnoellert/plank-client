@@ -571,7 +571,9 @@ retire unrelated held modifiers or change saved layouts, geometry or visibility.
 
 Candidate36 runtime `7a5fe82d14f47c073e308af63a73ac6c6cb42014` passed focused
 exact-router/contact checks and fresh native compilation/signing, including the
-new M5 device profile. It is independently verified and staged, not installed.
+new M5 device profile. It was independently verified, then installed/open after
+the artist confirmed test readiness. Exact36/0.1.0 and its running executable
+path are independently verified; physical acceptance remains pending.
 Stand-in touch delivery and a recording Host qualify local admission/ordering,
 not physical palm rejection or final Host receipt. The new device check is the
 filter's off/on behavior and Artist/Pencil coexistence, not a repeat of earlier
