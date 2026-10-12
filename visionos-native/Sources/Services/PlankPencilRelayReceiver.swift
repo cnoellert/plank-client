@@ -19,6 +19,10 @@ struct PlankDiscoveredPencilPad: Identifiable, Sendable {
     let imageSender = PlankPencilImageSender()
     private var imageBinding: PlankPencilSessionBinding?
     private var imageStarted = false
+    private var imageAuthority = UUID(), imageRetryID = UUID()
+    private var imageAttempt: UUID?
+    private var imageRetryTask: Task<Void, Never>?
+    private var imageRetryDelay: UInt64 = 1
     private weak var client: PlankCoreClient?
     private var browser: NWBrowser?
     private var discoveryOwners = Set<UUID>()
@@ -97,7 +101,7 @@ struct PlankDiscoveredPencilPad: Identifiable, Sendable {
     func setImageSharingEnabled(_ enabled: Bool) {
         guard enabled != imageSharingEnabled else { return }
         if !enabled {
-            imageSharingEnabled = false; imageStarted = false; imageSender.stop(); return
+            imageSharingEnabled = false; cancelImageAttempt(); return
         }
         guard connected, peer != nil else { return }
         imageSharingEnabled = true
@@ -109,25 +113,74 @@ struct PlankDiscoveredPencilPad: Identifiable, Sendable {
             Task { @MainActor in
                 guard let self, self.generation == current, self.connected,
                       self.peer != nil, let binding else { return }
-                self.imageBinding = binding; self.syncImage()
+                if self.imageBinding != binding {
+                    self.cancelImageAttempt(); self.imageBinding = binding
+                }
+                self.syncImage()
             }
         }
     }
     private func syncImage() {
-        guard imageSharingEnabled, !imageStarted, connected, let client,
+        guard imageSharingEnabled, connected, peer != nil, let client,
               case .streaming = client.phase, let binding = imageBinding,
-              let pad = chosenPad else { return }
+              let pad = chosenPad else {
+            if imageStarted || imageRetryTask != nil { cancelImageAttempt() }
+            return
+        }
+        // Frequent desktop updates cannot bypass an already scheduled retry.
+        guard !imageStarted, imageRetryTask == nil else { return }
         // Image authority belongs to this approved peer and desktop lifetime.
         // A transient input-focus pause does not change image admission.
         imageStarted = true
+        let authority = imageAuthority, current = generation, attempt = UUID()
+        imageAttempt = attempt
         do {
             try imageSender.start(client:client,binding:binding,endpoint:pad.endpoint,
-                                  privateKey:PlankPencilRelayKeys.privateKey())
-        } catch { imageSender.stop() }
+                                  privateKey:PlankPencilRelayKeys.privateKey()) { [weak self] event in
+                guard let self, self.imageAuthority == authority,
+                      self.generation == current, self.imageAttempt == attempt,
+                      self.imageSharingEnabled, self.connected, self.peer != nil else { return }
+                guard let client = self.client, case .streaming = client.phase else {
+                    self.cancelImageAttempt(); return
+                }
+                switch event {
+                case .ready: self.imageRetryDelay = 1
+                case .ended:
+                    self.imageStarted = false; self.imageAttempt = nil
+                    self.scheduleImageRetry()
+                }
+            }
+        } catch {
+            imageStarted = false; imageAttempt = nil; imageSender.fail()
+            scheduleImageRetry()
+        }
+    }
+    private func scheduleImageRetry() {
+        guard imageSharingEnabled, connected, peer != nil, imageBinding != nil,
+              chosenPad != nil, let client, case .streaming = client.phase,
+              !imageStarted, imageRetryTask == nil else { return }
+        let authority = imageAuthority, current = generation, retry = UUID()
+        imageRetryID = retry
+        let delay = imageRetryDelay
+        imageRetryDelay = min(8, delay * 2)
+        // One weak task owns a capped delay. No client, key, endpoint or pen
+        // transcript is retained by the wait; authority is re-read on wake.
+        imageRetryTask = Task { @MainActor [weak self] in
+            do { try await Task.sleep(nanoseconds:delay * 1_000_000_000) }
+            catch { return }
+            guard !Task.isCancelled, let self, self.imageAuthority == authority,
+                  self.generation == current, self.imageRetryID == retry else { return }
+            self.imageRetryTask = nil
+            self.syncImage()
+        }
+    }
+    private func cancelImageAttempt() {
+        imageAuthority = UUID(); imageRetryID = UUID(); imageAttempt = nil
+        imageRetryTask?.cancel(); imageRetryTask = nil
+        imageStarted = false; imageRetryDelay = 1; imageSender.stop()
     }
     private func stopImage() {
-        imageSharingEnabled = false; imageStarted = false; imageBinding = nil
-        imageSender.stop()
+        imageSharingEnabled = false; imageBinding = nil; cancelImageAttempt()
     }
     func sync() {
         guard let client else { return }

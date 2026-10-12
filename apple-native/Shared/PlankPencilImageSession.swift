@@ -7,6 +7,7 @@ import Network
 /// The current desktop's optional reference-image lane owns its own video sink.
 /// Stopping this lane never stops, approves or changes the Pencil control lane.
 @MainActor final class PlankPencilImageSender: ObservableObject {
+    enum Lifecycle: Sendable { case ready, ended }
     @Published private(set) var status = "Image is off"
     private weak var client: PlankCoreClient?
     private var surfaceID: UUID?
@@ -15,7 +16,8 @@ import Network
     private var epoch = UUID()
 
     func start(client: PlankCoreClient, binding: PlankPencilSessionBinding,
-               endpoint: NWEndpoint, privateKey: Data) throws {
+               endpoint: NWEndpoint, privateKey: Data,
+               lifecycle: @escaping @MainActor @Sendable (Lifecycle) -> Void) throws {
         stop()
         guard case let .service(name, type, domain, interface) = endpoint,
               type == "_plank-pencil._tcp" || type == "_plank-pencil._tcp." else {
@@ -34,12 +36,13 @@ import Network
                 Task { @MainActor [weak self] in
                     guard let self, self.epoch == current else { return }
                     self.status = "Sending reference image"; self.worker?.setReady()
+                    lifecycle(.ready)
                 }
             case .frame: break
             case .ended:
                 Task { @MainActor [weak self] in
                     guard let self, self.epoch == current else { return }
-                    self.stop(); self.status = "Reference image unavailable. Pencil sharing is unchanged."
+                    self.fail(); lifecycle(.ended)
                 }
             }
         }
@@ -67,6 +70,13 @@ import Network
         surfaceID = nil; client = nil
         peer?.close(); peer = nil
         status = "Image is off"
+    }
+
+    /// Image startup/transport failure retires only this lane. Its authority
+    /// owner decides whether current, independently consented media may retry.
+    func fail() {
+        stop()
+        status = "Reference image unavailable. Pencil sharing is unchanged."
     }
 }
 
