@@ -610,9 +610,11 @@ simulator delivery and stubbed transport do not prove physical iPadOS behavior
 or final Host receipt.
 
 Fresh native device compilation, signing and independent target/profile/
-runtime/resource/dependency verification pass. Signed37 is staged for the new
-M5; installed36/Vision52 and signed36 rollback remain untouched. Physical
-connected/sharing naming and top-row drag acceptance remain required. No
+runtime/resource/dependency verification pass. After the artist confirmed the
+desktop disconnected and sharing stopped, signed37 was installed/open on the
+new M5. Exact37/0.1.0 and its running executable path are verified. Vision52
+and signed36 rollback remain unchanged. Physical connected/sharing naming and
+top-row drag acceptance are requested and remain pending. No
 receiver, image, input-admission, keyboard, Host, network or dependency change
 accompanies this local editor correction. Zoom remains a separate proposal in
 [the live-image discussion](ipad-live-image.md#october-11-zoom-proposal--discussion-before-implementation).
