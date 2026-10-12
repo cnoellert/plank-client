@@ -618,3 +618,32 @@ top-row drag acceptance are requested and remain pending. No
 receiver, image, input-admission, keyboard, Host, network or dependency change
 accompanies this local editor correction. Zoom remains a separate proposal in
 [the live-image discussion](ipad-live-image.md#october-11-zoom-proposal--discussion-before-implementation).
+
+
+## Suspended desktop keyboard ownership — iPad38
+
+The artist accepted iPad37's corrected top-row positioning. Connected client
+Rename still refuses naming and reportedly switches back to the first layout.
+Whether this means the first control layout or first workstation is being
+clarified; sharing acceptance is not inferred. Four native production Root/editor
+cases with a distinct second layout preserve selection and draft state through
+actual menu/keyboard operations and bounded client/chrome updates. Their direct
+input responder and transport are stand-ins, so physical fallback is unresolved.
+
+A separate exact-method native UIKit check reproduces a concrete focus defect:
+the retained desktop view can take first responder from an active local text
+field while remote input is disabled. Window attachment and a rejected Pencil
+contact can call `resumeKeyboard` without its own admission guard. Both keyboard
+resume and responder eligibility now require current router admission. Eight
+native cases preserve local field ownership while disabled, normal enabled
+hardware/software keyboard resume, and detached behavior. No field contents or
+user text were logged. This proves the focus route, not the physical fallback's
+cause or repair.
+
+Build38 runtime `000c72132e9d21c5bbff8d06443e1ad7fe0fb966` changes only these
+two guards and its build number. Root/editor, saved layouts, accepted geometry,
+image and receiver code remain unchanged; 414 native/recipe files match37. Fresh
+device compilation, signing and independent runtime/profile/dependency checks
+pass. The M5 candidate is staged, not installed; signed37 rollback is retained.
+The remaining physical check is connected client naming with the same selected
+layout. Do not repeat accepted snapping or previous input tests.

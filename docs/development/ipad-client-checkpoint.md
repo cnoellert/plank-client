@@ -33,7 +33,8 @@ Retarget these slices upstream in dependency order after their bases are accepte
 
 | Target | Compiled runtime source | State |
 | --- | --- | --- |
-| iPad37 | `535c48667d35bafcd322f692ae07703d579040cc` | Local inline layout rename and chrome-safe editor rows; installed/open on new M5 after disconnected authorization, exact version/running path verified; physical check pending |
+| iPad38 | `000c72132e9d21c5bbff8d06443e1ad7fe0fb966` | Suspended desktop keyboard-focus guards; native responder defect reproduced, fresh signed M5 candidate independently verified; not installed, physical naming/fallback remains unqualified |
+| iPad37 | `535c48667d35bafcd322f692ae07703d579040cc` | Local inline layout rename and chrome-safe editor rows; installed/open on new M5 after disconnected authorization, exact version/running path verified; top-row snap accepted, connected Rename still fails/switches back |
 | iPad36 | `7a5fe82d14f47c073e308af63a73ac6c6cb42014` | Built, signed and installed/open on new M5; exact version/running path independently verified; physical finger-filter acceptance pending |
 | Vision52 / Mac29 | `e8b928ffd8b253edc959c7669b2cc23b50aa99f2` | Image-only recovery: Vision52 installed/running; artist reports picture visible with better latency, below expectations; image promotion held; Mac29 staged/unlaunched |
 | iPad35 / Vision51 | `a102d8c8460fc851b4c55e84fc9acdafda17a3a9` | Optimized conversion and proportional shared image/Pencil mapping: iPad35 installed/open and independently verified on new M5/iPadOS26.6; Vision51 staged; physical image latency/alignment unqualified |

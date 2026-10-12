@@ -210,7 +210,8 @@ iPad Desktop and Pencil Sharing. Recommend **Fit / 2× View** first, with a
 deliberate **Hand** navigation control and a small full-desktop navigator.
 Here 2× means twice Fit, rather than a native-pixel percentage. Existing
 100%/200%/300% ideas mean source-pixel magnification and should be named
-separately if added later. No zoom runtime is implemented by this proposal.
+separately if added later. The artist agreed to try this proposal; the connected
+layout-naming correction comes first. No zoom runtime is implemented yet.
 Center the initial doubled view on the last valid Pencil hover position, or
 the desktop center when hover is unavailable. The navigator can select another
 area deliberately. This proposal avoids moving the view continuously under
