@@ -692,8 +692,10 @@ seven scoped runtime/test paths.
 These checks use simulator27, controlled window bounds and transport stand-ins.
 They do not reproduce the physical iPadOS26.6 fullscreen fault or qualify Stage
 Manager, genuine OS cancellation, Host receipt or small-window readability.
-The fresh iPad39 device app compiles and is signed for the new M5; build38 is
-retained for rollback. Installation and the targeted physical fullscreen naming
-and full/smaller/full layout check remain pending. Vision52, image transport,
+The fresh iPad39 device app compiles and is independently verified and signed
+for the new M5; build38 is retained for rollback. After the artist confirmed
+installation readiness, the update installed and opened with exact39/0.1.0 and
+its running executable independently observed. The targeted physical fullscreen
+naming and full/smaller/full layout check remain pending. Vision52, image transport,
 Host, network, identities and dependency pins are unchanged. The agreed Fit/2×
 zoom slice waits for this editor/window qualification.
