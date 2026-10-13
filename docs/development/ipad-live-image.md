@@ -15,7 +15,9 @@ held. Older iPad34 / Vision50 from
 installation. Old Air34 remains unchanged; Vision50 is superseded. The user rejected
 that baseline's picture latency and stretching. Mac27, Mac28 and Mac29 remain staged
 and unlaunched. Image promotion remains held.
-Magnification and pan remain planned after the reference image is useful.
+The local Fit/2× operating-view candidate43 is implemented and staged below;
+physical zoom qualification remains pending. Sharper source-region media and
+a separate loupe remain later work.
 
 ## October 10 physical usability result
 
@@ -214,7 +216,8 @@ Here 2× means twice Fit, rather than a native-pixel percentage. Existing
 100%/200%/300% ideas mean source-pixel magnification and should be named
 separately if added later. The artist agreed to try this proposal; the connected
 layout-naming correction comes first. Naming39 and authored editor42 are now
-physically accepted for their targeted checks. No zoom runtime is implemented yet.
+physically accepted for their targeted checks. At the proposal checkpoint zoom
+was not implemented; the candidate43 section below records the subsequent slice.
 Center the initial doubled view on the last valid Pencil hover position, or
 the desktop center when hover is unavailable. The navigator can select another
 area deliberately. This proposal avoids moving the view continuously under
@@ -290,3 +293,83 @@ generations and input edge delivery under image load. Measure physical Pencil
 response in both direct and shared contexts. Existing accepted input tests do
 not need repeating. Bluetooth media, background capture and Host changes are
 outside the initial slice.
+
+## Local Fit/2× operating view — iPad43 candidate
+
+Runtime `5a2ea686a3bab92df91af69c17a4ca4de1e31dca` adds the approved local view
+in both direct Desktop and Pencil Sharing. The magnifying-glass toolbar button
+offers **Fit**, **2× View**, **Hand** and **Center View**, and stays available
+with the session toolbar hidden. Compact windows keep Artist visibility,
+Layouts and View as dedicated buttons; keyboard, settings, toolbar hiding and
+disconnect/stop move into **More session controls**. Sharing's 2× option requires
+active Pencil sharing and Receive desktop image. Fit restores ordinary drawing
+and turns Hand off.
+
+2× means twice the current Fit scale. It starts around the last valid Pencil
+hover or desktop center, bounded to keep the crop inside the picture. The small
+navigator outlines the complete desktop and current crop; it is an area selector,
+not another live stream. Drag there to choose a region, or enable Hand to move
+the picture with a local finger/Pencil drag. Additional and margin Hand contacts
+remain local and cannot fall through into remote clicks. Artist controls retain
+priority; Pencil forwarded from their overlay keeps its remote drawing route.
+Ignore finger input still filters ordinary remote finger clicks while deliberate
+Hand and navigator interactions remain available.
+
+One immutable viewport drives the fitted operating rectangle, entire-image frame,
+visible source crop, forward cursor and inverse Pencil/pointer/squeeze coordinates.
+Local crop offsets are added back before normalized complete-desktop delivery.
+The existing inverse endpoint convention is explicit: outer viewport edges map
+to inclusive pixel indices `0...width-1` and `0...height-1`, and forward cursor
+mapping uses that same convention. Fresh input rejects letterbox areas; existing
+drags retain edge clamping. Source image layers and the actual Metal child use
+the same clipped operating rectangle. Artist button geometry is separate from zoom.
+
+Voluntary mode, center, pan and Hand requests coalesce while a remote Pencil,
+finger or mouse-button contact is held. After its real release edges and cleared
+contact fields, native presentation and input apply the emitted crop together,
+retiring only old hover. Artist and physical keyboard modifiers keep their real
+release ownership; view changes do not advance their input epoch or restart the
+session. Forced bounds/keyboard, source, admission and session changes retain
+existing retirement and discard pending old-view requests. The navigator's
+protected 140×108-point footprint is constant in Fit and2×, so ordinary mode/pan
+changes do not change Artist chrome reservations.
+
+The receiver, authenticated pen/media protocols, Host and native recipe pins
+are unchanged. Sharing still receives the same dimmed complete-frame JPEG;
+enlargement cannot recover detail or remove picture delay. Sharper source-region
+delivery is a separate negotiated media slice. Media geometry generation is
+not repurposed for local zoom. Missing or stale images keep their existing
+image-only clearing behavior.
+
+Swift6 policy and exact-contact fixtures pass crop landmarks and roundtrips,
+nonzero bounds/crop offsets, Fit compatibility, invalid geometry, deferred
+requests, multi-button release ordering and preserved held Shift/Space. Native
+Simulator27 checks render the production video/input/pad-image and WorkingSurface,
+Artist and navigator components with stand-in transport. Eight rendering phases
+and22 cases pass actual software/Metal-child layout, clipping, cursor/hotspot
+alignment, retained frames, synchronous crop, held-stroke visual deferral,
+local Hand and Artist/navigator priority in both contexts. Exact toolbar bodies
+pass reachable, disjoint 44-point targets at375 points and normal width. Saved
+screenshots contain synthetic fixture landmarks, never workstation images or text.
+
+Controlled windows and manually delivered touch subclasses do not qualify
+physical iPadOS26.6 arbitration, palm rejection, compositor/scanout timing,
+hardware xf44 GPU quality or final Host receipt. New physical zoom/alignment,
+Hand/navigation and simultaneous controls remain pending. Accepted editor42,
+naming, keyboard, wheel and earlier input results are carried forward.
+
+The final43 device app was freshly built, signed and independently verified for
+the new M5, including exact compiled runtime/resources, profile/certificate,
+entitlements, declared pins and all258 dependency entries. Signed42/41/40/39,
+Vision52 and Mac29 remain intact. A precompact43 package was never installed
+and is quarantined; the final build uses a fresh dependency-only clone after
+the public recipe refused reuse of an app build directory. Installed42/Vision52
+and working sessions are untouched. Candidate43 installation and device check
+remain pending.
+
+Reproduce the focused fixtures on the build Mac:
+
+```sh
+python3 ios-native/Tests/run-zoom-policy-checks.py --output /absolute/fresh-output
+python3 ios-native/Tests/run-zoom-input-integration-checks.py --output /absolute/another-fresh-output
+```

@@ -5,11 +5,11 @@ existing native session/media services at their current source paths. Shipping
 Mac and Vision app identities and targets are unchanged. iPadOS 26 and Apple
 Silicon device/simulator are the initial compile scope, not a final OS matrix.
 
-## Current accepted development checkpoint — October 10
+## Current accepted development checkpoint — October 12
 
-Installed iPad33 is the accepted editor movement/resize and landscape toolbar
-checkpoint, with compatible Vision49
-installed and Mac26 signed/staged for separate device qualification. The pilot
+Installed iPad42 is the accepted authored editor aspect and movement/resize
+checkpoint, with compatible Vision52 installed and Mac29 signed/staged for
+separate device qualification. The pilot
 supports direct remote playback/input and foreground Apple Pencil sharing from
 the normal client screen, plus one saved artist-control library in both modes.
 Layouts, bindings, labels, button sizes and positions are editable; the toolbar
@@ -42,6 +42,12 @@ authority. Both are freshly built, signed and independently verified. Vision52
 is now installed/running; Mac29 remains staged and unlaunched. Mac27 also remains
 staged and unlaunched.
 See [the image boundary and next magnification slice](../docs/development/ipad-live-image.md).
+
+Local Fit/2× candidate43 adds a shared picture/cursor/input crop, deliberate Hand
+navigation and a small protected area navigator in both working modes. Its
+native/policy/contact and independent package checks pass; it is signed/staged,
+not installed. Physical zoom/Hand qualification remains pending; the current
+full-frame sharing image retains its existing detail and latency limits.
 
 ## Finger input filter — build 36 candidate
 
