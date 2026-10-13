@@ -724,3 +724,40 @@ separate device inventories show exact40/0.1.0 and its running executable.
 Build39 is retained for rollback. Physical top/bottom band appearance is the
 remaining targeted check.
 No additional input acceptance is required for this drawing-only correction.
+
+## Fixed orientation canvas — iPad41
+
+The artist chose a fixed tablet reference rather than reflowing keys with each
+window shape. Each layout retains its saved portrait and landscape extents;
+layouts without metadata use the measured full physical tablet transiently.
+Actual scene orientation selects the arrangement. Moving or resizing a window
+does not write the library or choose another arrangement from its aspect ratio.
+
+Build41 runtime `910c52fff4264c42a5fb666b1ed01aedb2f346f9` fits the complete
+authored canvas uniformly inside the measured usable window. Positions, sizes,
+gutters and labels share one scale and offset. The live overlay and editor no
+longer translate separate button groups around current menus or other groups.
+Floating menus and consent panels retain separate current-window hit protection;
+an unsafe finger target is unavailable rather than moving a saved key. A narrow
+window can therefore have empty space and smaller controls. Fullscreen controls
+can also become slightly smaller as the whole canvas clears the measured bars.
+
+Dragging, corner resizing or a numeric geometry edit adopts only the selected
+control's displayed anchor. Other controls, the opposite arrangement and other
+layouts keep their exact saved geometry. Undo precedes that selected edit.
+Explicit snapping still honors the measured menu footprint through the inverse
+projection. The editor preview continues to show actual window reservations.
+
+Focused model checks pass fixed centers/sizes/gaps across wide, narrow and
+asymmetric windows, original library bytes, both arrangements, floating-menu
+protection and invalid/unmeasured geometry. A native production-overlay replay
+also passes full/compact/full frames, label scale and saved-byte invariance.
+Extracted production move and all four corner handlers change only the selected
+control, preserving other layouts and the opposite arrangement. These simulator27
+checks do not establish physical iPadOS26.6 gesture or window-lifecycle behavior.
+The fresh M5 device app compiles and is signed/staged. Independent package review
+passes exact runtime bytes/resources, target profile/certificate/entitlements,
+unchanged dependency receipts and protected rollback inventories. Disconnected
+installation and physical fixed-arrangement/selected-edit checks remain pending.
+Input, Pencil mapping, image transport, peer authority, schema and dependency
+pins are unchanged. Fit/2× image zoom remains a separate next slice.
