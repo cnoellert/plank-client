@@ -812,5 +812,8 @@ window manager. Independent package review passes exact compiled runtime/resourc
 parity, target M5 provisioning, signature/certificate/entitlements, all258
 dependency entries, declared native pins and converter-only optimization flags.
 Signed41/40/39, Vision52 and Mac29 payloads and signatures remain intact.
-Installed41 remains untouched; physical42 acceptance and installation are pending.
-Fit/2× zoom remains a separate approved slice.
+The user confirmed disconnected and42 was installed as an update on the new M5.
+Independent app/process inventories show exact42/0.1.0 and its installed running
+executable. The persistent console is retained without signals. Signed41 rollback,
+Vision52 and the old iPad remain intact; physical42 editor aspect and gesture
+acceptance are pending. Fit/2× zoom remains a separate approved slice.
