@@ -7,9 +7,9 @@ Silicon device/simulator are the initial compile scope, not a final OS matrix.
 
 ## Current accepted development checkpoint — October 12
 
-Installed iPad42 is the accepted authored editor aspect and movement/resize
-checkpoint, with compatible Vision52 installed and Mac29 signed/staged for
-separate device qualification. The pilot
+Installed iPad43 adds the local Fit/2× operating-view candidate to the accepted
+authored editor aspect and movement/resize checkpoint42, with compatible
+Vision52 installed and Mac29 signed/staged for separate device qualification. The pilot
 supports direct remote playback/input and foreground Apple Pencil sharing from
 the normal client screen, plus one saved artist-control library in both modes.
 Layouts, bindings, labels, button sizes and positions are editable; the toolbar
@@ -45,8 +45,9 @@ See [the image boundary and next magnification slice](../docs/development/ipad-l
 
 Local Fit/2× candidate43 adds a shared picture/cursor/input crop, deliberate Hand
 navigation and a small protected area navigator in both working modes. Its
-native/policy/contact and independent package checks pass; it is signed/staged,
-not installed. Physical zoom/Hand qualification remains pending; the current
+native/policy/contact and independent package checks pass; it is installed and
+open on the new M5 with exact43/0.1.0 and matching running executable verified.
+Physical zoom/Hand qualification remains pending; the current
 full-frame sharing image retains its existing detail and latency limits.
 
 ## Finger input filter — build 36 candidate

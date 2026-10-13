@@ -11,9 +11,10 @@ PR13 at `c3dfc42bb4272ab18616e022b441fdbbe9497bc1`. Editor peer continuity remai
 a separate physical gate. See
 [the current controls boundary](ipad-custom-controls.md#menu-protection-and-editor-continuity--ipad32).
 
-Current installed42 is accepted for its authored editor aspect and editing check.
-The separate local Fit/2× operating-view candidate43 is compiled, signed and
-independently verified, but remains uninstalled and physically unqualified.
+The authored editor aspect and editing check from42 remain accepted. Local
+Fit/2× operating-view build43 is now installed and open on the new M5 after
+the user's disconnected installation authorization. App inventory and its exact
+running executable verify43/0.1.0; physical zoom qualification remains pending.
 
 ## Review order
 
@@ -37,7 +38,7 @@ Retarget these slices upstream in dependency order after their bases are accepte
 
 | Target | Compiled runtime source | State |
 | --- | --- | --- |
-| iPad43 | `5a2ea686a3bab92df91af69c17a4ca4de1e31dca` | Shared local Fit/2× crop, matching image/cursor/input, Hand and fixed-footprint navigator in direct Desktop and Sharing; policy/contact, native rendering and independent signed package checks pass; staged for M5, not installed; physical zoom check pending |
+| iPad43 | `5a2ea686a3bab92df91af69c17a4ca4de1e31dca` | Shared local Fit/2× crop, matching image/cursor/input, Hand and fixed-footprint navigator in direct Desktop and Sharing; policy/contact, native rendering and independent signed package checks pass; installed/open on M5 with exact43/0.1.0 and matching running executable observed; physical zoom check pending |
 | iPad42 | `cdfbe5f004019c8e67102cc6d83a0cc6b3f76cbb` | Rebased after Alan main refresh; editor outline, keys, labels, guides and gesture inversion share the authored portrait/landscape canvas; whole rendered-editor checks, old41 tall-entry negative control and independent package review pass; installed/open on M5 with exact42/0.1.0 and running executable observed; user accepts requested physical outline/arrangement through window resize and selected control movement/resizing |
 | iPad41 | `910c52fff4264c42a5fb666b1ed01aedb2f346f9` | Installed/open on M5 after authorization, exact41/0.1.0 and running executable observed; physical fixed-canvas gate failed: tall editor window keeps a tall outline around fitted landscape keys; selected-edit gate not separately answered |
 | iPad40 | `44f29cebd5a97290bccffcdc331e59a3a328234f` | Drawing-only editor preview chrome correction; installed/open on M5 after disconnected authorization, exact40/0.1.0 and running executable observed; reserved-band check superseded by artist-approved whole-canvas policy41 |

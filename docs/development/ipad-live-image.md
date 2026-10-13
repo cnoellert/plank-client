@@ -3,9 +3,10 @@
 The current reference-image sender candidates are Vision52 / Mac29 from
 `e8b928ffd8b253edc959c7669b2cc23b50aa99f2`, freshly compiled, signed and
 independently verified; Vision52 is installed/running and Mac29 is staged. Current
-installed iPad42 runtime `cdfbe5f004019c8e67102cc6d83a0cc6b3f76cbb` is accepted
-for the targeted editor outline and editing check after window resizing. It
-retains the optimized35 image receiver and build36 finger-input option. Earlier
+installed iPad43 runtime `5a2ea686a3bab92df91af69c17a4ca4de1e31dca` adds local
+Fit/2×, Hand and area navigation. The targeted editor outline and editing check
+from42 remains accepted. It retains the optimized35 image receiver and build36
+finger-input option. Earlier
 iPad36 from `7a5fe82d14f47c073e308af63a73ac6c6cb42014` is superseded on the M5.
 iPad35 from `a102d8c8460fc851b4c55e84fc9acdafda17a3a9` was its prior installed
 baseline. The October 11 artist trial confirms the picture appears and latency
@@ -15,7 +16,7 @@ held. Older iPad34 / Vision50 from
 installation. Old Air34 remains unchanged; Vision50 is superseded. The user rejected
 that baseline's picture latency and stretching. Mac27, Mac28 and Mac29 remain staged
 and unlaunched. Image promotion remains held.
-The local Fit/2× operating-view candidate43 is implemented and staged below;
+The local Fit/2× operating-view candidate43 is implemented and installed below;
 physical zoom qualification remains pending. Sharper source-region media and
 a separate loupe remain later work.
 
@@ -363,9 +364,12 @@ the new M5, including exact compiled runtime/resources, profile/certificate,
 entitlements, declared pins and all258 dependency entries. Signed42/41/40/39,
 Vision52 and Mac29 remain intact. A precompact43 package was never installed
 and is quarantined; the final build uses a fresh dependency-only clone after
-the public recipe refused reuse of an app build directory. Installed42/Vision52
-and working sessions are untouched. Candidate43 installation and device check
-remain pending.
+the public recipe refused reuse of an app build directory. After the user
+authorized the disconnected update,43 was installed and launched on the new M5.
+Separate app/process inventories verify43/0.1.0 and its matching executable.
+Vision52, the old Air, Mac29 and Host/network/dependency pins remain unchanged.
+Physical zoom/alignment, Hand/navigation and simultaneous-control checks remain
+pending; installation does not establish those results.
 
 Reproduce the focused fixtures on the build Mac:
 
