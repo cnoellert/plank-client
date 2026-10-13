@@ -464,9 +464,8 @@ struct PlankControlReferenceExtent: Codable, Equatable, Sendable {
 }
 
 /// Shared projection for live Artist Controls and the editor. The whole authored
-/// canvas has one uniform scale; measured current chrome is mapped back before
-/// resolving controls. Fitting the already-reduced usable area a second time
-/// would shrink unchanged fullscreen controls, so the full canvas is fit once.
+/// canvas fits once inside the measured usable window area. Saved key geometry
+/// stays fixed; current floating chrome is mapped back for explicit editing.
 struct PlankControlSurfaceGeometry: Equatable, Sendable {
     let referenceBounds: CGRect
     let windowBounds: CGRect
@@ -475,16 +474,17 @@ struct PlankControlSurfaceGeometry: Equatable, Sendable {
     let referenceChrome: PlankControlChromeGeometry
     init(referenceSize: CGSize, chrome: PlankControlChromeGeometry) {
         let extent = PlankControlReferenceExtent(size:referenceSize)
-        guard extent.isValid, PlankControlChromeGeometry.valid(chrome.bounds) else {
+        guard extent.isValid, PlankControlChromeGeometry.valid(chrome.bounds),
+              PlankControlChromeGeometry.valid(chrome.usableBounds) else {
             referenceBounds = .zero; windowBounds = chrome.bounds
             viewportFrame = .zero; scale = 1
             referenceChrome = .unmeasured(size:.zero)
             return
         }
         let reference = CGRect(origin:.zero,size:referenceSize)
-        let value = min(chrome.bounds.width / reference.width,chrome.bounds.height / reference.height)
-        let viewport = CGRect(x:chrome.bounds.midX - reference.width * value / 2,
-                              y:chrome.bounds.midY - reference.height * value / 2,
+        let value = min(chrome.usableBounds.width / reference.width,chrome.usableBounds.height / reference.height)
+        let viewport = CGRect(x:chrome.usableBounds.midX - reference.width * value / 2,
+                              y:chrome.usableBounds.midY - reference.height * value / 2,
                               width:reference.width * value,height:reference.height * value)
         referenceBounds = reference; windowBounds = chrome.bounds
         viewportFrame = viewport; scale = value
@@ -537,11 +537,17 @@ struct PlankControlResponsiveResolution: Equatable, Sendable {
         guard geometry.isUsable else {
             return Self(geometry:geometry,frames:[:],fingerHitFrames:[:],unavailableIDs:Set(controls.map(\.id)))
         }
-        let canonical = PlankControlPlacementResolver.resolve(controls:controls,landscape:landscape,
-            chrome:geometry.referenceChrome)
-        let frames = canonical.frames.mapValues { geometry.forward(frame:$0) }
+        var frames: [UUID: CGRect] = [:]
+        var unavailable = Set<UUID>()
+        for control in controls {
+            let frame = PlankControlPlacementResolver.pointSizedFrame(control.placement(landscape:landscape),
+                in:geometry.referenceBounds)
+            guard PlankControlChromeGeometry.valid(frame) else {
+                unavailable.insert(control.id); continue
+            }
+            frames[control.id] = geometry.forward(frame:frame)
+        }
         var candidates: [UUID: CGRect] = [:]
-        var unavailable = canonical.unavailableIDs
         let usable = chrome.usableBounds
         func overlaps(_ a: CGRect,_ b: CGRect) -> Bool {
             let intersection = a.intersection(b)

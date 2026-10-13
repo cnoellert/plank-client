@@ -1097,7 +1097,7 @@ struct PlankIPadCustomControlsEditor: View {
                     gestureDiagnostics.count(.moveModeBlocks); gestureDiagnostics.report(); return
                 }
                 if dragStart == nil {
-                    remember(); materializeResolvedPlacements(in:geometry.referenceBounds)
+                    remember(); materializeResolvedPlacement(id:control.id,in:geometry.referenceBounds)
                     select(control.id,showInspector:false)
                     dragStart = PlankControlPlacement(frame:resolvedFrame(control,resolution:controlResolution(in:geometry.referenceBounds),
                                                                           in:geometry.referenceBounds),in:surfaceGeometry(in:geometry.referenceBounds).referenceBounds)
@@ -1139,7 +1139,7 @@ struct PlankIPadCustomControlsEditor: View {
                 .onChanged { value in
                     gestureDiagnostics.count(.resizes)
                     if resizeStart == nil {
-                        remember(); materializeResolvedPlacements(in:geometry.referenceBounds)
+                        remember(); materializeResolvedPlacement(id:control.id,in:geometry.referenceBounds)
                         hideControlInspector()
                         resizeStart = PlankControlPlacement(frame:resolvedFrame(control,resolution:controlResolution(in:geometry.referenceBounds),
                                                                                 in:geometry.referenceBounds),in:surfaceGeometry(in:geometry.referenceBounds).referenceBounds)
@@ -1189,16 +1189,15 @@ struct PlankIPadCustomControlsEditor: View {
         resolution.frames[control.id] ?? PlankControlPlacementResolver.pointSizedFrame(control.placement(landscape:editingLandscape),
             in:surfaceGeometry(in:bounds).referenceBounds)
     }
-    private func materializeResolvedPlacements(in bounds: CGRect) {
+    private func materializeResolvedPlacement(id: UUID,in bounds: CGRect) {
         let resolution = controlResolution(in:bounds)
         var layout = selectedLayout
-        for index in layout.controls.indices {
-            guard let frame = resolution.frames[layout.controls[index].id] else { continue }
-            layout.controls[index].setPlacement(PlankControlPlacement(frame:frame,in:surfaceGeometry(in:bounds).referenceBounds),landscape:editingLandscape)
-        }
-        // Only an explicit geometry edit adopts visible positions into the
-        // local draft. Its Undo snapshot predates this step; passive rendering,
-        // naming and binding changes never rewrite stored anchors.
+        guard let index = layout.controls.firstIndex(where:{ $0.id == id }),
+              let frame = resolution.frames[id] else { return }
+        layout.controls[index].setPlacement(PlankControlPlacement(frame:frame,in:surfaceGeometry(in:bounds).referenceBounds),landscape:editingLandscape)
+        // An explicit geometry edit adopts only its own displayed anchor into
+        // the draft. Every other control retains its exact saved placement.
+        // Undo predates this step; passive rendering never rewrites anchors.
         replaceDraft(layout)
     }
 
@@ -1463,7 +1462,7 @@ struct PlankIPadCustomControlsEditor: View {
     private func mutateControl(materializeGeometry: Bool = false,_ action: (inout PlankCustomControl) -> Void) {
         guard let id = selectedControlID else { return }
         remember()
-        if materializeGeometry { materializeResolvedPlacements(in:previewGeometry(in:canvasSize).referenceBounds) }
+        if materializeGeometry { materializeResolvedPlacement(id:id,in:previewGeometry(in:canvasSize).referenceBounds) }
         var layout = selectedLayout
         guard let index = layout.controls.firstIndex(where:{ $0.id == id }) else { return }
         action(&layout.controls[index]); replaceDraft(layout)
