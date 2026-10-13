@@ -15,6 +15,12 @@ The authored editor aspect and editing check from42 remain accepted. Local
 Fit/2× operating-view build43 is now installed and open on the new M5 after
 the user's disconnected installation authorization. App inventory and its exact
 running executable verify43/0.1.0; physical zoom qualification remains pending.
+The subsequent user trial reports severe intermittent Pencil latency: normal
+speed for a period followed by very slow response. This is not an accepted43
+result. Retained logs and an unsynchronized, largely idle device profile do not
+yet identify the delayed stage or establish that zoom caused it. Earlier editor
+and input acceptance remains recorded; new zoom qualification is held during
+the investigation.
 
 ## Review order
 
