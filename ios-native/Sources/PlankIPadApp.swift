@@ -26,6 +26,8 @@ struct PlankIPadRoot: View {
     @State private var selectedID: UUID?
     @StateObject private var pencilRelay = PlankIPadPencilRelay()
     @StateObject private var customControls = PlankIPadCustomControlsStore()
+    @StateObject private var desktopZoom = PlankIPadZoomController()
+    @StateObject private var sharingZoom = PlankIPadZoomController()
     @State private var sharePencil = false
     @State private var showingCustomControls = false
     @State private var editingCustomControls = false
@@ -165,13 +167,14 @@ struct PlankIPadRoot: View {
     }
     private var workingSurface: some View {
         PlankIPadWorkingSurface(barsVisible:!hideBars,consentVisible:sharePencil && pencilRelay.verification != nil,
-            measured:reportControlWindow,chromeChanged:reportControlChrome) {
+            measured:reportControlWindow,chromeChanged:reportControlChrome,navigation:AnyView(zoomNavigator)) {
             if sharePencil {
-                PlankIPadPencilPad(relay:pencilRelay)
+                PlankIPadPencilPad(relay:pencilRelay,zoomController:sharingZoom)
             } else {
                 VStack(spacing:0) {
                     if client.frameDimensions == nil { ProgressView("Starting desktop…").padding() }
-                    PlankIPadCanvas(client:client,router:router,functionKeyMode:KeyboardFunctionKeyMode(rawValue:keyboardMode) ?? .pc)
+                    PlankIPadCanvas(client:client,router:router,functionKeyMode:KeyboardFunctionKeyMode(rawValue:keyboardMode) ?? .pc,
+                        zoomController:desktopZoom)
                         .overlay(alignment:.topLeading) {
                             if client.videoDiagnosticsEnabled {
                                 VStack(alignment:.leading,spacing:2) {
@@ -210,6 +213,7 @@ struct PlankIPadRoot: View {
                     .background(.regularMaterial,in:Circle())
                 PlankIPadControlLayoutsButton(store:customControls,select:selectCustomControlLayout,edit:editCustomControls)
                     .background(.regularMaterial,in:Circle())
+                zoomMenu.background(.regularMaterial,in:Circle())
                 Button { setToolbarVisible(true) } label: {
                     Image(systemName:"chevron.down").frame(width:44,height:44)
                         .background(.regularMaterial,in:Circle())
@@ -239,11 +243,27 @@ struct PlankIPadRoot: View {
             PlankIPadControlsVisibilityButton(store:customControls,visible:showingCustomControls,
                 toggle:toggleCustomControls)
             PlankIPadControlLayoutsButton(store:customControls,select:selectCustomControlLayout,edit:editCustomControls)
+            zoomMenu
             Button { setToolbarVisible(false) } label: { Label("Hide Toolbar",systemImage:"chevron.up") }
                 .labelStyle(.iconOnly).frame(minWidth:44,minHeight:44)
             if sharePencil { Button("Stop Sharing",action:stopPencilSharing).frame(minHeight:44) }
             else { Button("Disconnect",action:disconnect).frame(minHeight:44).disabled(client.isClosingSession) }
         }.padding(.horizontal,12)
+    }
+    @ViewBuilder private var zoomMenu: some View {
+        if sharePencil {
+            PlankIPadPencilZoomMenu(zoom:sharingZoom,relay:pencilRelay,receiver:pencilRelay.imageReceiver)
+        } else {
+            PlankIPadZoomMenu(zoom:desktopZoom,enabled:client.frameDimensions != nil && router.enabled)
+        }
+    }
+    @ViewBuilder private var zoomNavigator: some View {
+        if sharePencil {
+            PlankIPadPencilZoomNavigator(zoom:sharingZoom,relay:pencilRelay,receiver:pencilRelay.imageReceiver)
+        } else {
+            PlankIPadZoomNavigator(zoom:desktopZoom,width:client.frameDimensions?.width ?? 0,
+                height:client.frameDimensions?.height ?? 0,enabled:router.enabled)
+        }
     }
     private func reportControlWindow(_ size: CGSize) {
         guard size.width.isFinite,size.height.isFinite,size.width > 1,size.height > 1 else { return }
@@ -314,17 +334,20 @@ struct PlankIPadRoot: View {
         client.setTabletActive(false)
         controls = false
         client.reset()
+        desktopZoom.reset()
     }
     private func startPencilSharing() {
         guard !busy,!client.hasActiveDesktopSession,inputScenePhase == .active else { return }
         credentialFocus = nil
         router.release(); router.enabled = false
+        desktopZoom.reset(); sharingZoom.reset()
         client.setTabletActive(false); client.reset()
         sharePencil = true; pencilRelay.start(); updateAdmission()
     }
     private func stopPencilSharing() {
         // Retire the old source before the root changes mode/overlay identity.
         pencilRelay.stop(); sharePencil = false; controls = false
+        sharingZoom.reset()
         updateAdmission()
     }
     private func toggleCustomControls() {

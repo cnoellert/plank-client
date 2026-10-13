@@ -24,11 +24,14 @@ struct PlankIPadWorkingSurface<Content: View, Controls: View, Toolbar: View, Flo
     let toolbar: Toolbar
     let floating: Floating
     let consent: Consent
+    let navigation: AnyView?
     @State private var insets = UIEdgeInsets.zero
     @State private var floatingFrame = CGRect.zero
     @State private var consentFrame = CGRect.zero
+    @State private var navigationFrame = CGRect.zero
     init(barsVisible: Bool, consentVisible: Bool = false, measured: @escaping (CGSize) -> Void,
          chromeChanged: @escaping (PlankControlChromeGeometry) -> Void = { _ in },
+         navigation: AnyView? = nil,
          @ViewBuilder content: () -> Content, @ViewBuilder controls: () -> Controls,
          @ViewBuilder toolbar: () -> Toolbar, @ViewBuilder floating: () -> Floating,
          @ViewBuilder consent: () -> Consent) {
@@ -36,6 +39,7 @@ struct PlankIPadWorkingSurface<Content: View, Controls: View, Toolbar: View, Flo
         self.measured = measured; self.chromeChanged = chromeChanged
         self.content = content(); self.controls = controls(); self.toolbar = toolbar()
         self.floating = floating(); self.consent = consent()
+        self.navigation = navigation
     }
     var body: some View {
         GeometryReader { geometry in
@@ -47,6 +51,13 @@ struct PlankIPadWorkingSurface<Content: View, Controls: View, Toolbar: View, Flo
                     .padding(.bottom,barsVisible ? insets.bottom : 0)
                 controls.frame(width:geometry.size.width,height:geometry.size.height)
                     .environment(\.plankControlChrome,chrome)
+                if let navigation {
+                    navigation
+                        .onGeometryChange(for:CGRect.self) { $0.frame(in:.named("plank-control-window")) } action: { navigationFrame = $0 }
+                        .frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.bottomLeading)
+                        .padding(.leading,max(12,insets.left))
+                        .padding(.bottom,max(12,insets.bottom))
+                }
                 VStack(spacing:0) {
                     if barsVisible {
                         Color.clear.frame(height:insets.top).allowsHitTesting(false)
@@ -88,9 +99,11 @@ struct PlankIPadWorkingSurface<Content: View, Controls: View, Toolbar: View, Flo
                             height:max(0,size.height - top - insets.bottom))
         // Wait for the actual hidden-toolbar footprint, rather than guessing
         // its width or placing keys under local navigation for one frame.
-        let ready = barsVisible || PlankControlChromeGeometry.valid(floatingFrame)
+        let ready = (barsVisible || PlankControlChromeGeometry.valid(floatingFrame))
+            && (navigation == nil || PlankControlChromeGeometry.valid(navigationFrame))
         return PlankControlChromeGeometry(bounds:bounds,usableBounds:ready ? usable : .zero,
-            reservedRects:(barsVisible ? [] : [floatingFrame]) + (consentVisible ? [consentFrame] : []))
+            reservedRects:(barsVisible ? [] : [floatingFrame]) + (consentVisible ? [consentFrame] : [])
+                + (navigation != nil ? [navigationFrame] : []))
     }
 }
 

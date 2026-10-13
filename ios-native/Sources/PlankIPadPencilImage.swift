@@ -210,16 +210,18 @@ import UIKit
     init(_ view: PlankIPadPencilImageView) { self.view = view }
 }
 
-/// Its owner places this view in the same aspect-preserving Pencil rectangle
-/// used while image reception is enabled, without a second fit/crop map.
+/// The retained full-frame image is positioned from the same immutable
+/// viewport as input, clipped to its operating rectangle. Media stays full frame.
 @MainActor final class PlankIPadPencilImageView: UIView {
     private weak var receiver: PlankIPadPencilImageReceiver?
     private var subscribed = false
+    private let imageLayer = CALayer()
     override init(frame: CGRect) {
         super.init(frame: frame)
         isUserInteractionEnabled = false; isAccessibilityElement = false
         backgroundColor = .clear; clipsToBounds = true
-        layer.contentsGravity = .resize
+        imageLayer.contentsGravity = .resize
+        layer.addSublayer(imageLayer)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
     deinit {
@@ -247,9 +249,17 @@ import UIKit
             receiver.subscribe(self); subscribed = true
         }
     }
+    func setViewport(_ viewport: PlankIPadViewport?) {
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        frame = viewport?.rect ?? .zero
+        imageLayer.frame = viewport.map {
+            $0.fullImageFrame.offsetBy(dx: -$0.rect.minX, dy: -$0.rect.minY)
+        } ?? .zero
+        CATransaction.commit()
+    }
     fileprivate func present(_ image: CGImage?, intensity: Double) {
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        layer.contents = image; layer.opacity = Float(intensity)
+        imageLayer.contents = image; layer.opacity = Float(intensity)
         CATransaction.commit()
     }
 }

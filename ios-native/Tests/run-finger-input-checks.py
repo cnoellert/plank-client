@@ -53,6 +53,7 @@ import Combine
 final class UITouch: Hashable {
     enum TouchType { case direct, indirectPointer, pencil }
     let type:TouchType
+    weak var view:UIView?
     var point = CGPoint(x:500,y:500)
     var timestamp:Double = 1, force:CGFloat = 1, maximumPossibleForce:CGFloat = 2
     var altitudeAngle:CGFloat = .pi / 2
@@ -87,6 +88,10 @@ VIEW_HEADER = r'''
 @MainActor final class PlankIPadInputView: UIView {
     let client:PlankCoreClient, router:PlankIPadInputRouter
     var activeTouch:UITouch?
+    var handTouch:UITouch?
+    var handPoint:CGPoint?
+    let zoomController:PlankIPadZoomController? = nil
+    var zoomState:PlankIPadZoomState? = nil
     var pointerButtons = Set<UInt8>()
     var wheel = PlankIPadWheel()
     var keyboardPolicy = PlankIPadKeyboardPolicy()
@@ -96,6 +101,7 @@ VIEW_HEADER = r'''
     let viewport = PlankIPadViewport(bounds:.init(x:0,y:0,width:1000,height:1000),width:1000,height:1000)
     init(client:PlankCoreClient,router:PlankIPadInputRouter) { self.client = client; self.router = router }
     func resumeKeyboard() {}
+    func suspendKeyboard() {}
     func refreshSoftwareKeyboard() {}
     func publishWheelDiagnostics() {}
     func publishWheelDiagnosticsIfDue() {}
@@ -113,6 +119,8 @@ def main():
     queue = (REPO / "visionos-native/Sources/Services/PlankInputQueue.swift").read_text()
     bookmark = (REPO / "visionos-native/Sources/Models/HostBookmark.swift").read_text()
     markers = ["func clearContact()", "func clearPointerContact()", "func retireDirectContact()",
+               "fileprivate func updateRemoteContact()", "private func beginHand(",
+               "private func moveHand(", "private func endHand(",
                "override func touchesBegan(", "override func touchesMoved(", "override func touchesEnded(",
                "override func touchesCancelled(", "private func sendPencil(",
                "private func updatePointerButtons(", "@objc private func scrolled("]
@@ -125,6 +133,7 @@ def main():
     fixture = output / "ProductionExtract.swift"
     fixture.write_text(extracted)
     inputs = ["ios-native/Sources/PlankIPadInputPolicy.swift",
+              "ios-native/Sources/PlankIPadZoom.swift",
               "ios-native/Sources/PlankIPadPencilPolicy.swift", "ios-native/Sources/PlankIPadKeys.swift",
               "apple-native/Shared/PlankControlKeyOwnership.swift", "ios-native/Tests/FingerInputChecks.swift"]
     binary = output / "FingerInputChecks"

@@ -1,6 +1,7 @@
 import SwiftUI
 import Network
 import UIKit
+import Combine
 
 @MainActor final class PlankIPadPencilRelay: ObservableObject {
     @Published private(set) var sharing = false
@@ -61,7 +62,12 @@ import UIKit
         if offerControlKeys(change.events) { _ = controlKeys.apply(change) }
         else { controlKeys = PlankControlKeyOwnership() }
     }
-    private func retireInput() { inputEpoch &+= 1; pad?.retire(); releaseControls() }
+    private func retireInput() {
+        inputEpoch &+= 1
+        pad?.retireForTransition()
+        releaseControls()
+        pad?.resetViewAfterTransition()
+    }
     func start() {
         guard !sharing else { return }
         do {
@@ -305,14 +311,22 @@ private struct PlankIPadPencilImageOptions: View {
 }
 struct PlankIPadPencilPad: UIViewRepresentable {
     let relay: PlankIPadPencilRelay
-    func makeUIView(context: Context) -> PlankIPadPencilPadView { PlankIPadPencilPadView(relay:relay) }
+    var zoomController: PlankIPadZoomController? = nil
+    func makeUIView(context: Context) -> PlankIPadPencilPadView {
+        PlankIPadPencilPadView(relay:relay,zoomController:zoomController)
+    }
     func updateUIView(_ view: PlankIPadPencilPadView,context: Context) { view.setNeedsLayout() }
     static func dismantleUIView(_ view: PlankIPadPencilPadView,coordinator: ()) { view.retire() }
 }
 @MainActor final class PlankIPadPencilPadView: UIView, UIPencilInteractionDelegate {
     private let relay: PlankIPadPencilRelay
+    private let zoomController: PlankIPadZoomController?
+    private var zoomState: PlankIPadZoomState?
+    private var zoomObservation: AnyCancellable?
     private var policy = PlankIPadPencilPolicy(), squeeze = PlankIPadSqueezePolicy()
     private var touch: UITouch?
+    private var handTouch: UITouch?
+    private var handPoint: CGPoint?
     private var previous = CGRect.zero
     private var mappingSignature: String?
     private var receivedDowns = 0, acceptedDowns = 0, acceptedMoves = 0, acceptedUps = 0
@@ -321,10 +335,12 @@ struct PlankIPadPencilPad: UIViewRepresentable {
     private let imageView = PlankIPadPencilImageView()
     private var viewport: PlankIPadViewport? {
         relay.padSettings.viewport(bounds:bounds,width:relay.width,height:relay.height,
-                                  referenceImageEnabled:relay.imageReceiver.enabled)
+            referenceImageEnabled:relay.imageReceiver.enabled,
+            visibleSourceCrop:zoomState?.visibleSourceCrop ?? CGRect(x:0,y:0,width:1,height:1))
     }
-    init(relay: PlankIPadPencilRelay) {
-        self.relay = relay; super.init(frame:.zero); relay.pad = self
+    init(relay: PlankIPadPencilRelay,zoomController: PlankIPadZoomController? = nil) {
+        self.relay = relay; self.zoomController = zoomController; zoomState = zoomController?.state
+        super.init(frame:.zero); relay.pad = self
         // Track Pencil independently when a finger or palm also touches the pad.
         isMultipleTouchEnabled = true; backgroundColor = .black
         layer.addSublayer(fill)
@@ -335,6 +351,9 @@ struct PlankIPadPencilPad: UIViewRepresentable {
         hover.allowedTouchTypes = [NSNumber(value:UITouch.TouchType.pencil.rawValue)]
         hover.cancelsTouchesInView = false; addGestureRecognizer(hover)
         let pencil = UIPencilInteraction(); pencil.delegate = self; addInteraction(pencil)
+        zoomObservation = zoomController?.$state.sink { [weak self] state in
+            MainActor.assumeIsolated { self?.applyZoomState(state) }
+        }
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is unsupported") }
     override func layoutSubviews() {
@@ -345,6 +364,10 @@ struct PlankIPadPencilPad: UIViewRepresentable {
             // Retire its stroke; the overlay owns control geometry retirement.
             retire(); previous = rect
         }
+        refreshPresentation()
+    }
+    private func refreshPresentation() {
+        let viewport = viewport, rect = viewport?.rect ?? .zero
         CATransaction.begin(); CATransaction.setDisableActions(true)
         let settings = relay.padSettings, white = settings.fillWhite
         fill.fillColor = (settings.tone == .charcoal ? UIColor(white:white,alpha:1)
@@ -352,7 +375,7 @@ struct PlankIPadPencilPad: UIViewRepresentable {
         outline.strokeColor = UIColor(white:0.28 + settings.glow * 0.2,alpha:1).cgColor
         outline.fillColor = nil; fill.path = UIBezierPath(rect:rect).cgPath
         fill.opacity = relay.canDraw ? 1 : 0.4
-        imageView.frame = rect
+        imageView.setViewport(viewport)
         cursor.fillColor = UIColor(white:0.6 + settings.glow * 0.2,alpha:1).cgColor
         outline.path = UIBezierPath(rect:rect).cgPath
         outline.opacity = relay.canDraw ? 1 : 0.4; CATransaction.commit()
@@ -365,7 +388,64 @@ struct PlankIPadPencilPad: UIViewRepresentable {
             NSLog("PLANK Pencil pad mapping %@",signature)
         }
     }
-    func retire() { for p in policy.retire() { relay.send(p) }; touch = nil; cursor.path = nil }
+    func retire() {
+        retireForTransition()
+        resetViewAfterTransition()
+    }
+    func retireForTransition() {
+        for p in policy.retire() { relay.send(p) }
+        touch = nil; handTouch = nil; handPoint = nil; cursor.path = nil
+    }
+    func resetViewAfterTransition() {
+        // Forced admission/geometry changes retain their existing retirement,
+        // while discarding every request deferred against the retired contact.
+        zoomController?.reset()
+        updateRemoteContact()
+    }
+    private func finishRemoteContact() {
+        for p in policy.retire() { relay.send(p) }
+        touch = nil; cursor.path = nil
+        updateRemoteContact()
+    }
+    private func retireHover() {
+        guard !policy.touching else { return }
+        for p in policy.retire() { relay.send(p) }
+        cursor.path = nil
+    }
+    private func applyZoomState(_ state: PlankIPadZoomState) {
+        let changedCrop = zoomState?.visibleSourceCrop != state.visibleSourceCrop
+        zoomState = state
+        refreshPresentation()
+        if changedCrop { retireHover() }
+    }
+    private func updateRemoteContact() {
+        zoomController?.setRemoteContactActive(touch != nil || policy.touching)
+    }
+    private func beginHand(_ touches: Set<UITouch>) -> Bool {
+        guard relay.canDraw, zoomState?.handEnabled == true,
+              let next = touches.first(where: {
+                  ($0.type == .direct || $0.type == .pencil) && ($0.view == nil || $0.view === self)
+              }) else { return false }
+        guard handTouch == nil, next !== touch, let viewport,
+              viewport.normalized(next.location(in:self)) != nil else { return true }
+        handTouch = next; handPoint = next.location(in:self)
+        retireHover()
+        return true
+    }
+    private func moveHand(_ touches: Set<UITouch>) -> Bool {
+        guard let handTouch, touches.contains(handTouch) else { return false }
+        let next = handTouch.location(in:self)
+        if let handPoint, let viewport {
+            zoomController?.requestPan(translation:CGPoint(x:next.x-handPoint.x,y:next.y-handPoint.y),in:viewport)
+        }
+        handPoint = next
+        return true
+    }
+    private func endHand(_ touches: Set<UITouch>) -> Bool {
+        guard let handTouch, touches.contains(handTouch) else { return false }
+        self.handTouch = nil; handPoint = nil
+        return true
+    }
     private func send(_ sample: UITouch,phase: PlankNormalizedPen.Phase) -> Bool {
         guard relay.canDraw, let viewport, let p = policy.sample(phase,point:sample.location(in:self),viewport:viewport,
             timestamp:sample.timestamp,force:Double(sample.force),maximumForce:Double(sample.maximumPossibleForce),
@@ -383,14 +463,16 @@ struct PlankIPadPencilPad: UIViewRepresentable {
         controlPencilHover(gesture)
     }
     func controlPencilHover(_ gesture: UIHoverGestureRecognizer) {
-        guard touch == nil, relay.canDraw, let viewport else { return }
+        guard touch == nil, handTouch == nil, relay.canDraw, let viewport else { return }
         guard gesture.state == .began || gesture.state == .changed,
               let p = policy.sample(.hover,point:gesture.location(in:self),viewport:viewport,
                 timestamp:ProcessInfo.processInfo.systemUptime,force:0,maximumForce:0,
-                altitude:Double(gesture.altitudeAngle),azimuth:Double(gesture.azimuthAngle(in:self)),distance:Double(gesture.zOffset)) else { retire(); return }
+                altitude:Double(gesture.altitudeAngle),azimuth:Double(gesture.azimuthAngle(in:self)),distance:Double(gesture.zOffset)) else { retireHover(); return }
+        zoomController?.recordHover(normalized:CGPoint(x:CGFloat(p.x),y:CGFloat(p.y)))
         relay.send(p); mark(gesture.location(in:self))
     }
     override func touchesBegan(_ touches: Set<UITouch>,with event: UIEvent?) {
+        if beginHand(touches) { return }
         guard touch == nil, let next = touches.first(where: { $0.type == .pencil }) else { return }
         receivedDowns += 1
         guard relay.canDraw, let viewport,
@@ -402,18 +484,23 @@ struct PlankIPadPencilPad: UIViewRepresentable {
         // Preserve the zero-pressure hover retirement before the fresh down.
         // Subsequent motion remains ordered by actual acquisition timestamps.
         for packet in packets { relay.send(packet) }
-        touch = next; acceptedDowns += 1; mark(next.location(in:self)); logContactIfDue()
+        touch = next; updateRemoteContact()
+        acceptedDowns += 1; mark(next.location(in:self)); logContactIfDue()
     }
     override func touchesMoved(_ touches: Set<UITouch>,with event: UIEvent?) {
+        _ = moveHand(touches)
         guard let touch, touches.contains(touch) else { return }
         for s in (event?.coalescedTouches(for:touch) ?? [touch]).sorted(by: { $0.timestamp < $1.timestamp }) { _ = send(s,phase:.move) }
         _ = send(touch,phase:.move)
     }
     override func touchesEnded(_ touches: Set<UITouch>,with event: UIEvent?) {
-        guard let touch, touches.contains(touch) else { return }; _ = send(touch,phase:.up); retire()
+        _ = endHand(touches)
+        guard let touch, touches.contains(touch) else { return }
+        _ = send(touch,phase:.up); finishRemoteContact()
     }
     override func touchesCancelled(_ touches: Set<UITouch>,with event: UIEvent?) {
-        guard let touch, touches.contains(touch) else { return }; retire()
+        _ = endHand(touches)
+        guard let touch, touches.contains(touch) else { return }; finishRemoteContact()
     }
     private func logContactIfDue() {
         let now = ProcessInfo.processInfo.systemUptime
@@ -427,7 +514,7 @@ struct PlankIPadPencilPad: UIViewRepresentable {
         controlPencilSqueeze(value,from:interaction.view ?? self)
     }
     func controlPencilSqueeze(_ value: UIPencilInteraction.Squeeze,from source: UIView) {
-        guard let location = value.hoverPose?.location else { return }
+        guard handTouch == nil, let location = value.hoverPose?.location else { return }
         // UIPencilHoverPose.location belongs to the interaction's view.
         let point = source.convert(location,to:self)
         guard let position = viewport?.normalized(point),

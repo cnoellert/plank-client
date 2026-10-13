@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import GameController
+import Combine
 
 @MainActor final class PlankIPadInputRouter: ObservableObject {
     weak var surface: PlankIPadInputView?
@@ -114,6 +115,13 @@ import GameController
         if !packets.isEmpty { pointerMotion.reset() }
         for packet in packets { client.sendPen(packet) }
     }
+    /// A local view change owns only stale hover and pointer suppression. Real
+    /// button and key owners keep their original release edges.
+    func retireViewHover() {
+        guard !pencil.touching, held.buttons.isEmpty else { return }
+        pointerMotion.reset()
+        retirePencil()
+    }
     func preparePencilContact() {
         pointerMotion.reset()
         retirePencil()
@@ -123,6 +131,7 @@ import GameController
     func button(_ number: UInt8, pressed: Bool) {
         guard (!pressed || enabled), held.button(number, pressed: pressed) else { return }
         client.setMouseButton(number: number, pressed: pressed)
+        surface?.updateRemoteContact()
     }
     func key(_ code: UInt16, pressed: Bool, modifiers: UInt8) {
         guard !isHandlingInputFailure, (!pressed || enabled),
@@ -169,8 +178,9 @@ struct PlankIPadCanvas: UIViewRepresentable {
     let client: PlankCoreClient
     let router: PlankIPadInputRouter
     let functionKeyMode: KeyboardFunctionKeyMode
+    var zoomController: PlankIPadZoomController? = nil
     func makeUIView(context: Context) -> PlankIPadInputView {
-        PlankIPadInputView(client: client, router: router)
+        PlankIPadInputView(client: client, router: router, zoomController: zoomController)
     }
     func updateUIView(_ view: PlankIPadInputView, context: Context) {
         view.functionKeyMode = functionKeyMode
@@ -182,10 +192,15 @@ struct PlankIPadCanvas: UIViewRepresentable {
 @MainActor final class PlankIPadInputView: UIView, UIPencilInteractionDelegate, UIKeyInput {
     private let client: PlankCoreClient
     private let router: PlankIPadInputRouter
+    private let zoomController: PlankIPadZoomController?
+    private var zoomState: PlankIPadZoomState?
+    private var zoomObservation: AnyCancellable?
     private let video = PlankIPadVideoView(frame: .zero)
     private let surfaceID = UUID()
     private var dimensions: PlankFrameDimensions?
     private var activeTouch: UITouch?
+    private var handTouch: UITouch?
+    private var handPoint: CGPoint?
     private var pointerButtons = Set<UInt8>()
     private var wheel = PlankIPadWheel()
     private var discreteScroll: UIPanGestureRecognizer?
@@ -265,10 +280,13 @@ struct PlankIPadCanvas: UIViewRepresentable {
     }
     private var viewport: PlankIPadViewport? {
         guard let dimensions else { return nil }
-        return PlankIPadViewport(bounds: video.frame, width: dimensions.width, height: dimensions.height)
+        return PlankIPadViewport(bounds: video.frame, width: dimensions.width, height: dimensions.height,
+            visibleSourceCrop: zoomState?.visibleSourceCrop ?? CGRect(x: 0, y: 0, width: 1, height: 1))
     }
-    init(client: PlankCoreClient, router: PlankIPadInputRouter) {
-        self.client = client; self.router = router
+    init(client: PlankCoreClient, router: PlankIPadInputRouter,
+         zoomController: PlankIPadZoomController? = nil) {
+        self.client = client; self.router = router; self.zoomController = zoomController
+        zoomState = zoomController?.state
         super.init(frame: .zero)
         backgroundColor = .black
         isMultipleTouchEnabled = true
@@ -303,6 +321,9 @@ struct PlankIPadCanvas: UIViewRepresentable {
             addGestureRecognizer(scroll)
         }
         addInteraction(UIPencilInteraction(delegate: self))
+        zoomObservation = zoomController?.$state.sink { [weak self] state in
+            MainActor.assumeIsolated { self?.applyZoomState(state) }
+        }
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
     override func didMoveToWindow() {
@@ -328,6 +349,7 @@ struct PlankIPadCanvas: UIViewRepresentable {
     func updateDimensions(_ next: PlankFrameDimensions?) {
         if next != dimensions { router.release() }
         dimensions = next
+        updateVideoViewport()
     }
     override func layoutSubviews() {
         super.layoutSubviews()
@@ -343,15 +365,68 @@ struct PlankIPadCanvas: UIViewRepresentable {
                 keyboardViewport.reportedFrame?.minY ?? -1,
                 keyboardViewport.reportedFrame?.width ?? 0)
         }
+        updateVideoViewport()
     }
     func clearContact() {
+        // Forced geometry/focus/session retirement discards queued local view
+        // requests after the router has emitted the real remote releases.
+        handTouch = nil; handPoint = nil
+        zoomController?.reset()
         clearPointerContact(); keyboardPolicy.reset()
     }
-    func clearPointerContact() { activeTouch = nil; pointerButtons.removeAll(); wheel.reset() }
+    func clearPointerContact() {
+        activeTouch = nil; pointerButtons.removeAll(); wheel.reset()
+        updateRemoteContact()
+    }
     func retireDirectContact() {
         guard activeTouch?.type == .direct else { return }
         router.button(1, pressed: false)
         activeTouch = nil
+        updateRemoteContact()
+    }
+    private func applyZoomState(_ state: PlankIPadZoomState) {
+        let changedCrop = zoomState?.visibleSourceCrop != state.visibleSourceCrop
+        zoomState = state
+        updateVideoViewport()
+        if changedCrop { router.retireViewHover() }
+    }
+    private func updateVideoViewport() {
+        let local = dimensions.flatMap { dimensions in
+            PlankIPadViewport(bounds: CGRect(origin: .zero, size: video.bounds.size),
+                width: dimensions.width, height: dimensions.height,
+                visibleSourceCrop: zoomState?.visibleSourceCrop ?? CGRect(x: 0, y: 0, width: 1, height: 1))
+        }
+        video.setViewport(local)
+    }
+    fileprivate func updateRemoteContact() {
+        zoomController?.setRemoteContactActive(activeTouch != nil || !pointerButtons.isEmpty || router.hasHeldButtons || router.pencilTouching)
+    }
+    private func beginHand(_ touches: Set<UITouch>) -> Bool {
+        guard router.enabled, zoomState?.handEnabled == true,
+              let touch = touches.first(where: {
+                  ($0.type == .direct || $0.type == .pencil) && ($0.view == nil || $0.view === self)
+              }) else { return false }
+        // Hand owns native navigation contacts from their begin, including
+        // additional or margin contacts. They can never fall through to a click.
+        guard handTouch == nil, touch !== activeTouch, let viewport,
+              viewport.normalized(touch.location(in: self)) != nil else { return true }
+        handTouch = touch; handPoint = touch.location(in: self)
+        router.retireViewHover()
+        return true
+    }
+    private func moveHand(_ touches: Set<UITouch>) -> Bool {
+        guard let handTouch, touches.contains(handTouch) else { return false }
+        let next = handTouch.location(in: self)
+        if let handPoint, let viewport {
+            zoomController?.requestPan(translation: CGPoint(x: next.x - handPoint.x, y: next.y - handPoint.y), in: viewport)
+        }
+        handPoint = next
+        return true
+    }
+    private func endHand(_ touches: Set<UITouch>) -> Bool {
+        guard let handTouch, touches.contains(handTouch) else { return false }
+        self.handTouch = nil; handPoint = nil
+        return true
     }
     @objc private func keyboardChanged() {
         router.release()
@@ -396,7 +471,7 @@ struct PlankIPadCanvas: UIViewRepresentable {
         controlPencilSqueeze(squeeze,from:interaction.view ?? self)
     }
     func controlPencilSqueeze(_ squeeze: UIPencilInteraction.Squeeze,from source: UIView) {
-        guard let viewport else { return }
+        guard handTouch == nil, let viewport else { return }
         let position = squeeze.hoverPose.map { source.convert($0.location,to:self) }
         guard squeezePolicy.click(ended: squeeze.phase == .ended, timestamp: squeeze.timestamp,
             enabled: router.enabled, touching: router.pencilTouching,
@@ -458,11 +533,12 @@ struct PlankIPadCanvas: UIViewRepresentable {
         controlPencilHover(gesture)
     }
     func controlPencilHover(_ gesture: UIHoverGestureRecognizer) {
-        guard activeTouch == nil, let viewport else { return }
+        guard activeTouch == nil, handTouch == nil, let viewport else { return }
         if gesture.state == .began || gesture.state == .changed {
-            guard viewport.normalized(gesture.location(in: self)) != nil else {
+            guard let position = viewport.normalized(gesture.location(in: self)) else {
                 router.retirePencil(); return
             }
+            zoomController?.recordHover(normalized: CGPoint(x: position.x, y: position.y))
             _ = router.pen(.hover, point: gesture.location(in: self), viewport: viewport,
                 timestamp: ProcessInfo.processInfo.systemUptime, force: 0, maximumForce: 0,
                 altitude: Double(gesture.altitudeAngle), azimuth: Double(gesture.azimuthAngle(in: self)),
@@ -507,12 +583,17 @@ struct PlankIPadCanvas: UIViewRepresentable {
         }
     }
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
+        if beginHand(touches) { return }
         if let touch = touches.first(where: { $0.type == .pencil }), let viewport {
             guard viewport.normalized(touch.location(in: self)) != nil else { return }
             // Retire pointer ownership without releasing held shortcuts such as
             // Space + pen drag. Keys keep their real hardware up edge.
             router.preparePencilContact()
-            if sendPencil(touch, phase: .down, viewport: viewport) { activeTouch = touch }
+            // Ending a previous pointer contact may apply a queued view. Take
+            // the resulting immutable viewport before the fresh Pencil down.
+            if let viewport = self.viewport, sendPencil(touch, phase: .down, viewport: viewport) {
+                activeTouch = touch; updateRemoteContact()
+            }
             resumeKeyboard()
             return
         }
@@ -525,9 +606,11 @@ struct PlankIPadCanvas: UIViewRepresentable {
         if touch.type == .indirectPointer {
             updatePointerButtons(event?.buttonMask.rawValue ?? 0, fallbackPrimary: true)
         } else { router.button(1, pressed: true) }
+        updateRemoteContact()
         resumeKeyboard()
     }
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
+        _ = moveHand(touches)
         guard let touch = activeTouch, touches.contains(touch), let viewport else { return }
         if touch.type == .direct && router.ignoreFingerInput { retireDirectContact(); return }
         if touch.type == .pencil {
@@ -545,6 +628,7 @@ struct PlankIPadCanvas: UIViewRepresentable {
         }
     }
     override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        _ = endHand(touches)
         guard let touch = activeTouch, touches.contains(touch) else { return }
         if touch.type == .direct && router.ignoreFingerInput { retireDirectContact(); return }
         if touch.type == .pencil {
@@ -556,14 +640,17 @@ struct PlankIPadCanvas: UIViewRepresentable {
             }
             router.retirePencil()
             activeTouch = nil
+            updateRemoteContact()
             return
         }
         if let viewport { _ = router.pointer(touch.location(in: self), viewport: viewport, dragging: true) }
         if touch.type == .indirectPointer { updatePointerButtons(0, fallbackPrimary: false) }
         else { router.button(1, pressed: false) }
         activeTouch = nil
+        updateRemoteContact()
     }
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
+        _ = endHand(touches)
         guard let touch = activeTouch, touches.contains(touch) else { return }
         // Cancellation retires this contact's source. Independently held
         // hardware or artist-control keys retain their real release edge.
