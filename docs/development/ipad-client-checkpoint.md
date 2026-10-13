@@ -22,6 +22,19 @@ yet identify the delayed stage or establish that zoom caused it. Earlier editor
 and input acceptance remains recorded; new zoom qualification is held during
 the investigation.
 
+The failure was in Pencil Sharing through Vision52 to Flame-01. Disabling the
+reference image initially recovered drawing, but the user's later image-on and
+image-off trials both worked normally; enabling AVP Tailscale made no difference.
+These observations do not establish an image or Tailscale cause. A read-only
+Host snapshot identified Flame-01 package1.1.024, with active services and a
+normalized tablet present; unavailable logs do not prove a healthy input queue.
+
+Diagnostic candidates44/53 add bounded, content-free mailbox, local send
+completion, receiver scheduling and native submission counters using existing
+execution paths. They do not change input/media behavior or dependency pins and
+are not a latency repair. Local send completion and QUIC handoff are not Host
+receipt. Device compilation, signing and installation are separate gates.
+
 ## Review order
 
 The accepted upstream Apple/Mac foundation is

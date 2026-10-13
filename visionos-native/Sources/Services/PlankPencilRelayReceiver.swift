@@ -3,6 +3,62 @@ import Foundation
 import Network
 import Combine
 
+// Diagnostic storage never publishes UI state or owns input work. The peer's
+// existing callback records scheduling before its existing MainActor task.
+private final class PlankPencilReceiverFlowDiagnostics: @unchecked Sendable {
+    struct Snapshot {
+        let scheduled: UInt64, started: UInt64, finished: UInt64
+        let outstanding: UInt64, highWaterOutstanding: UInt64
+        let lastWaitNanos: UInt64, maxWaitNanos: UInt64
+        let drains: UInt64, messages: UInt64, normalizedPens: UInt64
+        let lastDrainNanos: UInt64, maxDrainNanos: UInt64, maxDrainMessages: UInt64
+    }
+    private let lock = NSLock()
+    private var scheduled: UInt64 = 0, started: UInt64 = 0, finished: UInt64 = 0
+    private var outstanding: UInt64 = 0, highWaterOutstanding: UInt64 = 0
+    private var lastWaitNanos: UInt64 = 0, maxWaitNanos: UInt64 = 0
+    private var drains: UInt64 = 0, messages: UInt64 = 0, normalizedPens: UInt64 = 0
+    private var lastDrainNanos: UInt64 = 0, maxDrainNanos: UInt64 = 0, maxDrainMessages: UInt64 = 0
+    private var lastReportAt: UInt64?
+    private static func adding(_ a: UInt64, _ b: UInt64) -> UInt64 {
+        let (value, overflow) = a.addingReportingOverflow(b)
+        return overflow ? UInt64.max : value
+    }
+    func recordScheduled() {
+        lock.lock(); defer { lock.unlock() }
+        scheduled = Self.adding(scheduled, 1); outstanding = Self.adding(outstanding, 1)
+        highWaterOutstanding = max(highWaterOutstanding, outstanding)
+    }
+    func recordStarted(scheduledAt: UInt64, at: UInt64) {
+        lock.lock(); defer { lock.unlock() }
+        started = Self.adding(started, 1)
+        lastWaitNanos = at >= scheduledAt ? at - scheduledAt : 0
+        maxWaitNanos = max(maxWaitNanos, lastWaitNanos)
+    }
+    func recordFinished() {
+        lock.lock(); defer { lock.unlock() }
+        finished = Self.adding(finished, 1)
+        if outstanding > 0 { outstanding -= 1 }
+    }
+    func recordDrain(startedAt: UInt64, at: UInt64, messages count: UInt64, normalizedPens pens: UInt64) {
+        lock.lock(); defer { lock.unlock() }
+        drains = Self.adding(drains, 1); messages = Self.adding(messages, count)
+        normalizedPens = Self.adding(normalizedPens, pens)
+        lastDrainNanos = at >= startedAt ? at - startedAt : 0
+        maxDrainNanos = max(maxDrainNanos, lastDrainNanos); maxDrainMessages = max(maxDrainMessages, count)
+    }
+    func snapshotForReport(at: UInt64) -> Snapshot? {
+        lock.lock(); defer { lock.unlock() }
+        if let lastReportAt, at < lastReportAt || at - lastReportAt < 2_000_000_000 { return nil }
+        lastReportAt = at
+        return Snapshot(scheduled: scheduled, started: started, finished: finished,
+            outstanding: outstanding, highWaterOutstanding: highWaterOutstanding,
+            lastWaitNanos: lastWaitNanos, maxWaitNanos: maxWaitNanos,
+            drains: drains, messages: messages, normalizedPens: normalizedPens,
+            lastDrainNanos: lastDrainNanos, maxDrainNanos: maxDrainNanos, maxDrainMessages: maxDrainMessages)
+    }
+}
+
 struct PlankDiscoveredPencilPad: Identifiable, Sendable {
     let id: String
     let name: String
@@ -34,6 +90,7 @@ struct PlankDiscoveredPencilPad: Identifiable, Sendable {
     private var chosenPad: PlankDiscoveredPencilPad?
     private var usedDesktop = false
     private var dimensions = PlankFrameDimensions(width:1920,height:1200)
+    private var flowDiagnostics = PlankPencilReceiverFlowDiagnostics()
     var ownsPen: Bool { chosenPad != nil }
     var strokeActive: Bool { delivered.touching }
     init(client: PlankCoreClient) { self.client = client }
@@ -78,8 +135,20 @@ struct PlankDiscoveredPencilPad: Identifiable, Sendable {
             let key = try PlankPencilRelayKeys.privateKey()
             let connection = NWConnection(to:pad.endpoint,using:.tcp)
             generation = UUID(); let current = generation
+            let diagnostics = PlankPencilReceiverFlowDiagnostics(); flowDiagnostics = diagnostics
             let next = try PlankPencilRelayPeer(connection:connection,privateKey:key,peerKey:pad.key) { [weak self] event in
+                let scheduledAt: UInt64?
+                if case .messagesAvailable = event {
+                    scheduledAt = DispatchTime.now().uptimeNanoseconds
+                    diagnostics.recordScheduled()
+                } else { scheduledAt = nil }
                 Task { @MainActor in
+                    if let scheduledAt {
+                        diagnostics.recordStarted(scheduledAt: scheduledAt, at: DispatchTime.now().uptimeNanoseconds)
+                    }
+                    // A superseded peer's task remains balanced in its own
+                    // diagnostic generation, even when admission rejects it.
+                    defer { if scheduledAt != nil { diagnostics.recordFinished() } }
                     guard let self, self.generation == current else { return }
                     switch event {
                     case let .verification(code): self.verification = code; self.status = "Compare this code with the iPad, then approve on both devices."
@@ -184,6 +253,7 @@ struct PlankDiscoveredPencilPad: Identifiable, Sendable {
     }
     func sync() {
         guard let client else { return }
+        logFlowDiagnostics()
         syncImage()
         guard let peer else {
             if client.pencilRelayCanDraw, let chosenPad { connect(chosenPad) }
@@ -203,8 +273,15 @@ struct PlankDiscoveredPencilPad: Identifiable, Sendable {
     }
     private func drain() {
         guard let peer else { return }
+        let drainStartedAt = DispatchTime.now().uptimeNanoseconds
+        var messageCount: UInt64 = 0, normalizedPenCount: UInt64 = 0
+        defer {
+            flowDiagnostics.recordDrain(startedAt: drainStartedAt, at: DispatchTime.now().uptimeNanoseconds,
+                                        messages: messageCount, normalizedPens: normalizedPenCount)
+        }
         do {
             while let message = try peer.incoming.take() {
+                if messageCount < UInt64.max { messageCount += 1 }
                 guard admission, let client, client.pencilRelayCanDraw else { continue }
                 switch message {
                 case let .pen(p):
@@ -216,6 +293,7 @@ struct PlankDiscoveredPencilPad: Identifiable, Sendable {
                     }
                     try delivered.accept(p)
                     guard client.sendPencilRelayPen(p) else { throw PlankPencilWireError.overflow }
+                    if normalizedPenCount < UInt64.max { normalizedPenCount += 1 }
                 case let .rightClick(x,y):
                     guard !delivered.touching else { continue }
                     retireStroke()
@@ -230,6 +308,19 @@ struct PlankDiscoveredPencilPad: Identifiable, Sendable {
                 }
             }
         } catch { peer.close(); retire(); status = "Pencil input ended." }
+    }
+    private func logFlowDiagnostics() {
+        guard connected, let peer,
+              let flow = flowDiagnostics.snapshotForReport(at: DispatchTime.now().uptimeNanoseconds) else { return }
+        let incoming = peer.diagnostics.incoming
+        func ms(_ nanos: UInt64) -> Double { Double(nanos) / 1_000_000 }
+        // All clocks here are local to this receiver. Counts include rejected
+        // admission in messages, while normalizedPens counts successful offers.
+        NSLog("PLANK Pencil receiver diagnostics: scheduled=%llu started=%llu finished=%llu outstanding=%llu highWater=%llu waitLast=%.2fms waitMax=%.2fms drains=%llu messages=%llu normalizedPens=%llu drainLast=%.2fms drainMax=%.2fms drainMaxMessages=%llu incomingDepth=%ld incomingOldest=%.2fms incomingValueAge=%.2fms",
+              flow.scheduled, flow.started, flow.finished, flow.outstanding, flow.highWaterOutstanding,
+              ms(flow.lastWaitNanos), ms(flow.maxWaitNanos), flow.drains, flow.messages, flow.normalizedPens,
+              ms(flow.lastDrainNanos), ms(flow.maxDrainNanos), flow.maxDrainMessages,
+              incoming.depth, ms(incoming.oldestAgeNanos), ms(incoming.headValueAgeNanos))
     }
     private func deliverKeys(_ batch: [PlankPencilKeyEvent], to client: PlankCoreClient) throws {
         // The authenticated peer already checked balanced edges. Ups from a

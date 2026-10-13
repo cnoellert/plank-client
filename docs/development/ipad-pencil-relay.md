@@ -317,3 +317,24 @@ qualify physical rotation, new end-to-end input or final Host release receipt.
 ## Optional live reference image — October10 development slice
 
 The separate image source for iPad34 / Vision50 / Mac27 adds a dimmable full-desktop reference inside the existing Pencil viewport, enabled by explicit image choices on both devices. It uses its own bounded authenticated media lane tied to the complete current pen transcript; the accepted v3 pen/key wire, approvals, mapping and input queues stay unchanged. Image failure clears the picture and preserves Pencil operation. Device compilation/signing and physical mapping/input-under-image-load qualification are distinct from earlier accepted input tests. See [the current image boundary](ipad-live-image.md). Zoom/pan and focused output crops remain later coordinated-transform work. Installed iPad33/Vision49 and staged Mac26 are unchanged at this source checkpoint.
+
+
+## Intermittent sharing latency diagnostics — candidates44/53
+
+The iPad43/Vision52 trial reported intermittent severe Pencil delay on Flame-01.
+The initial recovery with reference images disabled did not reproduce on the
+subsequent image-on/off comparison, and enabling AVP Tailscale made no difference.
+The cause remains unconfirmed; accepted earlier contact/input tests are retained.
+
+App-only diagnostics use existing peer ticks, receiver synchronization and
+session polling, with at most one aggregate per reporting path every two seconds.
+They retain bounded scalar counters and timestamps beside existing bounded
+mailbox entries. They log no coordinates, pressure, key contents or peer identity.
+Mailbox slot residence is distinct from the age of the latest coalesced value.
+Receiver task wait/drain, current submitted batch, native C submission and QUIC
+handoff are distinct boundaries. Timings use each device's local monotonic clock;
+unsynchronized endpoint clocks must not be subtracted. Network send completion
+and `nativeInputSent` do not prove delivery to the Host. Snapshot reads across
+separate ledgers are not atomic, and instrumentation adds unqualified overhead.
+No protocol, consent, source admission, queue capacity, ordering, timer cadence,
+QoS, Host, network or dependency-pin change is included.
