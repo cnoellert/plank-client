@@ -847,8 +847,7 @@ struct PlankIPadCustomControlsEditor: View {
         return controlResolution(in:bounds).unavailableIDs.count
     }
     private var hasMeasuredEditingChrome: Bool {
-        store.hasMeasuredChrome(referenceSize:previewGeometry(in:canvasSize).referenceBounds.size,surface:surface,
-                                landscape:editingLandscape)
+        store.hasMeasuredChrome(referenceSize:liveWindowBounds.size,surface:surface)
     }
     var body: some View {
         NavigationStack {
@@ -872,8 +871,8 @@ struct PlankIPadCustomControlsEditor: View {
                         canvasSize = value; dragStart = nil; resizeStart = nil; snapGuides = []
                     }
                 }
-                Text(!hasMeasuredEditingChrome ? "Rotate the iPad to preview menu clearance for this orientation."
-                               : unavailableEditingCount > 0 ? "\(unavailableEditingCount) controls need more room. Move or resize the red controls to use them."
+                Text(!hasMeasuredEditingChrome ? "Menu clearance is not yet measured for this window."
+                               : unavailableEditingCount > 0 ? "This window needs more room for \(unavailableEditingCount) controls. Enlarge the window or adjust the red controls."
                                : resizeMode ? "Drag a corner to resize. Sizes are shown at full screen."
                                 : "Drag controls to move. Layouts are shared by iPad Desktop and Pencil Sharing.")
                     .font(.footnote).foregroundStyle(.secondary)
@@ -986,9 +985,7 @@ struct PlankIPadCustomControlsEditor: View {
         let geometry = previewGeometry(in:available)
         let canvas = geometry.previewFrame
         let bounds = CGRect(origin:.zero,size:canvas.size)
-        let mapping = surfaceGeometry(in:geometry.referenceBounds)
-        let chrome = store.chromeGeometry(referenceSize:geometry.referenceBounds.size,
-            surface:surface,landscape:editingLandscape)
+        let chrome = liveSurfaceGeometry().referenceChrome
         let resolution = controlResolution(in:geometry.referenceBounds)
         ZStack(alignment:.topLeading) {
             RoundedRectangle(cornerRadius:16)
@@ -999,7 +996,10 @@ struct PlankIPadCustomControlsEditor: View {
                 // gestures instead of competing with an ancestor recognizer.
                 .contentShape(Rectangle())
                 .onTapGesture(perform:deselectControl)
-            ForEach(Array(chrome.shadedRects.enumerated()),id:\.offset) { _, area in
+            // The live canvas is already fitted inside the window's top/bottom
+            // menu clearance. Only floating chrome that intersects that canvas
+            // belongs inside this preview of the authored tablet.
+            ForEach(Array(chrome.reservedRects.enumerated()),id:\.offset) { _, area in
                 let reserved = geometry.preview(frame:area)
                 Rectangle().fill(Color.gray.opacity(0.24))
                     .overlay { Rectangle().stroke(Color.gray.opacity(0.6),style:StrokeStyle(lineWidth:1,dash:[4,4])) }
@@ -1018,23 +1018,23 @@ struct PlankIPadCustomControlsEditor: View {
             ForEach(Array(snapGuides.enumerated()),id:\.offset) { _, guide in
                 Path { path in
                     if guide.axis == .vertical {
-                        path.move(to:previewPoint(CGPoint(x:guide.position,y:guide.start),geometry:geometry,mapping:mapping))
-                        path.addLine(to:previewPoint(CGPoint(x:guide.position,y:guide.end),geometry:geometry,mapping:mapping))
+                        path.move(to:previewPoint(CGPoint(x:guide.position,y:guide.start),geometry:geometry))
+                        path.addLine(to:previewPoint(CGPoint(x:guide.position,y:guide.end),geometry:geometry))
                     } else {
-                        path.move(to:previewPoint(CGPoint(x:guide.start,y:guide.position),geometry:geometry,mapping:mapping))
-                        path.addLine(to:previewPoint(CGPoint(x:guide.end,y:guide.position),geometry:geometry,mapping:mapping))
+                        path.move(to:previewPoint(CGPoint(x:guide.start,y:guide.position),geometry:geometry))
+                        path.addLine(to:previewPoint(CGPoint(x:guide.end,y:guide.position),geometry:geometry))
                     }
                 }
                 .stroke(Color.blue.opacity(0.8),style:StrokeStyle(lineWidth:1,dash:[4,4]))
                 .allowsHitTesting(false)
             }
             ForEach(selectedLayout.controls) { control in
-                let live = resolvedFrame(control,resolution:resolution,in:geometry.referenceBounds)
-                editorControl(control,frame:geometry.preview(frame:mapping.forward(frame:live)),geometry:geometry,
+                let authored = resolvedFrame(control,resolution:resolution,in:geometry.referenceBounds)
+                editorControl(control,frame:geometry.preview(frame:authored),geometry:geometry,
                               unavailable:resolution.unavailableIDs.contains(control.id))
             }
             if let selected = selectedControl, inspectorVisible, canvas.width >= 620 {
-                let frame = geometry.preview(frame:mapping.forward(frame:resolvedFrame(selected,resolution:resolution,in:geometry.referenceBounds)))
+                let frame = geometry.preview(frame:resolvedFrame(selected,resolution:resolution,in:geometry.referenceBounds))
                 let inspectorSize = CGSize(width:min(304,canvas.width - 32),height:min(430,canvas.height - 24))
                 inspector
                     .frame(width:inspectorSize.width,height:inspectorSize.height)
@@ -1042,7 +1042,7 @@ struct PlankIPadCustomControlsEditor: View {
                     .position(inspectorCenter(beside:frame,size:inspectorSize,bounds:bounds))
             }
             if let selected = selectedControl {
-                let frame = geometry.preview(frame:mapping.forward(frame:resolvedFrame(selected,resolution:resolution,in:geometry.referenceBounds)))
+                let frame = geometry.preview(frame:resolvedFrame(selected,resolution:resolution,in:geometry.referenceBounds))
                 Button {
                     if usesSheetInspector { narrowInspector = true; inspectorVisible = true }
                     else { inspectorVisible.toggle() }
@@ -1060,13 +1060,13 @@ struct PlankIPadCustomControlsEditor: View {
         .position(x:canvas.midX,y:canvas.midY)
         .accessibilityElement(children:.contain)
         .accessibilityLabel(editingLandscape ? "Landscape arrangement" : "Portrait arrangement")
-        .accessibilityHint("Shaded areas are reserved for the client menu and system controls.")
+        .accessibilityHint("Shaded areas show floating client controls that intersect the tablet.")
     }
 
     private func editorControl(_ control: PlankCustomControl,frame: CGRect,
                                geometry: PlankControlPreviewGeometry,unavailable: Bool) -> some View {
         let selected = selectedControlID == control.id
-        let presentationScale = geometry.scale * surfaceGeometry(in:geometry.referenceBounds).scale
+        let presentationScale = geometry.scale
         return ZStack {
             RoundedRectangle(cornerRadius:12 * presentationScale)
                 .fill(selected ? Color.blue.opacity(0.28) : Color(white:0.14))
@@ -1100,17 +1100,16 @@ struct PlankIPadCustomControlsEditor: View {
                     remember(); materializeResolvedPlacement(id:control.id,in:geometry.referenceBounds)
                     select(control.id,showInspector:false)
                     dragStart = PlankControlPlacement(frame:resolvedFrame(control,resolution:controlResolution(in:geometry.referenceBounds),
-                                                                          in:geometry.referenceBounds),in:surfaceGeometry(in:geometry.referenceBounds).referenceBounds)
+                                                                          in:geometry.referenceBounds),in:geometry.referenceBounds)
                 }
                 guard var next = dragStart else { return }
-                let mapping = surfaceGeometry(in:geometry.referenceBounds)
-                let translation = mapping.referenceTranslation(geometry.referenceTranslation(value.translation))
-                let bounds = mapping.referenceBounds
+                let translation = geometry.referenceTranslation(value.translation)
+                let bounds = geometry.referenceBounds
                 next.x = min(max(next.x + translation.width / max(bounds.width,1),0),1)
                 next.y = min(max(next.y + translation.height / max(bounds.height,1),0),1)
                 let result = PlankControlSnap.move(placement:next,in:bounds,peers:peerFrames(excluding:control.id,in:geometry.referenceBounds),
-                                                  gutter:6,threshold:8 / max(geometry.scale * mapping.scale,0.01),
-                                                  chrome:mapping.referenceChrome)
+                                                  gutter:6,threshold:8 / max(geometry.scale,0.01),
+                                                  chrome:editingSnapChrome)
                 snapGuides = result.guides
                 let previous = selectedLayout.controls.first(where:{ $0.id == control.id })?.placement(landscape:editingLandscape)
                 setPlacement(result.placement,id:control.id)
@@ -1124,7 +1123,7 @@ struct PlankIPadCustomControlsEditor: View {
             })
         .accessibilityElement(children:.ignore)
         .accessibilityLabel("\(control.label), \(control.binding.title)")
-        .accessibilityValue(unavailable ? "Needs room. Move or resize to use this control." : "")
+        .accessibilityValue(unavailable ? "Needs more room in the current window." : "")
         .accessibilityHint(resizeMode ? "Select, then drag a corner to resize. Exact size is also available in the inspector."
                            : "Drag to move. Select to edit binding, size and position.")
         .accessibilityAddTraits(selected ? [.isButton,.isSelected] : .isButton)
@@ -1142,15 +1141,14 @@ struct PlankIPadCustomControlsEditor: View {
                         remember(); materializeResolvedPlacement(id:control.id,in:geometry.referenceBounds)
                         hideControlInspector()
                         resizeStart = PlankControlPlacement(frame:resolvedFrame(control,resolution:controlResolution(in:geometry.referenceBounds),
-                                                                                in:geometry.referenceBounds),in:surfaceGeometry(in:geometry.referenceBounds).referenceBounds)
+                                                                                in:geometry.referenceBounds),in:geometry.referenceBounds)
                     }
                     guard let original = resizeStart else { return }
-                    let mapping = surfaceGeometry(in:geometry.referenceBounds)
-                    let bounds = mapping.referenceBounds
+                    let bounds = geometry.referenceBounds
                     let result = PlankControlSnap.resize(original:original,corner:corner,
-                        translation:mapping.referenceTranslation(geometry.referenceTranslation(value.translation)),in:bounds,
-                        peers:peerFrames(excluding:control.id,in:geometry.referenceBounds),gutter:6,threshold:8 / max(geometry.scale * mapping.scale,0.01),
-                        chrome:mapping.referenceChrome)
+                        translation:geometry.referenceTranslation(value.translation),in:bounds,
+                        peers:peerFrames(excluding:control.id,in:geometry.referenceBounds),gutter:6,threshold:8 / max(geometry.scale,0.01),
+                        chrome:editingSnapChrome)
                     snapGuides = result.guides
                     let previous = selectedLayout.controls.first(where:{ $0.id == control.id })?.placement(landscape:editingLandscape)
                     setPlacement(result.placement,id:control.id)
@@ -1170,31 +1168,44 @@ struct PlankIPadCustomControlsEditor: View {
     }
     private func controlResolution(in bounds: CGRect) -> PlankControlPlacementResolver.Resolution {
         let value = PlankControlResponsiveResolution.resolve(layout:selectedLayout,landscape:editingLandscape,
-            chrome:store.chromeGeometry(referenceSize:bounds.size,surface:surface,landscape:editingLandscape),
+            chrome:store.chromeGeometry(referenceSize:liveWindowBounds.size,surface:surface),
             legacyReferenceSize:store.legacyReferenceSize(landscape:editingLandscape))
-        return .init(frames:value.frames.mapValues { value.geometry.inverse(frame:$0) },unavailableIDs:value.unavailableIDs)
+        let frames = Dictionary(uniqueKeysWithValues:selectedLayout.controls.map { control in
+            (control.id,PlankControlPlacementResolver.pointSizedFrame(control.placement(landscape:editingLandscape),in:bounds))
+        })
+        return .init(frames:frames,unavailableIDs:value.unavailableIDs)
     }
-    private func surfaceGeometry(in windowBounds: CGRect) -> PlankControlSurfaceGeometry {
-        let size = selectedLayout.referenceExtent(landscape:editingLandscape,
+    private var authoredReferenceSize: CGSize {
+        selectedLayout.referenceExtent(landscape:editingLandscape,
             legacySize:store.legacyReferenceSize(landscape:editingLandscape))?.size ?? .zero
-        return PlankControlSurfaceGeometry(referenceSize:size,
-            chrome:store.chromeGeometry(referenceSize:windowBounds.size,surface:surface,landscape:editingLandscape))
     }
-    private func previewPoint(_ point: CGPoint,geometry: PlankControlPreviewGeometry,
-                              mapping: PlankControlSurfaceGeometry) -> CGPoint {
-        CGPoint(x:(mapping.viewportFrame.minX + point.x * mapping.scale) * geometry.scale,
-                y:(mapping.viewportFrame.minY + point.y * mapping.scale) * geometry.scale)
+    private var liveWindowBounds: CGRect {
+        CGRect(origin:.zero,size:store.latestSurfaceSize(for:surface) ?? referenceSurfaceSize)
+    }
+    private func liveSurfaceGeometry() -> PlankControlSurfaceGeometry {
+        PlankControlSurfaceGeometry(referenceSize:authoredReferenceSize,
+            chrome:store.chromeGeometry(referenceSize:liveWindowBounds.size,surface:surface))
+    }
+    private var editingSnapChrome: PlankControlChromeGeometry? {
+        let geometry = liveSurfaceGeometry()
+        // Unknown live clearance disables live targets, but the local saved
+        // canvas remains editable without inventing window menu measurements.
+        return geometry.isUsable ? geometry.referenceChrome : nil
+    }
+    private func previewPoint(_ point: CGPoint,geometry: PlankControlPreviewGeometry) -> CGPoint {
+        CGPoint(x:(point.x - geometry.referenceBounds.minX) * geometry.scale,
+                y:(point.y - geometry.referenceBounds.minY) * geometry.scale)
     }
     private func resolvedFrame(_ control: PlankCustomControl,resolution: PlankControlPlacementResolver.Resolution,in bounds: CGRect) -> CGRect {
         resolution.frames[control.id] ?? PlankControlPlacementResolver.pointSizedFrame(control.placement(landscape:editingLandscape),
-            in:surfaceGeometry(in:bounds).referenceBounds)
+            in:bounds)
     }
     private func materializeResolvedPlacement(id: UUID,in bounds: CGRect) {
         let resolution = controlResolution(in:bounds)
         var layout = selectedLayout
         guard let index = layout.controls.firstIndex(where:{ $0.id == id }),
               let frame = resolution.frames[id] else { return }
-        layout.controls[index].setPlacement(PlankControlPlacement(frame:frame,in:surfaceGeometry(in:bounds).referenceBounds),landscape:editingLandscape)
+        layout.controls[index].setPlacement(PlankControlPlacement(frame:frame,in:bounds),landscape:editingLandscape)
         // An explicit geometry edit adopts only its own displayed anchor into
         // the draft. Every other control retains its exact saved placement.
         // Undo predates this step; passive rendering never rewrites anchors.
@@ -1303,14 +1314,14 @@ struct PlankIPadCustomControlsEditor: View {
         guard let control = selectedControl else { return 0 }
         let bounds = previewGeometry(in:canvasSize).referenceBounds
         return PlankControlPlacement(frame:resolvedFrame(control,resolution:controlResolution(in:bounds),in:bounds),
-            in:surfaceGeometry(in:bounds).referenceBounds)[keyPath:key]
+            in:bounds)[keyPath:key]
     }
     private func placementBinding(_ key: WritableKeyPath<PlankControlPlacement,Double>) -> Binding<Double> {
         Binding(get:{ placementValue(key) },set:{ value in
             mutateControl(materializeGeometry:true) { control in
                 var placement = control.placement(landscape:editingLandscape)
                 placement[keyPath:key] = value
-                let bounds = surfaceGeometry(in:previewGeometry(in:canvasSize).referenceBounds).referenceBounds
+                let bounds = previewGeometry(in:canvasSize).referenceBounds
                 control.setPlacement(clampedPlacement(placement,in:bounds),landscape:editingLandscape)
             }
         })
@@ -1518,7 +1529,7 @@ struct PlankIPadCustomControlsEditor: View {
         replaceDraft(replacement); selectedControlID = nil
     }
     private func previewGeometry(in available: CGSize) -> PlankControlPreviewGeometry {
-        PlankControlPreviewGeometry(referenceSize:store.referenceSize(landscape:editingLandscape,fallback:referenceSurfaceSize,surface:surface),
+        PlankControlPreviewGeometry(referenceSize:authoredReferenceSize,
                                     availableSize:available,inset:16)
     }
     private func inspectorToggleCenter(beside frame: CGRect,bounds: CGRect) -> CGPoint {
