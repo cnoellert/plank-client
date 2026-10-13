@@ -2,9 +2,11 @@
 
 The current reference-image sender candidates are Vision52 / Mac29 from
 `e8b928ffd8b253edc959c7669b2cc23b50aa99f2`, freshly compiled, signed and
-independently verified; Vision52 is installed/running and Mac29 is staged. iPad36 from
-`7a5fe82d14f47c073e308af63a73ac6c6cb42014` adds the finger-input option without
-changing the optimized35 image receiver, and is installed/open on the new M5.
+independently verified; Vision52 is installed/running and Mac29 is staged. Current
+installed iPad42 runtime `cdfbe5f004019c8e67102cc6d83a0cc6b3f76cbb` is accepted
+for the targeted editor outline and editing check after window resizing. It
+retains the optimized35 image receiver and build36 finger-input option. Earlier
+iPad36 from `7a5fe82d14f47c073e308af63a73ac6c6cb42014` is superseded on the M5.
 iPad35 from `a102d8c8460fc851b4c55e84fc9acdafda17a3a9` was its prior installed
 baseline. The October 11 artist trial confirms the picture appears and latency
 is better, but below the hoped responsiveness; overall image promotion remains
@@ -211,7 +213,8 @@ deliberate **Hand** navigation control and a small full-desktop navigator.
 Here 2× means twice Fit, rather than a native-pixel percentage. Existing
 100%/200%/300% ideas mean source-pixel magnification and should be named
 separately if added later. The artist agreed to try this proposal; the connected
-layout-naming correction comes first. No zoom runtime is implemented yet.
+layout-naming correction comes first. Naming39 and authored editor42 are now
+physically accepted for their targeted checks. No zoom runtime is implemented yet.
 Center the initial doubled view on the last valid Pencil hover position, or
 the desktop center when hover is unavailable. The navigator can select another
 area deliberately. This proposal avoids moving the view continuously under
