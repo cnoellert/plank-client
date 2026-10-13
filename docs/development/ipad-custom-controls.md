@@ -764,3 +764,53 @@ Signed40 and39 remain available for rollback. Physical fixed-arrangement and
 selected-edit checks remain pending; installation identity is not acceptance.
 Input, Pencil mapping, image transport, peer authority, schema and dependency
 pins are unchanged. Fit/2× image zoom remains a separate next slice.
+
+## Authored tablet preview — iPad42
+
+The physical build41 check failed. The artist's October12 5:59PM screenshot
+shows a tall narrow editor window with Landscape selected: the outer tablet
+outline retains the window's aspect while the keys fit the saved landscape
+canvas inside it. The earlier key-projection checks did not cover that outer
+editor rectangle. The selected-control physical edit check was not separately
+answered. This screenshot shows the editor; it does not establish a failure of
+the accepted Pencil or desktop image/input viewport.
+
+Before this correction, Alan's current main source
+`58f4df097c1cdf11bf6b4b429701f156e2b10109` was merged into the preserved
+published checkpoint, then the unpublished image/correction suffix was rebased
+with its merge ancestry retained. Accepted native integration `e8d8536`, the
+published `c3dfc42` checkpoint and original sharing/display ancestors remain.
+The reviewed native common-C pin `036df96` is explicitly retained; main's
+`437be9a` recovery candidate is not declared or qualified by the native recipe.
+All native sources and recipe inputs were identical immediately after rebase.
+The new Qt/Linux/session source does not imply native device recovery acceptance.
+
+Build42 runtime `cdfbe5f004019c8e67102cc6d83a0cc6b3f76cbb` gives the editor its
+own single authored-canvas preview. The selected layout's landscape or portrait
+extent sets the outline's aspect. Keys, labels, guides, inspector anchors and
+drag/resize inversion use the same preview scale directly. Actual live-window
+projection remains separate for target availability and inverse-mapped floating
+menu/consent protection. Top and bottom window bars already lie outside the
+fitted tablet, so they are not drawn inside its authored outline. Unknown live
+chrome keeps local authoring available while live key targets remain unavailable.
+Selected-only geometry changes, Undo, naming and explicit Done publication are
+retained. No saved layout or input mapping is changed by passive preview sizing.
+
+Only the editor body and iPad build number changed after the verified rebase;
+414 other native/recipe paths and the entire live control/store prefix remain
+exact. The fresh M5 device app compiles and is signed/staged. Whole production
+editor rendering on Simulator27 preserves Landscape 4:3 and Portrait 3:4 in full,
+tall, narrow and wide windows. Actual key rectangles and text heights use one
+uniform scale; floating chrome shades only its clipped authored intersection.
+Exact production move and four corner handlers preserve other controls and
+orientations, Undo restores the draft, and Done publishes only the intended
+changes. Unmeasured live chrome still permits local authoring. The same tall-entry
+negative control renders old41's outline at 0.581 aspect versus42's authored 1.333,
+reproducing the reported defect. Controlled UIWindow sizes, passive frame probes
+and private handler dispatch do not qualify physical iPadOS26.6 gestures or its
+window manager. Independent package review passes exact compiled runtime/resource
+parity, target M5 provisioning, signature/certificate/entitlements, all258
+dependency entries, declared native pins and converter-only optimization flags.
+Signed41/40/39, Vision52 and Mac29 payloads and signatures remain intact.
+Installed41 remains untouched; physical42 acceptance and installation are pending.
+Fit/2× zoom remains a separate approved slice.

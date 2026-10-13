@@ -33,7 +33,8 @@ Retarget these slices upstream in dependency order after their bases are accepte
 
 | Target | Compiled runtime source | State |
 | --- | --- | --- |
-| iPad41 | `910c52fff4264c42a5fb666b1ed01aedb2f346f9` | Artist-approved fixed orientation canvas fits as one arrangement inside measured usable window, geometry edits adopt only selected key; model/native and independent package checks pass; installed/open on M5 after authorization, exact41/0.1.0 and running executable observed; physical fixed-arrangement and selected-edit check pending |
+| iPad42 | `cdfbe5f004019c8e67102cc6d83a0cc6b3f76cbb` | Rebased after Alan main refresh; editor outline, keys, labels, guides and gesture inversion share the authored portrait/landscape canvas; freshly compiled/signed and staged for M5; whole rendered-editor checks, old41 tall-entry negative control and independent package review pass; not installed, physical check pending |
+| iPad41 | `910c52fff4264c42a5fb666b1ed01aedb2f346f9` | Installed/open on M5 after authorization, exact41/0.1.0 and running executable observed; physical fixed-canvas gate failed: tall editor window keeps a tall outline around fitted landscape keys; selected-edit gate not separately answered |
 | iPad40 | `44f29cebd5a97290bccffcdc331e59a3a328234f` | Drawing-only editor preview chrome correction; installed/open on M5 after disconnected authorization, exact40/0.1.0 and running executable observed; reserved-band check superseded by artist-approved whole-canvas policy41 |
 | iPad39 | `549bd8e4fef1f8cfdc46fc2624eb352fdbc44957` | Installed/open on M5; user accepts fullscreen naming and general button scaling/placement; smaller-window reserved top/bottom bands remain visually odd |
 | iPad38 | `000c72132e9d21c5bbff8d06443e1ad7fe0fb966` | Installed on new M5; artist reports fullscreen connected naming still fails and smaller-window controls scale incorrectly; physical naming gate failed |
