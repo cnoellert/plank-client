@@ -703,3 +703,21 @@ under scoped investigation. This acceptance does not establish a separate
 sharing-naming or OS interruption matrix. Vision52, image transport,
 Host, network, identities and dependency pins are unchanged. The agreed Fit/2×
 zoom slice waits for this editor/window qualification.
+
+## Reserved-area preview correction — iPad40
+
+The artist's compact-window screenshot shows an inset top reservation and no
+bottom band. The editor was drawing chrome after clipping it to the fitted
+authoring canvas, although its outer preview represents the whole current
+window. This narrowed bands in wide windows and removed bands outside a
+letterboxed canvas in narrow windows.
+
+Build40 runtime `44f29cebd5a97290bccffcdc331e59a3a328234f` draws current-window
+chrome directly through the editor's single preview scale. Only those two shade
+expressions and the build number change; reversing the expressions restores the
+exact build39 control source. Placement, snapping, mapping, responder, saved
+library and input bodies remain unchanged, with414 protected native/recipe paths
+identical to39. Source review and full/narrow/wide numerical correspondence pass.
+The fresh device app compiles and is signed/staged for the M5;39 rollback is
+retained. Physical top/bottom band appearance is the remaining targeted check.
+No additional input acceptance is required for this drawing-only correction.
