@@ -718,6 +718,9 @@ expressions and the build number change; reversing the expressions restores the
 exact build39 control source. Placement, snapping, mapping, responder, saved
 library and input bodies remain unchanged, with414 protected native/recipe paths
 identical to39. Source review and full/narrow/wide numerical correspondence pass.
-The fresh device app compiles and is signed/staged for the M5;39 rollback is
-retained. Physical top/bottom band appearance is the remaining targeted check.
+The fresh device app compiles and its signed M5 package is independently
+verified. After the artist confirmed disconnection,40 installed and opened;
+separate device inventories show exact40/0.1.0 and its running executable.
+Build39 is retained for rollback. Physical top/bottom band appearance is the
+remaining targeted check.
 No additional input acceptance is required for this drawing-only correction.
