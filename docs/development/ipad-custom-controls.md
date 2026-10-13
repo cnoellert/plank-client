@@ -757,7 +757,10 @@ control, preserving other layouts and the opposite arrangement. These simulator2
 checks do not establish physical iPadOS26.6 gesture or window-lifecycle behavior.
 The fresh M5 device app compiles and is signed/staged. Independent package review
 passes exact runtime bytes/resources, target profile/certificate/entitlements,
-unchanged dependency receipts and protected rollback inventories. Disconnected
-installation and physical fixed-arrangement/selected-edit checks remain pending.
+unchanged dependency receipts and protected rollback inventories. After the
+artist's readiness confirmation, build41 was installed in place on the M5 and
+opened; separate inventories show exact41/0.1.0 and its running executable.
+Signed40 and39 remain available for rollback. Physical fixed-arrangement and
+selected-edit checks remain pending; installation identity is not acceptance.
 Input, Pencil mapping, image transport, peer authority, schema and dependency
 pins are unchanged. Fit/2× image zoom remains a separate next slice.
