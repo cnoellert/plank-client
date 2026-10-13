@@ -231,24 +231,48 @@ struct PlankIPadRoot: View {
             Text(sharePencil ? "Apple Pencil" : (host?.name ?? "Desktop"))
                 .font(.headline).lineLimit(1)
             Spacer(minLength:8)
-            if !sharePencil {
-                Button { router.setSoftwareKeyboardPresented(!router.softwareKeyboardPresented) } label: {
-                    Label(router.softwareKeyboardPresented ? "Hide Keyboard" : "Show Keyboard",systemImage:"keyboard")
-                }.labelStyle(.iconOnly).frame(minWidth:44,minHeight:44)
+            if !compactToolbar {
+                if !sharePencil {
+                    Button { router.setSoftwareKeyboardPresented(!router.softwareKeyboardPresented) } label: {
+                        Label(router.softwareKeyboardPresented ? "Hide Keyboard" : "Show Keyboard",systemImage:"keyboard")
+                    }.labelStyle(.iconOnly).frame(minWidth:44,minHeight:44)
+                }
+                Button { controls = true } label: {
+                    Label(sharePencil ? "Pencil Sharing Settings" : "Session Controls",systemImage:"slider.horizontal.3")
+                }
+                    .labelStyle(.iconOnly).frame(minWidth:44,minHeight:44)
             }
-            Button { controls = true } label: {
-                Label(sharePencil ? "Pencil Sharing Settings" : "Session Controls",systemImage:"slider.horizontal.3")
-            }
-                .labelStyle(.iconOnly).frame(minWidth:44,minHeight:44)
             PlankIPadControlsVisibilityButton(store:customControls,visible:showingCustomControls,
                 toggle:toggleCustomControls)
             PlankIPadControlLayoutsButton(store:customControls,select:selectCustomControlLayout,edit:editCustomControls)
             zoomMenu
-            Button { setToolbarVisible(false) } label: { Label("Hide Toolbar",systemImage:"chevron.up") }
-                .labelStyle(.iconOnly).frame(minWidth:44,minHeight:44)
-            if sharePencil { Button("Stop Sharing",action:stopPencilSharing).frame(minHeight:44) }
-            else { Button("Disconnect",action:disconnect).frame(minHeight:44).disabled(client.isClosingSession) }
+            if compactToolbar { compactToolbarMenu }
+            else {
+                Button { setToolbarVisible(false) } label: { Label("Hide Toolbar",systemImage:"chevron.up") }
+                    .labelStyle(.iconOnly).frame(minWidth:44,minHeight:44)
+                if sharePencil { Button("Stop Sharing",action:stopPencilSharing).frame(minHeight:44) }
+                else { Button("Disconnect",action:disconnect).frame(minHeight:44).disabled(client.isClosingSession) }
+            }
         }.padding(.horizontal,12)
+    }
+    private var compactToolbar: Bool { controlWindowSize.width < 600 }
+    private var compactToolbarMenu: some View {
+        Menu {
+            if !sharePencil {
+                Button { router.setSoftwareKeyboardPresented(!router.softwareKeyboardPresented) } label: {
+                    Label(router.softwareKeyboardPresented ? "Hide Keyboard" : "Show Keyboard",systemImage:"keyboard")
+                }
+            }
+            Button { controls = true } label: {
+                Label(sharePencil ? "Pencil Sharing Settings" : "Session Controls",systemImage:"slider.horizontal.3")
+            }
+            Button { setToolbarVisible(false) } label: { Label("Hide Toolbar",systemImage:"chevron.up") }
+            Divider()
+            if sharePencil { Button("Stop Sharing",action:stopPencilSharing) }
+            else { Button("Disconnect",action:disconnect).disabled(client.isClosingSession) }
+        } label: {
+            Image(systemName:"ellipsis").frame(width:44,height:44)
+        }.accessibilityLabel("More session controls")
     }
     @ViewBuilder private var zoomMenu: some View {
         if sharePencil {
