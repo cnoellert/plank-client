@@ -987,7 +987,8 @@ struct PlankIPadCustomControlsEditor: View {
         let canvas = geometry.previewFrame
         let bounds = CGRect(origin:.zero,size:canvas.size)
         let mapping = surfaceGeometry(in:geometry.referenceBounds)
-        let chrome = mapping.referenceChrome
+        let chrome = store.chromeGeometry(referenceSize:geometry.referenceBounds.size,
+            surface:surface,landscape:editingLandscape)
         let resolution = controlResolution(in:geometry.referenceBounds)
         ZStack(alignment:.topLeading) {
             RoundedRectangle(cornerRadius:16)
@@ -999,7 +1000,7 @@ struct PlankIPadCustomControlsEditor: View {
                 .contentShape(Rectangle())
                 .onTapGesture(perform:deselectControl)
             ForEach(Array(chrome.shadedRects.enumerated()),id:\.offset) { _, area in
-                let reserved = geometry.preview(frame:mapping.forward(frame:area))
+                let reserved = geometry.preview(frame:area)
                 Rectangle().fill(Color.gray.opacity(0.24))
                     .overlay { Rectangle().stroke(Color.gray.opacity(0.6),style:StrokeStyle(lineWidth:1,dash:[4,4])) }
                     .frame(width:reserved.width,height:reserved.height)
