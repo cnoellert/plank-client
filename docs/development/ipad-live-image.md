@@ -402,3 +402,11 @@ geometry balances held Artist keys and cancels Pencil contacts forwarded through
 those keys. Ordinary canvas strokes are not retired by panel placement changes.
 This is a local UI change; the image lane, zoom transforms, receiver, protocol,
 Host, dependency pins and latency-diagnostic behavior remain unchanged.
+
+
+Build45 was installed as an update on the M5 after the user explicitly disconnected
+and stopped sharing. Exact45/0.1.0 and the running executable were inventoried.
+The user answered **Works in both modes** to hide/button access, menu restoration
+and header movement in Desktop and Pencil Sharing. This is targeted map acceptance;
+it does not establish the latency cause, all window/OS cases or final Host receipt.
+Vision52 and the existing native/dependency/Host/network pins remain unchanged.
