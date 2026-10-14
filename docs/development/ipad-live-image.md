@@ -1,24 +1,23 @@
 # iPad live reference image and magnification
 
-The current reference-image sender candidates are Vision52 / Mac29 from
-`e8b928ffd8b253edc959c7669b2cc23b50aa99f2`, freshly compiled, signed and
-independently verified; Vision52 is installed/running and Mac29 is staged. Current
-installed iPad43 runtime `5a2ea686a3bab92df91af69c17a4ca4de1e31dca` adds local
-Fit/2×, Hand and area navigation. The targeted editor outline and editing check
-from42 remains accepted. It retains the optimized35 image receiver and build36
-finger-input option. Earlier
-iPad36 from `7a5fe82d14f47c073e308af63a73ac6c6cb42014` is superseded on the M5.
-iPad35 from `a102d8c8460fc851b4c55e84fc9acdafda17a3a9` was its prior installed
-baseline. The October 11 artist trial confirms the picture appears and latency
-is better, but below the hoped responsiveness; overall image promotion remains
-held. Older iPad34 / Vision50 from
-`4a14a47e8f8fb62413f4a8c60f85fb5ecf72329a` were independently verified at
-installation. Old Air34 remains unchanged; Vision50 is superseded. The user rejected
-that baseline's picture latency and stretching. Mac27, Mac28 and Mac29 remain staged
-and unlaunched. Image promotion remains held.
-The local Fit/2× operating-view candidate43 is implemented and installed below;
-physical zoom qualification remains pending. Sharper source-region media and
-a separate loupe remain later work.
+Current image senders are installed Vision52 from
+`e8b928ffd8b253edc959c7669b2cc23b50aa99f2` and native Mac30 from
+`dd07decfa5f1a26a664cc699d3cfce2ba725b5ae`. Mac30 adds bounded shared diagnostics
+without changing Mac29's image behavior; its physical Pencil/Artist/image path
+remains unqualified. The Mac is now open alongside the retained Qt client.
+Current installed iPad45 runtime `9dcde0af10dd11f6259d0d1bee088dff4f345466`
+retains build43's local Fit/2×, Hand and area navigation, build35's optimized
+image receiver, build36's finger option and build44's bounded diagnostics.
+The user accepts map hide/button access, restore and header movement in both
+Desktop and Pencil Sharing. The targeted editor outline/editing check from42
+remains accepted. Physical operating-view zoom qualification remains pending.
+
+The October 11 artist trial confirms the picture appears and latency is better,
+but below the hoped responsiveness; image promotion remains held. Older
+iPad34 / Vision50 from `4a14a47e8f8fb62413f4a8c60f85fb5ecf72329a` failed the
+picture latency/stretching trial. Old Air34 remains unchanged; Vision50 is
+superseded. Mac27/28/29 remain staged and unlaunched. Sharper source-region media
+and a separate loupe remain later work.
 
 ## October 10 physical usability result
 

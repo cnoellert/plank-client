@@ -2,6 +2,29 @@
 
 Tracking: [upstream coordination issue 9](https://github.com/instinctual/plank-client/issues/9).
 
+## October 14 local native client switch
+
+At the user's request, native Mac30 from
+`dd07decfa5f1a26a664cc699d3cfce2ba725b5ae` is installed and open at
+`/Applications/PLANK Native.app`. The previous Qt client at
+`/Applications/PLANK Client.app` remains available. Fresh public compilation,
+independent signed payload/library/dependency verification and exact installed
+version/running-executable checks passed. Startup stdout and stderr are captured
+in private diagnostic logs; no local client was running before the switch.
+
+The native client retains `la.instinctual.PLANK.NativeMac`, its existing settings
+namespace and the pinned native recipe. It opens idle until the user connects;
+no Qt credentials or Pencil approvals were copied. Mac30 carries the four shared
+bounded diagnostic source updates since staged Mac29, with no input/media behavior
+change. The developer build is signed with hardened runtime but is not a notarized
+release. Normal launch succeeded without changing Gatekeeper or quarantine policy.
+
+Mac24 display, fullscreen, Wacom, wheel and middle-button acceptance carries
+forward. Physical iPad Pencil/Artist reception and optional reference-image sending
+through the Mac remain new gates. Installation does not qualify that path, the
+OS matrix or final Host receipt. iPad45's hideable/movable map is accepted in both
+modes; Vision52 and the working network/Host/dependency pins are unchanged.
+
 ## Baseline and review order
 
 The Vision foundation and transport correction are merged into Client
