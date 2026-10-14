@@ -41,8 +41,9 @@ connection through Tailscale also worked with the image both on and off.
 The next iPad45 UI slice makes the zoom map optional and movable: the View menu
 has Show Zoom Map and Reset Map Position; a separate header moves it and × hides
 it. Both iPad modes share persistent local visibility/placement. No receiver or
-Host change accompanies this slice. Candidate build/package readiness is recorded
-separately; the currently installed43 session remains unchanged.
+Host change accompanies this slice. Candidate persistence/native view/menu checks and independent signed-package
+verification pass;45 is staged, awaiting disconnected installation confirmation.
+The currently installed43 session remains unchanged.
 
 ## Review order
 
@@ -66,6 +67,7 @@ Retarget these slices upstream in dependency order after their bases are accepte
 
 | Target | Compiled runtime source | State |
 | --- | --- | --- |
+| iPad45 | `9dcde0af10dd11f6259d0d1bee088dff4f345466` | Optional movable zoom map with shared remembered preferences; focused persistence, native routing/menu and independent package gates pass; signed/staged, awaiting disconnected update; physical map qualification pending |
 | iPad44 / Vision53 | `fe965cf1d4f5c9a1502265ecea7ea8768425a30b` | App-only bounded Pencil flow timing/count diagnostics; focused checks and fresh device compile/signing pass; staged, not installed; no latency repair or physical diagnostic qualification claimed |
 | iPad43 | `5a2ea686a3bab92df91af69c17a4ca4de1e31dca` | Shared local Fit/2× crop, matching image/cursor/input, Hand and fixed-footprint navigator in direct Desktop and Sharing; policy/contact, native rendering and independent signed package checks pass; installed/open on M5 with exact43/0.1.0 and matching running executable observed; physical zoom check pending |
 | iPad42 | `cdfbe5f004019c8e67102cc6d83a0cc6b3f76cbb` | Rebased after Alan main refresh; editor outline, keys, labels, guides and gesture inversion share the authored portrait/landscape canvas; whole rendered-editor checks, old41 tall-entry negative control and independent package review pass; installed/open on M5 with exact42/0.1.0 and running executable observed; user accepts requested physical outline/arrangement through window resize and selected control movement/resizing |
