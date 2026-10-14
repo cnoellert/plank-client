@@ -20,10 +20,12 @@ change. The developer build is signed with hardened runtime but is not a notariz
 release. Normal launch succeeded without changing Gatekeeper or quarantine policy.
 
 Mac24 display, fullscreen, Wacom, wheel and middle-button acceptance carries
-forward. Physical iPad Pencil/Artist reception and optional reference-image sending
-through the Mac remain new gates. Installation does not qualify that path, the
-OS matrix or final Host receipt. iPad45's hideable/movable map is accepted in both
-modes; Vision52 and the working network/Host/dependency pins are unchanged.
+forward. The user subsequently confirmed the requested Pencil tap/drag and
+Artist modifier smoke check through the Mac is working. This is targeted
+user-reported acceptance; optional reference-image sending, latency under load,
+the OS matrix and final Host receipt remain separate gates. iPad45's
+hideable/movable map is accepted in both modes; Vision52 and the working
+network/Host/dependency pins are unchanged.
 
 ## Baseline and review order
 

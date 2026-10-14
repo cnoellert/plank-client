@@ -3,8 +3,9 @@
 Current image senders are installed Vision52 from
 `e8b928ffd8b253edc959c7669b2cc23b50aa99f2` and native Mac30 from
 `dd07decfa5f1a26a664cc699d3cfce2ba725b5ae`. Mac30 adds bounded shared diagnostics
-without changing Mac29's image behavior; its physical Pencil/Artist/image path
-remains unqualified. The Mac is now open alongside the retained Qt client.
+without changing Mac29's image behavior. Its targeted Pencil/Artist smoke check
+is user-accepted; physical image sending remains unqualified. The Mac is now
+open alongside the retained Qt client.
 Current installed iPad45 runtime `9dcde0af10dd11f6259d0d1bee088dff4f345466`
 retains build43's local Fit/2×, Hand and area navigation, build35's optimized
 image receiver, build36's finger option and build44's bounded diagnostics.

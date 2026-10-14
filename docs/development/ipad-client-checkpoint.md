@@ -50,8 +50,9 @@ The user-authorized local Mac switch now installs and opens native Mac30 from
 `dd07decfa5f1a26a664cc699d3cfce2ba725b5ae` at `/Applications/PLANK Native.app`,
 retaining the previous Qt client. Fresh public compilation, independent artifact
 checks and installed/running identity checks pass. It includes the bounded shared
-diagnostics newer than staged Mac29. Physical Mac Pencil/Artist reception and
-optional image sharing remain pending; see [the Mac switch](native-mac-integration.md#october-14-local-native-client-switch).
+diagnostics newer than staged Mac29. The user confirms the targeted Mac Pencil
+and Artist modifier smoke check is working; optional image sharing remains
+pending. See [the Mac switch](native-mac-integration.md#october-14-local-native-client-switch).
 
 ## Review order
 
@@ -75,7 +76,7 @@ Retarget these slices upstream in dependency order after their bases are accepte
 
 | Target | Compiled runtime source | State |
 | --- | --- | --- |
-| Mac30 | `dd07decfa5f1a26a664cc699d3cfce2ba725b5ae` | Fresh native build with bounded shared diagnostics; signed and independently verified, installed/open alongside retained Qt client; physical Pencil/Artist reception and reference-image sending pending |
+| Mac30 | `dd07decfa5f1a26a664cc699d3cfce2ba725b5ae` | Fresh native build with bounded shared diagnostics; signed and independently verified, installed/open alongside retained Qt client; user confirms targeted Pencil tap/drag and Artist modifier smoke check; reference-image sending and broader qualification pending |
 | iPad45 | `9dcde0af10dd11f6259d0d1bee088dff4f345466` | Optional movable zoom map with shared remembered preferences; focused persistence, native routing/menu and independent package gates pass; installed/open on M5 with exact45/running executable verified; targeted hide/button access/restore/header movement accepted in both modes |
 | iPad44 / Vision53 | `fe965cf1d4f5c9a1502265ecea7ea8768425a30b` | App-only bounded Pencil flow timing/count diagnostics; focused checks and fresh device compile/signing pass; staged, not installed; no latency repair or physical diagnostic qualification claimed |
 | iPad43 | `5a2ea686a3bab92df91af69c17a4ca4de1e31dca` | Shared local Fit/2× crop, matching image/cursor/input, Hand and fixed-footprint navigator in direct Desktop and Sharing; policy/contact, native rendering and independent signed package checks pass; installed/open on M5 with exact43/0.1.0 and matching running executable observed; physical zoom check pending |
@@ -178,7 +179,7 @@ final Host receipt. The targeted physical iPad32 check remains pending.
   final Host receipt. Local retirement or sender submission is not Host proof.
 - Physical custom-control OS rotation/window sizing and four-corner pad margins;
   latency, remote tilt and continuous/horizontal scrolling.
-- Physical Mac30 Pencil/Artist reception, optional image sending and the required OS/Host/profile matrix.
+- Mac30 optional image sending, latency under load, interruption/final Host receipt and the required OS/Host/profile matrix.
 - iPhone, registered external-Wacom routes and direct iPad Wacom feasibility;
   the tested PTH-660 produced no direct USB/Bluetooth input.
 - Upstream [issue9](https://github.com/instinctual/plank-client/issues/9) trust,
