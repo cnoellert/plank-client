@@ -433,3 +433,17 @@ accepted working; build22 adds saved shortcut ordering in Pad Options. The
 latest margin remapping report remains under investigation despite passing
 local corner checks. Image overlay is planned. Existing direct desktop input
 remains a separate accepted path.
+
+
+### Zoom map visibility and position — candidate45
+
+In either working mode, open the magnifying-glass menu and switch **Show Zoom
+Map** off to reveal controls beneath it. Use the map's **×** for quick hiding;
+drag the separate **Map** header to move it. Drag inside the map to choose the
+zoomed source region. **Reset Map Position** returns it to the default corner.
+The shared local preference survives app relaunch and adapts to window size;
+Artist layouts and the remote drawing transform are unchanged.
+
+This candidate is separate from installed43 and the staged44/53 diagnostic pair.
+Physical map movement/hit-routing qualification requires its authorized update;
+accepted earlier editor and input checks remain recorded.

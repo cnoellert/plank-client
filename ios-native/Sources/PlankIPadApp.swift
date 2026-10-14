@@ -28,6 +28,7 @@ struct PlankIPadRoot: View {
     @StateObject private var customControls = PlankIPadCustomControlsStore()
     @StateObject private var desktopZoom = PlankIPadZoomController()
     @StateObject private var sharingZoom = PlankIPadZoomController()
+    @StateObject private var zoomNavigatorPreferences = PlankIPadZoomNavigatorPreferences()
     @State private var sharePencil = false
     @State private var showingCustomControls = false
     @State private var editingCustomControls = false
@@ -167,7 +168,9 @@ struct PlankIPadRoot: View {
     }
     private var workingSurface: some View {
         PlankIPadWorkingSurface(barsVisible:!hideBars,consentVisible:sharePencil && pencilRelay.verification != nil,
-            measured:reportControlWindow,chromeChanged:reportControlChrome,navigation:AnyView(zoomNavigator)) {
+            measured:reportControlWindow,chromeChanged:reportControlChrome,
+            navigation:zoomNavigatorPreferences.navigatorVisible ? AnyView(zoomNavigator) : nil,
+            navigationPreferences:zoomNavigatorPreferences) {
             if sharePencil {
                 PlankIPadPencilPad(relay:pencilRelay,zoomController:sharingZoom)
             } else {
@@ -276,9 +279,11 @@ struct PlankIPadRoot: View {
     }
     @ViewBuilder private var zoomMenu: some View {
         if sharePencil {
-            PlankIPadPencilZoomMenu(zoom:sharingZoom,relay:pencilRelay,receiver:pencilRelay.imageReceiver)
+            PlankIPadPencilZoomMenu(zoom:sharingZoom,preferences:zoomNavigatorPreferences,
+                relay:pencilRelay,receiver:pencilRelay.imageReceiver)
         } else {
-            PlankIPadZoomMenu(zoom:desktopZoom,enabled:client.frameDimensions != nil && router.enabled)
+            PlankIPadZoomMenu(zoom:desktopZoom,preferences:zoomNavigatorPreferences,
+                enabled:client.frameDimensions != nil && router.enabled)
         }
     }
     @ViewBuilder private var zoomNavigator: some View {

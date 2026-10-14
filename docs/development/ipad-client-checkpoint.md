@@ -38,6 +38,12 @@ verification pass; candidates44/53
 are staged, not installed. The current43/52 session remains untouched. The later
 connection through Tailscale also worked with the image both on and off.
 
+The next iPad45 UI slice makes the zoom map optional and movable: the View menu
+has Show Zoom Map and Reset Map Position; a separate header moves it and × hides
+it. Both iPad modes share persistent local visibility/placement. No receiver or
+Host change accompanies this slice. Candidate build/package readiness is recorded
+separately; the currently installed43 session remains unchanged.
+
 ## Review order
 
 The accepted upstream Apple/Mac foundation is

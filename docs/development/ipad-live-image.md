@@ -377,3 +377,28 @@ Reproduce the focused fixtures on the build Mac:
 python3 ios-native/Tests/run-zoom-policy-checks.py --output /absolute/fresh-output
 python3 ios-native/Tests/run-zoom-input-integration-checks.py --output /absolute/another-fresh-output
 ```
+
+
+## Optional movable zoom map — iPad45
+
+The zoom toolbar menu adds **Show Zoom Map** and **Reset Map Position** in
+both direct Desktop and Pencil Sharing. The map's **×** button hides it; drag
+its **Map** header to move the panel. Dragging inside the map continues to select
+the source region. Panel movement and visibility do not request a change to Fit/2×, Hand or the
+source crop, and do not reset drawing coordinates, input epoch or the approved peer.
+
+Visibility and normalized panel position are remembered separately from Artist
+layouts and shared between both iPad modes. The original 140×108 map is inside
+a fixed 140×152 panel with separate 44-point move/hide targets. Window resizing
+and rotation clamp placement within current safe bounds and avoid actual local
+menu/consent rectangles without scaling the map or rewriting saved placements.
+If the panel cannot fit, it is omitted until space is available. A hidden panel
+is removed from the hierarchy and chrome reservations; it leaves no invisible
+hit target or dead area over Artist buttons. Reset remains reachable in the
+menu even while drawing or the map is unavailable.
+
+Existing Artist chrome retirement remains unchanged: changing reserved map
+geometry balances held Artist keys and cancels Pencil contacts forwarded through
+those keys. Ordinary canvas strokes are not retired by panel placement changes.
+This is a local UI change; the image lane, zoom transforms, receiver, protocol,
+Host, dependency pins and latency-diagnostic behavior remain unchanged.
