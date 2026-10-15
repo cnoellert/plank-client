@@ -16,6 +16,12 @@ struct PlankPencilRelaySettings: View {
             }
             Text(receiver.status).font(.footnote).foregroundStyle(.secondary)
             if receiver.connected {
+#if PLANK_NATIVE_MAC_WACOM
+                DisclosureGroup("Input Details") {
+                    Text(receiver.inputDetails).font(.caption).foregroundStyle(.secondary)
+                    Text(receiver.inputCounts).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                }
+#endif
                 Toggle("Share desktop image with this iPad",isOn:Binding(
                     get:{ receiver.imageSharingEnabled },set:{ receiver.setImageSharingEnabled($0) }))
                 PlankPencilImageStatus(sender:receiver.imageSender)

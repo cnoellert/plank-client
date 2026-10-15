@@ -2,6 +2,29 @@
 
 Tracking: [upstream coordination issue 9](https://github.com/instinctual/plank-client/issues/9).
 
+## Pencil Settings lifetime correction — candidate31
+
+After iPad46, the user reports a live picture but no Pencil cursor motion,
+including an explicit foreground/Hand-off/fresh-contact check and a reselected
+Pencil peer. Physical input qualification remains blocked.
+
+A bounded offscreen AppKit test using the production Settings appearance
+modifiers reproduces a stale pause: the window closes, retained SwiftUI content
+does not disappear, and its input owner stays held. This establishes a local
+lifecycle defect, not the exact cause of the live failure. Candidate31 ties the
+Settings owner to native window visibility/close/detachment and restores it on
+reopen. Ten native checks pass actual close/hide and independent owners; the
+background fixture models reopen's key notification rather than activating a
+real Settings scene.
+
+Mac-only **Input Details** shows source/support, desktop focus, local control
+pause count and bounded received/queued counts. Counts reuse the existing
+two-second report and do not establish final Host receipt. Pen/Artist admission,
+packet ordering, image transport and dependency/Host pins are unchanged. The
+shared-file additions are compiled only for native Mac; the non-Mac active
+source remains identical. Device installation and the targeted physical
+Settings-close/Pencil-resumption check are separate gates.
+
 ## October 14 local native client switch
 
 At the user's request, native Mac30 from

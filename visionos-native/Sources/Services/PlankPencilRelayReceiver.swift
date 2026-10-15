@@ -72,6 +72,10 @@ struct PlankDiscoveredPencilPad: Identifiable, Sendable {
     @Published private(set) var selectedName: String?
     @Published private(set) var connected = false
     @Published private(set) var imageSharingEnabled = false
+#if PLANK_NATIVE_MAC_WACOM
+    @Published private(set) var inputDetails = "Waiting for desktop input state"
+    @Published private(set) var inputCounts = "Received messages: 0 · Pencil samples queued: 0"
+#endif
     let imageSender = PlankPencilImageSender()
     private var imageBinding: PlankPencilSessionBinding?
     private var imageStarted = false
@@ -253,6 +257,10 @@ struct PlankDiscoveredPencilPad: Identifiable, Sendable {
     }
     func sync() {
         guard let client else { return }
+#if PLANK_NATIVE_MAC_WACOM
+        let nextDetails = client.pencilRelayInputDetails
+        if inputDetails != nextDetails { inputDetails = nextDetails }
+#endif
         logFlowDiagnostics()
         syncImage()
         guard let peer else {
@@ -313,6 +321,11 @@ struct PlankDiscoveredPencilPad: Identifiable, Sendable {
         guard connected, let peer,
               let flow = flowDiagnostics.snapshotForReport(at: DispatchTime.now().uptimeNanoseconds) else { return }
         let incoming = peer.diagnostics.incoming
+#if PLANK_NATIVE_MAC_WACOM
+        // Reuse the existing two-second report; never publish per pen sample.
+        let nextCounts = "Received messages: \(flow.messages) · Pencil samples queued: \(flow.normalizedPens)"
+        if inputCounts != nextCounts { inputCounts = nextCounts }
+#endif
         func ms(_ nanos: UInt64) -> Double { Double(nanos) / 1_000_000 }
         // All clocks here are local to this receiver. Counts include rejected
         // admission in messages, while normalizedPens counts successful offers.

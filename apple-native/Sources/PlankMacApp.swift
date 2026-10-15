@@ -26,7 +26,6 @@ struct PlankMacSettings: View {
     @EnvironmentObject private var client: PlankCoreClient
     @AppStorage("plank.mac.tablet-source") private var tablet = "usb"
     @State private var speakers = PlankAudioPreferences.playOnHost()
-    @State private var pencilControlsOwner = UUID()
     var body: some View {
         Form {
             Picker("Tablet", selection: $tablet) {
@@ -52,8 +51,8 @@ struct PlankMacSettings: View {
             Toggle("Also play on workstation speakers", isOn: $speakers)
                 .onChange(of: speakers) { _, value in UserDefaults.standard.set(value, forKey: PlankAudioPreferences.playOnHostKey) }
         }.padding(24).frame(width: 460)
-            .onAppear { NSCursor.arrow.set(); client.setPencilLocalControls(true, owner: pencilControlsOwner) }
-            .onDisappear { client.setPencilLocalControls(false, owner: pencilControlsOwner) }
+            .onAppear { NSCursor.arrow.set() }
+            .background(PlankMacPencilSettingsPause(client:client))
     }
 }
 
