@@ -74,6 +74,25 @@ The normal Reconnect action reached sign-in, which is left to the user. Sustaine
 stream and remaining Sharing qualification are held; Host packages, network
 settings and all device installations remain unchanged.
 
+A later desktop session lasting about 22 minutes also failed, this time reporting
+the native audio receiver's connection loss with zero normalized Pencil samples
+in that session. Local queues were again empty. This establishes that a desktop
+disconnect can occur without Pencil traffic; it does not identify its cause.
+
+### Pencil discovery after loss of the USB link
+
+With the iPad foreground pad still showing Stop Sharing, both native Settings and
+a fresh eight-second browser saw no Pencil advertisement. Restarting Sharing
+once did not restore it. Current USB inventory and interface checks showed the
+previously present iPad device and USB network interfaces were absent.
+
+After the user reconnected USB, the device and wired diagnostic tunnel returned.
+The Pencil service immediately reappeared on those USB interfaces, and selecting
+it in native Settings connected with the existing approval. No app, Host,
+dependency, identity or network setting changed. This recovers discovery in that
+setup; the actual Pencil transport interface and guest Wi-Fi policy were not
+measured. It does not resolve the independent workstation stream failures.
+
 ## October 14 local native client switch
 
 At the user's request, native Mac30 from
