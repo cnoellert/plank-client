@@ -56,6 +56,24 @@ Settings repair is claimed. Image, stable zoom/Hand, held-input and final Host
 receipt qualification remain separate; the now-obsolete iPad screenshot is not
 required.
 
+### October 15 connection loss during dragging
+
+A subsequent Mac31 session failed after about ten minutes with the native data
+receiver reporting `Protocol error: connection lost`. The app stayed running.
+In the final eight seconds, the Mac-to-workstation transport's reported RTT rose
+from about 20 ms to 2.37 seconds. At failure, local input queue depth and native
+submission backlog were zero, with no failed input submission. The approved iPad
+peer continued exchanging heartbeat traffic after the workstation session ended.
+
+This distinguishes the failed workstation endpoint from the surviving Pencil
+peer, but does not identify network, Host or client root cause. Cumulative loss
+counters are not a measured loss rate, and an empty local queue does not exclude
+a Host receive-queue problem. A bounded unprivileged Host check found services
+still running without a service restart; detailed Host logs were unreadable.
+The normal Reconnect action reached sign-in, which is left to the user. Sustained
+stream and remaining Sharing qualification are held; Host packages, network
+settings and all device installations remain unchanged.
+
 ## October 14 local native client switch
 
 At the user's request, native Mac30 from
