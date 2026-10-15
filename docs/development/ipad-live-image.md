@@ -487,3 +487,10 @@ Hand-off and fresh-contact check. Mac UI shows the Pencil peer connected and
 reference image sending; this is not evidence of pen delivery. The inspection
 popover was closed afterward. The iPad's own admission message is requested to
 localize the failure; no input repair or physical46 pass is claimed.
+
+The iPad screenshot then showed the initial choose-this-iPad message and image
+reception off. A finite discovery snapshot found the current valid service.
+When inspected again, the Mac showed **Pencil connection ended**. Selecting the
+advertised pad reconnected under its existing approval; prior Mac image consent
+was restored and the inspection panel closed. Actual pen delivery after this
+peer reselection remains pending. The cause of the ended connection is unmeasured.
