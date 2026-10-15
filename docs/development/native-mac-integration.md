@@ -95,8 +95,10 @@ measured. It does not resolve the independent workstation stream failures.
 The user then confirmed fresh Pencil hover and tap work through the restored
 connection. The subsequent iPad46 Sharing check also confirms local 2× View
 activates while the Mac chat is foreground and remains selected when PLANK
-Desktop returns. Accept those targeted results; Hand isolation, held-input
-behavior, sustained streaming and final Host receipt remain separate checks.
+Desktop returns. The user also confirmed an Artist modifier releases cleanly
+after drawing and a Fit request waits for an actual held Pencil contact to lift.
+Accept those targeted results; Hand isolation, genuine OS cancellation,
+sustained streaming and final Host receipt remain separate checks.
 
 ## October 14 local native client switch
 
