@@ -97,8 +97,10 @@ connection. The subsequent iPad46 Sharing check also confirms local 2× View
 activates while the Mac chat is foreground and remains selected when PLANK
 Desktop returns. The user also confirmed an Artist modifier releases cleanly
 after drawing and a Fit request waits for an actual held Pencil contact to lift.
-Accept those targeted results; Hand isolation, genuine OS cancellation,
-sustained streaming and final Host receipt remain separate checks.
+The final Sharing Hand check confirms local panning without remote clicks/drags
+and drawing resuming when Hand is turned off. Accept those targeted results;
+genuine OS cancellation, sustained streaming and final Host receipt remain
+separate checks.
 
 ## October 14 local native client switch
 

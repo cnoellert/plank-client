@@ -1,20 +1,30 @@
 # iPad live reference image and magnification
 
 Current image senders are installed Vision52 from
-`e8b928ffd8b253edc959c7669b2cc23b50aa99f2` and native Mac30 from
-`dd07decfa5f1a26a664cc699d3cfce2ba725b5ae`. Mac30 adds bounded shared diagnostics
-without changing Mac29's image behavior. Its targeted Pencil/Artist smoke check
-is user-accepted; the later October15 trial also reports hover, click/drag and
-basic Sharing zoom working after a one-to-two-second startup delay. Image quality
-and timing remain unqualified. The Mac is open alongside the retained Qt client.
-Current installed iPad45 runtime `9dcde0af10dd11f6259d0d1bee088dff4f345466`
+`e8b928ffd8b253edc959c7669b2cc23b50aa99f2` and native Mac31 from
+`f82c2a4dfdd37782ac4baeed46f313a1664c8baf`. Mac31 adds the local Settings
+pause-lifetime correction and Input Details; Mac29's image behavior is retained.
+The Mac is installed with the Qt client retained as a fallback. Current installed
+iPad46 runtime `4c7731272c68f53b4272f959ca695d1803b7080d`
 retains build43's local Fit/2×, Hand and area navigation, build35's optimized
-image receiver, build36's finger option and build44's bounded diagnostics.
+image receiver, build36's finger option and build44's bounded diagnostics. It
+separates local Sharing navigation from remote input admission.
 The user accepts map hide/button access, restore and header movement in both
 Desktop and Pencil Sharing. The targeted editor outline/editing check from42
-remains accepted. Direct tip alignment and basic Mac Sharing zoom are now
-user-reported working; held-input view changes and Sharing Hand isolation remain
-separate physical gates.
+remains accepted. Direct tip alignment is user-accepted. After USB discovery
+recovery, the October15 Mac31/iPad46 Sharing trial confirms hover/tap, local 2×
+availability while the Mac chat is foreground, and preserved selection when
+PLANK Desktop returns. The user also confirms clean Artist modifier release,
+Fit waiting for actual Pencil lift, and Hand panning only the local view with
+drawing resuming afterward. These are targeted operating-view results, not
+sustained streaming, genuine OS cancellation or final Host release receipt.
+
+Two Mac workstation sessions subsequently documented in the native Mac guide
+lost their transport; one had zero Pencil samples. Discovery was separately
+restored when the previously missing USB link returned. Neither event proves a
+network, Host or client root cause. Image quality and end-to-end timing remain
+unqualified; optional image promotion stays held. Staged Vision53 is reverified
+as current for bounded diagnostics and is not yet installed.
 
 The October 11 artist trial confirms the picture appears and latency is better,
 but below the hoped responsiveness; image promotion remains held. Older
