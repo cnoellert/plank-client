@@ -92,6 +92,9 @@ it in native Settings connected with the existing approval. No app, Host,
 dependency, identity or network setting changed. This recovers discovery in that
 setup; the actual Pencil transport interface and guest Wi-Fi policy were not
 measured. It does not resolve the independent workstation stream failures.
+The user then confirmed fresh Pencil hover and tap work through the restored
+connection. Accept that targeted recovery; stable local Sharing zoom across
+Mac focus changes and held-input behavior remain separate checks.
 
 ## October 14 local native client switch
 
