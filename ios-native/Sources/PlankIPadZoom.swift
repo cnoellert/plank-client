@@ -79,13 +79,19 @@ struct PlankIPadZoomState: Equatable, Sendable {
         apply(next)
     }
 
+    /// An input-only admission change retires the old contact, not the local
+    /// picture. Discard its pending request before a stale up can apply it.
+    func retireContactPreservingView() {
+        pending = nil
+        lastHover = nil
+        remoteContactActive = false
+    }
+
     /// Session/source/forced geometry replacement owns contact retirement before
     /// calling this. Pending voluntary requests and old-source hover are discarded.
     /// A fresh local revision is published even when the view was already Fit.
     func reset() {
-        pending = nil
-        lastHover = nil
-        remoteContactActive = false
+        retireContactPreservingView()
         revision += 1
         state = .fit
     }

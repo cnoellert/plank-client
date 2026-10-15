@@ -7,7 +7,8 @@ import Combine
     @MainActor static func main() {
         direct()
         sharing()
-        print("PASS: exact direct/shared release ordering, deferred immutable crop, synchronous image/input mapping, held Shift/Space preservation, held pointer-button deferral, local Hand under ignored finger input, forwarded Artist Pencil ownership, incremental Hand pan, fresh-contact assignment and forced transition discard")
+        sharingAvailability()
+        print("PASS: direct/shared release ordering, deferred crop, image/input mapping, held modifiers, local Hand, configured image navigation during paused remote admission, focus-only view preservation, blocked remote pen/keys, stale-contact discard and geometry/source resets")
     }
 
     @MainActor static func direct() {
@@ -245,5 +246,65 @@ import Combine
         forced.timestamp = 71; view.touchesMoved([forced],with:nil); view.touchesEnded([forced],with:nil)
         precondition(relay.events == retired)
         precondition(retired.filter { if case .key(_,false,_) = $0 { return true }; return false }.count == 2)
+    }
+
+    @MainActor static func sharingAvailability() {
+        let relay = PlankIPadPencilRelay(), zoom = PlankIPadZoomController()
+        let view = PlankIPadPencilPadView(relay:relay,zoomController:zoom)
+        relay.active = false
+        precondition(relay.canNavigateImage && !relay.canDraw,
+            "A configured image remains locally navigable while Mac input is paused")
+        relay.sharing = false; precondition(!relay.canNavigateImage); relay.sharing = true
+        relay.hasConfiguration = false; precondition(!relay.canNavigateImage); relay.hasConfiguration = true
+        relay.adjustingPad = true; precondition(!relay.canNavigateImage); relay.adjustingPad = false
+        relay.imageReceiver.enabled = false; precondition(!relay.canNavigateImage); relay.imageReceiver.enabled = true
+
+        zoom.requestMode(.double); zoom.requestHand(true)
+        let finger = UITouch(.direct); finger.view = view
+        view.touchesBegan([finger],with:nil)
+        precondition(view.handTouch === finger)
+        let center = zoom.state.center
+        finger.point.x += 40; view.touchesMoved([finger],with:nil)
+        view.touchesEnded([finger],with:nil)
+        precondition(zoom.state.center.x < center.x && !zoom.remoteContactActive)
+        let pen = UITouch(.pencil); pen.view = view; pen.timestamp = 80
+        zoom.requestHand(false); view.touchesBegan([pen],with:nil)
+        precondition(view.touch == nil && !view.policy.touching)
+        precondition(!relay.beginControl(owner:UUID(),binding:.init(code:0x20)))
+        precondition(!relay.tapControl(binding:.init(code:0x10)))
+        precondition(!relay.events.contains { if case .pen = $0 { return true }; if case .key = $0 { return true }; return false },
+            "Local navigation cannot grant remote pen or key admission")
+
+        // Real production configuration handling retires held input on focus
+        // loss but preserves the applied crop; queued requests cannot replay.
+        relay.configureForTest(width:1000,height:1000,active:true)
+        let current = zoom.state, revision = zoom.revision
+        let space = UUID(); precondition(relay.beginControl(owner:space,binding:.init(code:0x20)))
+        view.touchesBegan([pen],with:nil); precondition(view.policy.touching)
+        zoom.requestMode(.fit)
+        let start = relay.events.count
+        relay.configureForTest(width:1000,height:1000,active:false)
+        precondition(zoom.state == current && zoom.revision == revision && !zoom.remoteContactActive)
+        precondition(relay.canNavigateImage && !relay.canDraw && relay.controlKeys.controlOwners.isEmpty)
+        let tail = Array(relay.events.dropFirst(start))
+        let phases: [PlankNormalizedPen.Phase] = tail.compactMap {
+            if case .pen(let packet) = $0 { return packet.phase }; return nil
+        }
+        precondition(phases == [.cancel,.leave])
+        precondition(tail.contains { if case .key(0x20,false,_) = $0 { return true }; return false })
+        pen.timestamp = 81; view.touchesMoved([pen],with:nil); view.touchesEnded([pen],with:nil)
+        precondition(relay.events.count == start + tail.count && zoom.state == current)
+        zoom.requestCenter(CGPoint(x:0.7,y:0.6))
+        let pausedView = zoom.state
+        relay.configureForTest(width:1000,height:1000,active:true)
+        precondition(zoom.state == pausedView && relay.canDraw)
+        pen.timestamp = 82; view.touchesBegan([pen],with:nil)
+        precondition(view.policy.touching && zoom.remoteContactActive)
+        pen.timestamp = 83; view.touchesEnded([pen],with:nil)
+        relay.configureForTest(width:1200,height:1000,active:true)
+        precondition(zoom.state == .fit, "Actual source dimensions still reset the view")
+        zoom.requestMode(.double); relay.hasConfiguration = false
+        relay.configureForTest(width:1200,height:1000,active:false)
+        precondition(zoom.state == .fit, "A first configuration cannot inherit an old peer's view")
     }
 }

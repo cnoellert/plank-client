@@ -69,6 +69,7 @@ final class UIEvent {
     func touchesMoved(_ touches:Set<UITouch>,with event:UIEvent?) {}
     func touchesEnded(_ touches:Set<UITouch>,with event:UIEvent?) {}
     func touchesCancelled(_ touches:Set<UITouch>,with event:UIEvent?) {}
+    func setNeedsLayout() {}
 }
 @MainActor final class PlankIPadVideoView: UIView {
     let client:PlankCoreClient
@@ -143,20 +144,26 @@ RELAY_HEADER = r'''
 @MainActor final class PlankIPadPencilRelay {
     enum Event:Equatable { case pen(PlankNormalizedPen), key(UInt16,Bool,UInt8), view(CGRect) }
     var events:[Event] = []
-    var active = true, adjustingPad = false
+    var active = true, adjustingPad = false, sharing = true, hasConfiguration = true
+    var status = ""
     var width = 1000, height = 1000
     var inputEpoch:UInt64 = 0
     var padSettings = PlankIPadPencilPadSettings()
-    struct ImageReceiver { var enabled = true }
+    struct ImageReceiver {
+        var enabled = true
+        func configureDimensions(width:Int,height:Int) {}
+    }
     var imageReceiver = ImageReceiver()
     var controlKeys = PlankControlKeyOwnership()
     weak var pad:PlankIPadPencilPadView?
-    var canDraw:Bool { active && !adjustingPad }
     func send(_ packet:PlankNormalizedPen) { events.append(.pen(packet)) }
     func offerControlKeys(_ batch:[PlankControlKeyEvent]) -> Bool {
         events += batch.map { .key($0.code,$0.pressed,$0.modifiers) }; return true
     }
     func forceRetire() { retireInput() }
+    func configureForTest(width:Int,height:Int,active:Bool) {
+        applyConfiguration(width:width,height:height,active:active)
+    }
 '''
 
 SHARED_HEADER = r'''
@@ -212,13 +219,13 @@ def main():
     # Select from the native PadView only, because Relay has unrelated lifecycle methods.
     pad_source = shared_source[shared_source.index("@MainActor final class PlankIPadPencilPadView:"):]
     shared_markers = ["private var viewport:", "private func refreshPresentation()", "func retire()",
-        "func retireForTransition()", "func resetViewAfterTransition()",
+        "func retireForTransition()", "func resetViewAfterTransition(",
         "private func finishRemoteContact()", "private func retireHover()", "private func applyZoomState(",
         "private func updateRemoteContact()", "private func beginHand(", "private func moveHand(",
         "private func endHand(", "private func send(", "override func touchesBegan(",
         "override func touchesMoved(", "override func touchesEnded(", "override func touchesCancelled("]
-    relay_markers = ["func beginControl(", "func endControl(", "func tapControl(", "func releaseControls()",
-        "private func retireInput()"]
+    relay_markers = ["var canDraw:", "var canNavigateImage:", "func beginControl(", "func endControl(",
+        "func tapControl(", "func releaseControls()", "private func retireInput(", "private func applyConfiguration("]
     bodies = {}
     def extracts(source, markers, label):
         result = []

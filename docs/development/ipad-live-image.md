@@ -444,3 +444,27 @@ and Receive desktop image enabled. A Mac focus pause can therefore disable local
 zoom. The current iPad image state was not yet confirmed, so the exact cause
 remains open. The earlier user-reported basic zoom result is retained; stable
 availability and held-modifier/view-change behavior are not qualified.
+
+### Local Sharing navigation correction — candidate46
+
+The user confirmed that the live workstation picture was visible while 2×
+could not be selected. The existing Sharing menu gated local navigation on
+remote input admission. A Mac focus pause could disable 2× even though image
+reception continued; repeated input configurations also reset the local view.
+This source defect is established independently of the unmeasured physical
+state at the exact failed tap.
+
+Candidate46 allows 2×, Center and deliberate Hand navigation when the current
+approved Pencil peer has supplied desktop dimensions, image reception is on,
+and the iPad is not adjusting local settings. Remote pen, squeeze and Artist
+keys still require active client input admission. A focus-only configuration
+retires contact and keys, discards pending old-contact view changes and preserves
+the applied crop. New peer, changed dimensions, image mapping changes and local
+geometry/settings transitions retain their existing reset behavior. Returning
+focus admits only fresh contacts; it does not replay the retired stroke.
+
+Focused production-body checks cover paused navigation without remote output,
+held-input retirement, stale move/up rejection, focus resume and source/geometry
+reset. Native menu and device package checks are recorded separately. Physical
+availability and held-input qualification remain pending; this is not a latency
+or transport repair.

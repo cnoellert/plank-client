@@ -36,7 +36,7 @@ struct PlankIPadPencilZoomMenu: View {
     @ObservedObject var relay: PlankIPadPencilRelay
     @ObservedObject var receiver: PlankIPadPencilImageReceiver
     var body: some View {
-        PlankIPadZoomMenu(zoom:zoom,preferences:preferences,enabled:relay.canDraw && receiver.enabled)
+        PlankIPadZoomMenu(zoom:zoom,preferences:preferences,enabled:relay.canNavigateImage)
     }
 }
 
@@ -189,6 +189,6 @@ struct PlankIPadPencilZoomNavigator: View {
     @ObservedObject var receiver: PlankIPadPencilImageReceiver
     var body: some View {
         PlankIPadZoomNavigator(zoom:zoom,width:relay.width,height:relay.height,
-            enabled:relay.canDraw && receiver.enabled)
+            enabled:relay.canNavigateImage)
     }
 }

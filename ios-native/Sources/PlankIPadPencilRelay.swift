@@ -16,6 +16,8 @@ import Combine
     let imageReceiver = PlankIPadPencilImageReceiver()
     private var controlKeys = PlankControlKeyOwnership()
     var canDraw: Bool { active && !adjustingPad }
+    // Local viewing does not grant permission to send pen or Artist input.
+    var canNavigateImage: Bool { sharing && hasConfiguration && !adjustingPad && imageReceiver.enabled }
     private var listener: NWListener?
     private var peer: PlankPencilRelayPeer?
     private var generation = UUID(), peerID = UUID()
@@ -62,11 +64,11 @@ import Combine
         if offerControlKeys(change.events) { _ = controlKeys.apply(change) }
         else { controlKeys = PlankControlKeyOwnership() }
     }
-    private func retireInput() {
+    private func retireInput(preservingView: Bool = false) {
         inputEpoch &+= 1
         pad?.retireForTransition()
         releaseControls()
-        pad?.resetViewAfterTransition()
+        pad?.resetViewAfterTransition(preservingView:preservingView)
     }
     func start() {
         guard !sharing else { return }
@@ -156,14 +158,19 @@ import Combine
         do {
             while let message = try peer.incoming.take() {
                 guard case let .configuration(w,h,next) = message else { throw PlankPencilWireError.invalid }
-                // Retire the old contact before the pad mapping/admission changes.
-                retireInput(); width = Int(w); height = Int(h); active = next
-                hasConfiguration = true
-                imageReceiver.configureDimensions(width:width,height:height)
-                status = next ? "Connected. Draw in the outlined area." : "Connected. Bring the PLANK desktop into focus on the client."
-                pad?.setNeedsLayout()
+                applyConfiguration(width:Int(w),height:Int(h),active:next)
             }
         } catch { peer.close(); status = "Pencil connection ended." }
+    }
+    private func applyConfiguration(width nextWidth: Int,height nextHeight: Int,active next: Bool) {
+        // The approved peer's dimensions define the view. Focus only changes
+        // remote input admission; it must not disable or recenter local viewing.
+        let sameSourceGeometry = hasConfiguration && width == nextWidth && height == nextHeight
+        retireInput(preservingView:sameSourceGeometry)
+        width = nextWidth; height = nextHeight; active = next; hasConfiguration = true
+        imageReceiver.configureDimensions(width:width,height:height)
+        status = next ? "Connected. Draw in the outlined area." : "Connected. Bring the PLANK desktop into focus on the client."
+        pad?.setNeedsLayout()
     }
     func approve() { guard verification != nil else { return }; verification = nil; peer?.approve(); status = "Verifying client…" }
     func send(_ packet: PlankNormalizedPen) {
@@ -396,10 +403,11 @@ struct PlankIPadPencilPad: UIViewRepresentable {
         for p in policy.retire() { relay.send(p) }
         touch = nil; handTouch = nil; handPoint = nil; cursor.path = nil
     }
-    func resetViewAfterTransition() {
-        // Forced admission/geometry changes retain their existing retirement,
-        // while discarding every request deferred against the retired contact.
-        zoomController?.reset()
+    func resetViewAfterTransition(preservingView: Bool = false) {
+        // Every transition discards requests deferred against the old contact.
+        // Input-only admission preserves the already applied picture transform.
+        if preservingView { zoomController?.retireContactPreservingView() }
+        else { zoomController?.reset() }
         updateRemoteContact()
     }
     private func finishRemoteContact() {
@@ -422,7 +430,7 @@ struct PlankIPadPencilPad: UIViewRepresentable {
         zoomController?.setRemoteContactActive(touch != nil || policy.touching)
     }
     private func beginHand(_ touches: Set<UITouch>) -> Bool {
-        guard relay.canDraw, zoomState?.handEnabled == true,
+        guard relay.canNavigateImage, zoomState?.handEnabled == true,
               let next = touches.first(where: {
                   ($0.type == .direct || $0.type == .pencil) && ($0.view == nil || $0.view === self)
               }) else { return false }
