@@ -93,8 +93,10 @@ dependency, identity or network setting changed. This recovers discovery in that
 setup; the actual Pencil transport interface and guest Wi-Fi policy were not
 measured. It does not resolve the independent workstation stream failures.
 The user then confirmed fresh Pencil hover and tap work through the restored
-connection. Accept that targeted recovery; stable local Sharing zoom across
-Mac focus changes and held-input behavior remain separate checks.
+connection. The subsequent iPad46 Sharing check also confirms local 2× View
+activates while the Mac chat is foreground and remains selected when PLANK
+Desktop returns. Accept those targeted results; Hand isolation, held-input
+behavior, sustained streaming and final Host receipt remain separate checks.
 
 ## October 14 local native client switch
 
