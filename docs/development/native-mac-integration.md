@@ -25,6 +25,12 @@ shared-file additions are compiled only for native Mac; the non-Mac active
 source remains identical. Device installation and the targeted physical
 Settings-close/Pencil-resumption check are separate gates.
 
+Runtime `f82c2a4dfdd37782ac4baeed46f313a1664c8baf` is freshly compiled and
+signed as Mac31, staged for an authorized disconnected update. Exact payload
+parity across the executable and four FFmpeg libraries, signature/entitlements,
+298 dependency entries, native tests and protected delivery bodies pass separate
+verification. Current installed Mac30, iPad46 and Vision52 remain untouched.
+
 ## October 14 local native client switch
 
 At the user's request, native Mac30 from
