@@ -54,6 +54,10 @@ diagnostics newer than staged Mac29. The user confirms the targeted Mac Pencil
 and Artist modifier smoke check is working; optional image sharing remains
 pending. See [the Mac switch](native-mac-integration.md#october-14-local-native-client-switch).
 
+The user subsequently reports the direct iPad45 2× trial stays under the Pencil.
+The direct check is resolved; Sharing image/zoom/Hand and held-contact/modifier
+view changes remain separate physical checks. See [the zoom feedback](ipad-live-image.md#october-14-direct-zoom-feedback).
+
 ## Review order
 
 The accepted upstream Apple/Mac foundation is

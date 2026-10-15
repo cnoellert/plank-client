@@ -410,3 +410,13 @@ The user answered **Works in both modes** to hide/button access, menu restoratio
 and header movement in Desktop and Pencil Sharing. This is targeted map acceptance;
 it does not establish the latency cause, all window/OS cases or final Host receipt.
 Vision52 and the existing native/dependency/Host/network pins remain unchanged.
+
+
+## October 14 direct zoom feedback
+
+On installed iPad45, the user answered “Yes. Stays under pencil” to the requested
+direct Desktop 2× edge-drawing, Hand pan/off and return-Fit check. Record this
+as user-reported direct trial acceptance, with tip alignment explicitly
+confirmed; individual Hand details were not separately described. No timing,
+OS input-arbitration or final Host receipt was measured. Sharing image/view/input
+alignment and held-contact/modifier view changes remain separate physical gates.
