@@ -470,5 +470,8 @@ input is paused, plus image-consent/configuration/settings gates. The fresh
 device build, exact M5 profile and signature, unchanged entitlements/dependencies
 and protected source boundaries pass separate package verification. Runtime
 `4c7731272c68f53b4272f959ca695d1803b7080d` is signed and staged as iPad46;
-installed iPad45, Mac30 and Vision52 are unchanged. Physical availability and
-held-input qualification remain pending; this is not a latency or transport repair.
+the user subsequently authorized its disconnected update. Independent device
+inventories verify installed46/0.1.0 and the exact running executable. Mac30 and
+Vision52 are unchanged. The targeted Sharing 2×/Hand availability, focus-return
+crop continuity and fresh-contact check is pending; held-modifier qualification
+follows separately. This is not a latency or transport repair.
