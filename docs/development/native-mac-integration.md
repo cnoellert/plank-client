@@ -31,11 +31,22 @@ network/Host/dependency pins are unchanged.
 
 The later Sharing trial reported no iPad image or Pencil cursor. The Mac then
 reported a terminated video transport (`native=-3`, state8, connection lost).
-Current Mac physical qualification is held; the earlier brief user confirmation
-remains historical evidence, not resolution of this failure. The existing signed
+This failure held Mac physical qualification at that checkpoint; the earlier
+brief user confirmation did not resolve it. The existing signed
 Mac30 was reopened with captured startup logs to diagnose the desktop stream
 without Pencil or image sharing. No Host, network, recipe or app runtime changed.
 No transport, image or input repair is claimed.
+
+### October 15 targeted input recovery
+
+With iPad45 and Mac30 unchanged, USB attached and only guest Wi-Fi available,
+the user reports Pencil hover, click/drag and basic Sharing zoom now work on
+Flame-01 reached through Tailscale. Input took a reported one or two seconds
+to come to life. This confirms targeted operation in that trial, not a measured
+startup delay or a repair of the prior video transport/latency failure. The
+actual Pencil transport interface was not measured. Held modifiers and view
+changes during an active stroke remain the next physical gate; Sharing Hand
+isolation, sustained load and final Host receipt remain separately unqualified.
 
 ## Baseline and review order
 

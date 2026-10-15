@@ -58,6 +58,11 @@ The user subsequently reports the direct iPad45 2× trial stays under the Pencil
 The direct check is resolved; Sharing image/zoom/Hand and held-contact/modifier
 view changes remain separate physical checks. See [the zoom feedback](ipad-live-image.md#october-14-direct-zoom-feedback).
 
+On October15, the user reports native Mac Sharing hover, click/drag and basic
+zoom working, after a one-to-two-second startup delay. The current input question
+is resolved. Held-modifier/view-change behavior remains pending; the prior
+transport failure has no confirmed cause or repair. See [the current Mac result](native-mac-integration.md#october-15-targeted-input-recovery).
+
 ## Review order
 
 The accepted upstream Apple/Mac foundation is

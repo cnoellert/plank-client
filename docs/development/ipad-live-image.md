@@ -4,14 +4,17 @@ Current image senders are installed Vision52 from
 `e8b928ffd8b253edc959c7669b2cc23b50aa99f2` and native Mac30 from
 `dd07decfa5f1a26a664cc699d3cfce2ba725b5ae`. Mac30 adds bounded shared diagnostics
 without changing Mac29's image behavior. Its targeted Pencil/Artist smoke check
-is user-accepted; physical image sending remains unqualified. The Mac is now
-open alongside the retained Qt client.
+is user-accepted; the later October15 trial also reports hover, click/drag and
+basic Sharing zoom working after a one-to-two-second startup delay. Image quality
+and timing remain unqualified. The Mac is open alongside the retained Qt client.
 Current installed iPad45 runtime `9dcde0af10dd11f6259d0d1bee088dff4f345466`
 retains build43's local Fit/2×, Hand and area navigation, build35's optimized
 image receiver, build36's finger option and build44's bounded diagnostics.
 The user accepts map hide/button access, restore and header movement in both
 Desktop and Pencil Sharing. The targeted editor outline/editing check from42
-remains accepted. Physical operating-view zoom qualification remains pending.
+remains accepted. Direct tip alignment and basic Mac Sharing zoom are now
+user-reported working; held-input view changes and Sharing Hand isolation remain
+separate physical gates.
 
 The October 11 artist trial confirms the picture appears and latency is better,
 but below the hoped responsiveness; image promotion remains held. Older
@@ -420,3 +423,14 @@ as user-reported direct trial acceptance, with tip alignment explicitly
 confirmed; individual Hand details were not separately described. No timing,
 OS input-arbitration or final Host receipt was measured. Sharing image/view/input
 alignment and held-contact/modifier view changes remain separate physical gates.
+
+
+## October 15 Mac Sharing zoom feedback
+
+The user reports hover, click/drag and zoom working through native Mac30, with
+iPad45 unchanged, after a one-to-two-second startup delay. USB is attached and
+only the guest network is available; Flame-01 is reached through Tailscale.
+No network setting or runtime changed to obtain this result. This records basic
+Sharing zoom operation, not independently measured picture latency, an identified
+transport repair or a separately described Hand-isolation result. Held-modifier
+ownership and a requested view change during an active stroke remain pending.
