@@ -2,7 +2,7 @@
 
 Tracking: [upstream coordination issue 9](https://github.com/instinctual/plank-client/issues/9).
 
-## Pencil Settings lifetime correction — candidate31
+## Pencil Settings lifetime correction — installed31
 
 After iPad46, the user reports a live picture but no Pencil cursor motion,
 including an explicit foreground/Hand-off/fresh-contact check and a reselected
@@ -22,14 +22,23 @@ pause count and bounded received/queued counts. Counts reuse the existing
 two-second report and do not establish final Host receipt. Pen/Artist admission,
 packet ordering, image transport and dependency/Host pins are unchanged. The
 shared-file additions are compiled only for native Mac; the non-Mac active
-source remains identical. Device installation and the targeted physical
-Settings-close/Pencil-resumption check are separate gates.
+source remains identical. The targeted physical Settings-close/Pencil-resumption
+check remains separate from the native component checks.
 
 Runtime `f82c2a4dfdd37782ac4baeed46f313a1664c8baf` is freshly compiled and
-signed as Mac31, staged for an authorized disconnected update. Exact payload
+signed as Mac31. Exact payload
 parity across the executable and four FFmpeg libraries, signature/entitlements,
 298 dependency entries, native tests and protected delivery bodies pass separate
-verification. Current installed Mac30, iPad46 and Vision52 remain untouched.
+verification.
+
+The user authorized the disconnected update on October 15. Mac31 is now installed
+at `/Applications/PLANK Native.app` and opens normally to the workstation browser.
+Independent installation checks confirm the exact signed bundle, running
+executable and captured startup stdout/stderr. The original installed Mac30 is
+preserved for rollback; the Qt client, iPad46 and Vision52 are unchanged. No
+preferences, approvals, network settings or Host packages were changed. Physical
+Pencil recovery is not yet accepted; if input remains blocked, use **Input Details**
+to distinguish admission state from received and locally queued samples.
 
 ## October 14 local native client switch
 
