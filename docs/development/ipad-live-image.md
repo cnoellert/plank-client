@@ -475,3 +475,9 @@ inventories verify installed46/0.1.0 and the exact running executable. Mac30 and
 Vision52 are unchanged. The targeted Sharing 2×/Hand availability, focus-return
 crop continuity and fresh-contact check is pending; held-modifier qualification
 follows separately. This is not a latency or transport repair.
+
+The first post-update response reports a visible picture but no Pencil motion.
+The Mac was showing this chat when inspected; its desktop window existed without
+an open Session Controls panel. Focus at the failed sample and the iPad's Hand
+state were not measured. A single explicit foreground/Hand-off/fresh-contact
+check is pending, and physical46 acceptance remains blocked.
