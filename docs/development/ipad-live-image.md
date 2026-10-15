@@ -434,3 +434,13 @@ No network setting or runtime changed to obtain this result. This records basic
 Sharing zoom operation, not independently measured picture latency, an identified
 transport repair or a separately described Hand-isolation result. Held-modifier
 ownership and a requested view change during an active stroke remain pending.
+
+
+### Sharing zoom availability follow-up
+
+The next held-input trial could not start because the user could not select
+2×. In this runtime, Sharing view controls require both active Pencil admission
+and Receive desktop image enabled. A Mac focus pause can therefore disable local
+zoom. The current iPad image state was not yet confirmed, so the exact cause
+remains open. The earlier user-reported basic zoom result is retained; stable
+availability and held-modifier/view-change behavior are not qualified.
