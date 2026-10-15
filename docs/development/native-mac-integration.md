@@ -27,6 +27,16 @@ the OS matrix and final Host receipt remain separate gates. iPad45's
 hideable/movable map is accepted in both modes; Vision52 and the working
 network/Host/dependency pins are unchanged.
 
+### Subsequent Sharing qualification failure
+
+The later Sharing trial reported no iPad image or Pencil cursor. The Mac then
+reported a terminated video transport (`native=-3`, state8, connection lost).
+Current Mac physical qualification is held; the earlier brief user confirmation
+remains historical evidence, not resolution of this failure. The existing signed
+Mac30 was reopened with captured startup logs to diagnose the desktop stream
+without Pencil or image sharing. No Host, network, recipe or app runtime changed.
+No transport, image or input repair is claimed.
+
 ## Baseline and review order
 
 The Vision foundation and transport correction are merged into Client
