@@ -37,8 +37,15 @@ Independent installation checks confirm the exact signed bundle, running
 executable and captured startup stdout/stderr. The original installed Mac30 is
 preserved for rollback; the Qt client, iPad46 and Vision52 are unchanged. No
 preferences, approvals, network settings or Host packages were changed. Physical
-Pencil recovery is not yet accepted; if input remains blocked, use **Input Details**
-to distinguish admission state from received and locally queued samples.
+The first physical Settings-close trial still reported no cursor movement.
+Captured Mac diagnostics show zero incoming Pencil/Artist application messages
+during that trial; they do not establish the iPad-side cause. **Input Details**
+distinguishes admission state from received and locally queued samples.
+
+The Mac's optional image consent was off after restarting the app. Restoring it
+produces image encoding and a sending status, which does not establish picture
+receipt on the iPad. Input and image qualification remain held pending the
+current iPad connection/reception state; no further runtime repair is claimed.
 
 ## October 14 local native client switch
 
