@@ -44,8 +44,17 @@ distinguishes admission state from received and locally queued samples.
 
 The Mac's optional image consent was off after restarting the app. Restoring it
 produces image encoding and a sending status, which does not establish picture
-receipt on the iPad. Input and image qualification remain held pending the
-current iPad connection/reception state; no further runtime repair is claimed.
+receipt on the iPad.
+
+The user subsequently reported operation working again. Captured Mac diagnostics
+corroborate incoming Pencil samples and local input submission without a local
+queue backlog. A new peer diagnostic lifetime precedes that recovery; its trigger
+was not observed. The separate Mac-to-workstation transport reports delay/lost
+packets, but neither those cumulative counters nor the recovery establish the
+cause of the earlier missing iPad input. No further runtime change or controlled
+Settings repair is claimed. Image, stable zoom/Hand, held-input and final Host
+receipt qualification remain separate; the now-obsolete iPad screenshot is not
+required.
 
 ## October 14 local native client switch
 
