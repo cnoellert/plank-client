@@ -481,3 +481,9 @@ The Mac was showing this chat when inspected; its desktop window existed without
 an open Session Controls panel. Focus at the failed sample and the iPad's Hand
 state were not measured. A single explicit foreground/Hand-off/fresh-contact
 check is pending, and physical46 acceptance remains blocked.
+
+The user subsequently reports no cursor movement after that explicit foreground,
+Hand-off and fresh-contact check. Mac UI shows the Pencil peer connected and
+reference image sending; this is not evidence of pen delivery. The inspection
+popover was closed afterward. The iPad's own admission message is requested to
+localize the failure; no input repair or physical46 pass is claimed.
