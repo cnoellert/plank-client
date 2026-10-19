@@ -22,6 +22,9 @@ installed with an explicit Workstations reopening button; the user confirms it
 reopens the main window while the desktop session stays available. Mac31 and
 iPad46 remain unchanged. See the
 [Vision browser recovery boundary](ipad-pencil-relay.md#october18-avp-trial-and-browser-recovery).
+Vision55 subsequently moves that action into **Session Controls → Window → Show
+Workstations**, with the standalone button removed. It is installed and verified;
+Mac31, iPad46 and their input/transport behavior remain unchanged.
 
 ## Pencil Settings lifetime correction — installed31
 

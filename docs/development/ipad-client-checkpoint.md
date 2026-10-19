@@ -2,7 +2,7 @@
 
 ## October18 current state
 
-The installed development stack is iPad46, native Mac31 and Vision54. The user
+The installed development stack is iPad46, native Mac31 and Vision55. The user
 resumed the deferred headset update; Vision53 was installed in place and its
 exact version/container/running executable independently verified. It adds
 bounded diagnostics, not a latency repair. Mac31 and iPad46 were not restarted.
@@ -16,6 +16,13 @@ fresh disconnected authorization; the user confirms the main window reopens
 and the desktop session stays available. The
 reported mouse/keyboard focus-return delay and settings organization remain
 follow-ups; input and transport behavior were not changed.
+
+The user then requested the action inside Session Controls. Vision55 moves
+**Show Workstations** into its **Window** section, closes the menu on selection
+and removes the separate desktop button. Native production-menu checks and fresh
+signed/device installation checks pass. The disconnected update is installed;
+no new physical placement acceptance is inferred. Vision54's browser and launch
+policy remain unchanged.
 
 Targeted Sharing qualification is complete for local 2× availability through Mac
 focus changes, clean Artist modifier release, Fit deferral until actual Pencil
@@ -125,6 +132,7 @@ Retarget these slices upstream in dependency order after their bases are accepte
 
 | Target | Compiled runtime source | State |
 | --- | --- | --- |
+| Vision55 | `6e8248816c6f1acb3230c24b04bd0a977d217321` | Installed/open under disconnected authorization; Show Workstations moved to Session Controls > Window and standalone button removed; production-menu native check and artifact/installation checks pass; input/transport unchanged, no new physical placement acceptance claimed |
 | Vision54 | `2405b065ba0f679df432c29e9514e6245153a5f4` | Installed/open after disconnected authorization; explicit Workstations reopening, single preferred browser and secondary launch suppression; two native reopen cases and package/install checks pass; user accepts main-window reopening with the desktop session still available; no automatic reactivation or mouse/keyboard focus repair claimed |
 | Mac31 | `f82c2a4dfdd37782ac4baeed46f313a1664c8baf` | Installed native client with Settings window pause lifetime correction and Input Details; focused AppKit and signed/runtime checks pass; targeted Sharing view checks accepted, controlled Settings repair and sustained transport reliability not established |
 | iPad46 | `4c7731272c68f53b4272f959ca695d1803b7080d` | Installed on M5; local Sharing zoom remains available while remote input is paused; user accepts preserved 2× selection, clean modifier release, held-contact Fit deferral and local Hand/resume |

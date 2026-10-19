@@ -5,6 +5,22 @@ versioned records and physical comparison approval are implemented. Compilation,
 local protocol checks and physical device acceptance are separate gates.
 This is not yet a qualified drawing transport.
 
+### Current browser action — Vision55
+
+At the user's request, **Show Workstations** is now under **Window** in the
+desktop's **Session Controls** menu. Selecting it closes the menu and opens the
+existing single workstation browser. The separate button above the desktop is
+removed. Vision54's unique browser and launch selection are retained.
+
+The production menu, app scenes, ornament and registered-window helpers pass a
+native Simulator check: the action is absent outside the menu, remains reachable
+inside it, closes the menu and reopens one browser while the stand-in session
+stays available. The fresh full device build, exact signed package/dependencies
+and independent installed app/process checks pass. Vision55 is installed under
+the user's disconnected authorization. The accepted Vision54 recovery is
+retained; this placement has native component evidence without a new physical
+interaction claim. Input, focus, tablet and image/transport behavior are unchanged.
+
 ### October18 AVP trial and browser recovery
 
 On installed Vision53, the user reports that the tablet worked perfectly in

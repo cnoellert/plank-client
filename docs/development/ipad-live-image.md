@@ -1,7 +1,7 @@
 # iPad live reference image and magnification
 
-Current image senders are installed Vision54 from
-`2405b065ba0f679df432c29e9514e6245153a5f4` and native Mac31 from
+Current image senders are installed Vision55 from
+`6e8248816c6f1acb3230c24b04bd0a977d217321` and native Mac31 from
 `f82c2a4dfdd37782ac4baeed46f313a1664c8baf`. Mac31 adds the local Settings
 pause-lifetime correction and Input Details; Mac29's image behavior is retained.
 The Mac is installed with the Qt client retained as a fallback. Current installed
@@ -36,6 +36,10 @@ launch selection. It is installed and independently verified, with the new
 physical browser-reopening check accepted: the user confirms the main window
 reopens and the desktop session stays available. Image and input behavior are
 unchanged.
+Vision55 subsequently moves **Show Workstations** into **Session Controls →
+Window**, removing the standalone button. Its menu action closes the controls
+before opening the browser. The native menu and exact installed package checks
+pass; image/input behavior and the accepted54 browser policy are unchanged.
 
 The October 11 artist trial confirms the picture appears and latency is better,
 but below the hoped responsiveness; image promotion remains held. Older
