@@ -150,7 +150,7 @@ RELAY_HEADER = r'''
     var inputEpoch:UInt64 = 0
     var padSettings = PlankIPadPencilPadSettings()
     struct ImageReceiver {
-        var enabled = true
+        var imageSessionActive = true
         func configureDimensions(width:Int,height:Int) {}
     }
     var imageReceiver = ImageReceiver()

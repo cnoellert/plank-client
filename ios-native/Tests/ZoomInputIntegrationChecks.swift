@@ -257,7 +257,7 @@ import Combine
         relay.sharing = false; precondition(!relay.canNavigateImage); relay.sharing = true
         relay.hasConfiguration = false; precondition(!relay.canNavigateImage); relay.hasConfiguration = true
         relay.adjustingPad = true; precondition(!relay.canNavigateImage); relay.adjustingPad = false
-        relay.imageReceiver.enabled = false; precondition(!relay.canNavigateImage); relay.imageReceiver.enabled = true
+        relay.imageReceiver.imageSessionActive = false; precondition(!relay.canNavigateImage); relay.imageReceiver.imageSessionActive = true
 
         zoom.requestMode(.double); zoom.requestHand(true)
         let finger = UITouch(.direct); finger.view = view

@@ -5,17 +5,18 @@ import Foundation
 import Network
 import UIKit
 
-/// Optional, foreground reference-image consent is separate from Pencil consent.
+/// Foreground Sharing is always ready for its approved client’s reference image.
 /// Image frames reach passive UIKit subscribers without publishing SwiftUI state.
 @MainActor final class PlankIPadPencilImageReceiver: ObservableObject {
-    @Published private(set) var enabled = false {
-        willSet { if newValue != enabled { enabledWillChange?() } }
-        didSet { if oldValue != enabled { enabledDidChange?() } }
+    @Published private(set) var enabled = false
+    // Readiness does not change input geometry. Only an authenticated image
+    // session selects proportional image/Pencil mapping, until that lane ends.
+    @Published private(set) var imageSessionActive = false {
+        willSet { if newValue != imageSessionActive { mappingWillChange?() } }
+        didSet { if oldValue != imageSessionActive { mappingDidChange?() } }
     }
-    // The drawing owner retires its old contact before either UI consent or
-    // receiver teardown changes the effective mapping, then updates geometry.
-    var enabledWillChange: (() -> Void)?
-    var enabledDidChange: (() -> Void)?
+    var mappingWillChange: (() -> Void)?
+    var mappingDidChange: (() -> Void)?
     @Published private(set) var intensity = 0.35
     @Published private(set) var status = "Image overlay is off"
     private var privateKey: Data?
@@ -34,19 +35,14 @@ import UIKit
     private var presentationDiagnosticSample = 0
     private static let maximumAge: UInt64 = 1_500_000_000
 
-    /// Makes the image service available for this foreground sharing lifetime.
-    /// Availability alone does not enable image reception or authorize a peer.
+    /// Automatically listen during foreground Sharing. The image handshake
+    /// still requires the exact approved Pencil session binding; the client’s
+    /// transmission choice is the sole image on/off control.
     func start(privateKey: Data, serviceName: String) throws {
         stop()
         guard privateKey.count == 32, !serviceName.isEmpty else { throw PlankPencilWireError.invalid }
         self.privateKey = privateKey; self.serviceName = serviceName
-        status = "Image overlay is off"
-    }
-    func setEnabled(_ value: Bool) {
-        guard enabled != value else { return }
-        enabled = value
-        if value { beginListening() }
-        else { endListening(); status = "Image overlay is off" }
+        enabled = true; beginListening()
     }
     func setIntensity(_ value: Double) {
         let next = value.isFinite ? min(1, max(0, value)) : 0.35
@@ -113,7 +109,7 @@ import UIKit
             switch result {
             case let .image(decoded):
                 let now = DispatchTime.now().uptimeNanoseconds
-                guard self.decoder?.isCurrent(decoded.revision) == true,
+                guard self.imageSessionActive, self.decoder?.isCurrent(decoded.revision) == true,
                       now >= decoded.receivedAt, now - decoded.receivedAt < Self.maximumAge else { return }
                 self.image = decoded.image; self.receivedAt = decoded.receivedAt
                 if self.status != "Receiving reference image" { self.status = "Receiving reference image" }
@@ -138,6 +134,7 @@ import UIKit
                 case .ready:
                     Task { @MainActor [weak self] in
                         guard let self, self.generation == current, self.peerID == id else { return }
+                        self.imageSessionActive = true
                         if self.image == nil { self.status = "Waiting for the client’s reference image" }
                     }
                 case let .frame(frame): decode?.offer(frame)
@@ -168,7 +165,8 @@ import UIKit
         mailbox?.invalidate(); mailbox = nil
         peer?.close(); peer = nil
         listener?.newConnectionLimit = 1
-        clearImage()
+        // Clear the old picture before restoring the input-only geometry.
+        clearImage(); imageSessionActive = false
     }
     private func clearImage() {
         image = nil; receivedAt = 0

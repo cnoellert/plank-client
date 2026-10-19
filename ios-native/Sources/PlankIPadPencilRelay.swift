@@ -17,7 +17,7 @@ import Combine
     private var controlKeys = PlankControlKeyOwnership()
     var canDraw: Bool { active && !adjustingPad }
     // Local viewing does not grant permission to send pen or Artist input.
-    var canNavigateImage: Bool { sharing && hasConfiguration && !adjustingPad && imageReceiver.enabled }
+    var canNavigateImage: Bool { sharing && hasConfiguration && !adjustingPad && imageReceiver.imageSessionActive }
     private var listener: NWListener?
     private var peer: PlankPencilRelayPeer?
     private var generation = UUID(), peerID = UUID()
@@ -25,8 +25,8 @@ import Combine
     private var hasConfiguration = false
     weak var pad: PlankIPadPencilPadView?
     init() {
-        imageReceiver.enabledWillChange = { [weak self] in self?.retireInput() }
-        imageReceiver.enabledDidChange = { [weak self] in
+        imageReceiver.mappingWillChange = { [weak self] in self?.retireInput() }
+        imageReceiver.mappingDidChange = { [weak self] in
             self?.pad?.setNeedsLayout(); self?.pad?.layoutIfNeeded()
         }
     }
@@ -90,7 +90,7 @@ import Combine
                         guard case let .service(name,_,_,_) = endpoint, name != self.imageServiceName else { return }
                         self.imageServiceName = name
                         // Match the actual registered control name, including Bonjour renames.
-                        // Image consent is independent; failure here cannot stop the pen lane.
+                        // Image readiness is automatic; failure here cannot stop the pen lane.
                         do { try self.imageReceiver.start(privateKey:key,serviceName:name) }
                         catch { self.imageReceiver.stop() }
                         self.authorizeImage()
@@ -277,8 +277,8 @@ private struct PlankIPadPencilMappingOptions: View {
     @ObservedObject var relay: PlankIPadPencilRelay
     @ObservedObject var receiver: PlankIPadPencilImageReceiver
     private var mapping: Binding<PlankIPadPencilPadSettings.Mapping> {
-        Binding(get:{ relay.padSettings.effectiveMapping(referenceImageEnabled:receiver.enabled) },set:{ value in
-            guard !receiver.enabled else { return }
+        Binding(get:{ relay.padSettings.effectiveMapping(referenceImageEnabled:receiver.imageSessionActive) },set:{ value in
+            guard !receiver.imageSessionActive else { return }
             var next = relay.padSettings; next.mapping = value; relay.setPadSettings(next)
         })
     }
@@ -286,10 +286,10 @@ private struct PlankIPadPencilMappingOptions: View {
         Section {
             Picker("Mapping",selection:mapping) {
                 ForEach(PlankIPadPencilPadSettings.Mapping.allCases,id:\.self) { Text($0.title).tag($0) }
-            }.pickerStyle(.segmented).disabled(receiver.enabled)
+            }.pickerStyle(.segmented).disabled(receiver.imageSessionActive)
         } header: { Text("Drawing area") } footer: {
-            if receiver.enabled {
-                Text("With image reception on, the picture and Pencil use the desktop’s proportions inside your margins. Turning it off restores “\(relay.padSettings.mapping.title)”.")
+            if receiver.imageSessionActive {
+                Text("While the client sends an image, the picture and Pencil use the desktop’s proportions inside your margins. Turning transmission off on the client restores “\(relay.padSettings.mapping.title)”.")
             } else {
                 Text(relay.padSettings.mapping == .matchDesktop
                      ? "Keeps the desktop’s proportions inside your margins."
@@ -302,17 +302,14 @@ private struct PlankIPadPencilImageOptions: View {
     @ObservedObject var receiver: PlankIPadPencilImageReceiver
     var body: some View {
         Section {
-            Toggle("Receive desktop image",isOn:Binding(get:{ receiver.enabled },set:{ receiver.setEnabled($0) }))
-            if receiver.enabled {
-                VStack(alignment:.leading) {
-                    Text("Image intensity")
-                    Slider(value:Binding(get:{ receiver.intensity },set:{ receiver.setIntensity($0) }),in:0...1)
-                        .accessibilityLabel("Image intensity")
-                }
-                Text(receiver.status).font(.footnote).foregroundStyle(.secondary)
+            VStack(alignment:.leading) {
+                Text("Image intensity")
+                Slider(value:Binding(get:{ receiver.intensity },set:{ receiver.setIntensity($0) }),in:0...1)
+                    .accessibilityLabel("Image intensity")
             }
+            Text(receiver.status).font(.footnote).foregroundStyle(.secondary)
         } header: { Text("Reference image") } footer: {
-            Text("Also enable image sharing in the connected PLANK client’s Apple Pencil settings. The image follows your drawing area and is a dimmable reference for painting.")
+            Text("Pencil Sharing is ready to receive automatically. Use “Share desktop image with this iPad” on the Mac or AVP to turn the image on or off. Dimming and zoom stay on this iPad.")
         }
     }
 }
@@ -342,7 +339,7 @@ struct PlankIPadPencilPad: UIViewRepresentable {
     private let imageView = PlankIPadPencilImageView()
     private var viewport: PlankIPadViewport? {
         relay.padSettings.viewport(bounds:bounds,width:relay.width,height:relay.height,
-            referenceImageEnabled:relay.imageReceiver.enabled,
+            referenceImageEnabled:relay.imageReceiver.imageSessionActive,
             visibleSourceCrop:zoomState?.visibleSourceCrop ?? CGRect(x:0,y:0,width:1,height:1))
     }
     init(relay: PlankIPadPencilRelay,zoomController: PlankIPadZoomController? = nil) {
@@ -388,8 +385,8 @@ struct PlankIPadPencilPad: UIViewRepresentable {
         outline.opacity = relay.canDraw ? 1 : 0.4; CATransaction.commit()
         // Geometry only, never stroke positions: distinguish local remapping
         // from a downstream workstation/application transform on the next run.
-        let effective = settings.effectiveMapping(referenceImageEnabled:relay.imageReceiver.enabled)
-        let signature = "mode=\(effective.rawValue) saved=\(settings.mapping.rawValue) image=\(relay.imageReceiver.enabled) bounds=\(bounds) area=\(rect) desktop=\(relay.width)x\(relay.height)"
+        let effective = settings.effectiveMapping(referenceImageEnabled:relay.imageReceiver.imageSessionActive)
+        let signature = "mode=\(effective.rawValue) saved=\(settings.mapping.rawValue) image=\(relay.imageReceiver.imageSessionActive) bounds=\(bounds) area=\(rect) desktop=\(relay.width)x\(relay.height)"
         if signature != mappingSignature {
             mappingSignature = signature
             NSLog("PLANK Pencil pad mapping %@",signature)
