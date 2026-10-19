@@ -96,26 +96,6 @@ struct PlankVisionApp: App {
     }
 }
 
-/// Remains reachable while the browser is closed and a desktop is running.
-/// Opening a local window must not start, stop or replace the remote session.
-struct PlankWorkstationsButton: View {
-    @Environment(\.openWindow) private var openWindow
-
-    var body: some View {
-        Button {
-            openWindow(id: "plank-browser")
-        } label: {
-            Label("Workstations", systemImage: "macwindow.on.rectangle")
-                .font(.footnote)
-        }
-        .buttonStyle(.borderless)
-        .padding(8)
-        .glassBackgroundEffect()
-        .accessibilityIdentifier("plank.open-workstations")
-        .help("Open the PLANK workstation browser")
-    }
-}
-
 private struct RestoredDesktopWindow: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.dismissWindow) private var dismissWindow

@@ -308,10 +308,7 @@ struct RemoteDesktopView: View {
             // The whole menu participates in layout and hit testing; an overlay
             // outside a button-sized ornament would not own its full surface.
             VStack(spacing: 8) {
-                HStack(spacing: 8) {
-                    PlankWorkstationsButton()
-                    sessionControlsButton
-                }
+                sessionControlsButton
                 if showingSessionControls {
                     PlankSessionControls(
                         client: client, volume: $audioVolume, muted: $audioMuted,
