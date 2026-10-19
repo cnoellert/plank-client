@@ -4,7 +4,8 @@
 Production relay/receiver/decoder bodies are compiled with recording network,
 codec and UIKit boundaries. No devices, preferences, Host or network are changed.
 """
-import argparse, hashlib, importlib.util, json, pathlib, subprocess, tempfile
+import argparse, hashlib, importlib.util, json, pathlib, subprocess, sys, tempfile
+sys.dont_write_bytecode = True
 REPO = pathlib.Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location('extract', REPO/'ios-native/Tests/run-finger-input-checks.py')
 extract = importlib.util.module_from_spec(spec); spec.loader.exec_module(extract)
