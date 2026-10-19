@@ -39,8 +39,27 @@ independent signature/profile/resources/dependency checks pass. The user then
 confirmed the AVP desktop was disconnected and authorized installation. Vision56
 is installed and launched; separate app and process inventories verify56/0.1.0
 and the exact running executable. Signed55 remains available for rollback.
-Mac31 and iPad46 are unchanged. Native checks and installation do not establish
+The user subsequently accepts the56 menu placement. Mac31 and iPad46 were
+unchanged by56. Native checks and installation do not establish
 new physical image delivery or latency acceptance.
+
+### Automatic image reception — iPad47
+
+The user accepts Vision56's placement and requests automatic image readiness on
+the Sharing pad. iPad47 is built/signed and independently verified; the user has
+authorized installation while disconnected. The iPad's receive switch is
+removed. The existing **Share desktop image with this iPad** choice on Mac/AVP
+is the sole image on/off control and remains default off. Dimming and local
+zoom/navigation remain on the iPad; installed senders need no update.
+
+Only foreground Sharing listens, using the registered Pencil name and exact
+current approved pen binding. Automatic readiness does not itself change
+mapping. An authenticated image session selects proportional image/Pencil
+geometry; ending it restores the saved input-only mapping. Contact and Artist
+holds retire before either geometry change. Picture expiry alone does not
+remap. Sharing stop/background removes image authority. Exact lifecycle and
+contact fixtures pass; new physical47 acceptance remains open. See the
+[automatic-reception boundary](ipad-live-image.md#automatic-reception--ipad47).
 
 ### October18 AVP trial and browser recovery
 

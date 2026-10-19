@@ -5,6 +5,27 @@ existing native session/media services at their current source paths. Shipping
 Mac and Vision app identities and targets are unchanged. iPadOS 26 and Apple
 Silicon device/simulator are the initial compile scope, not a final OS matrix.
 
+## Automatic Sharing image reception — build47
+
+Pencil Sharing automatically becomes ready to receive the desktop image from
+its approved Mac or AVP. Use **Share desktop image with this iPad** on that
+client to turn transmission on/off; its choice stays default off. There is no
+receive switch on the iPad. Image intensity and local zoom stay on the tablet.
+The authenticated image session temporarily uses proportional picture/Pencil
+mapping, restoring the saved input-only mapping when transmission ends.
+
+The bounded automatic-lifetime and contact checks are reproducible without a
+device or network:
+
+```sh
+python3 ios-native/Tests/run-automatic-image-checks.py
+python3 ios-native/Tests/run-zoom-input-integration-checks.py
+```
+
+See [the current checkpoint](../docs/development/ipad-client-checkpoint.md)
+for installation and physical acceptance. Earlier two-switch instructions in
+the development history below apply to older builds.
+
 ## Current accepted development checkpoint — October 12
 
 Installed iPad43 adds the local Fit/2× operating-view candidate to the accepted

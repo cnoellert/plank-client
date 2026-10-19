@@ -55,6 +55,46 @@ picture latency/stretching trial. Old Air34 remains unchanged; Vision50 is
 superseded. Mac27/28/29 remain staged and unlaunched. Sharper source-region media
 and a separate loupe remain later work.
 
+## Automatic reception — iPad47
+
+The user accepts Vision56's image control placement and requests one image
+switch on the transmitting client. iPad47 from `ecfd6ad0d1a4607efa88cf09e4c0f5764fb69e1d` is
+built, signed and independently checked for the new M5. Installation follows the
+user's explicit disconnected authorization; physical47 behavior is not yet
+accepted. Vision56 and native Mac31 require no update for this change.
+
+Foreground Pencil Sharing automatically opens the image listener using the
+actual registered Pencil service name. There is no **Receive desktop image**
+switch on the iPad. Use **Share desktop image with this iPad** on the connected
+Mac or AVP to start or stop transmission. That explicit client choice remains
+default off and follows its existing desktop/peer lifetime. On Vision56 it is in
+**Session Controls → iPad image**; Mac31 retains its Apple Pencil controls.
+Older sender helper text still mentions the removed iPad switch; it is no longer
+required on47. Image intensity, Fit/2×, Hand and the movable map remain on iPad.
+
+Receiver readiness does not authorize a client or change the saved input-only
+mapping. Only a successful image handshake bound to the exact currently
+approved Pencil session activates proportional picture/Pencil geometry and
+local image navigation. Starting and ending that authenticated image lifetime
+retire contact and held Artist keys before changing geometry, then synchronously
+lay out the new shared viewport. Transmission off restores the saved input-only
+mapping and Fit without closing the Pencil peer. Frame expiry clears pixels
+without changing geometry; this avoids remapping on every picture stall.
+Stopping Sharing or entering the background removes listening and image
+session authority. Stale callbacks cannot restore a retired image lifetime.
+Wire crypto, codec, image limits, sender retries and Host input are unchanged.
+
+Seventeen exact relay/receiver/worker cases pass automatic startup, approval
+binding, image arrival, local intensity, expiry, sender off/restart, callback
+retirement and Sharing stop/restart. Existing direct/shared contact/zoom checks
+also pass with the new active-image gate. A native Simulator UI case passes
+removed-switch/intensity visibility, saved mapping restoration and local zoom
+availability across image/input states. These bounded checks use recording
+network/codec/UIKit boundaries; they do not establish physical transport, OS
+cancellation, image latency or final Host receipt. Earlier accepted controls and
+view tests remain accepted. Historical two-switch instructions below describe
+older builds and are superseded by this section.
+
 ## October 10 physical usability result
 
 The user reported that picture latency and stretching make this version not

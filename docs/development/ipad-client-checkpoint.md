@@ -33,6 +33,16 @@ headset update, Vision56 was installed and its exact app version/container/runni
 executable independently verified. Signed55 remains for rollback; the Mac-active
 settings source is byte identical and Mac31/iPad46 are unchanged.
 
+The user accepts Vision56's image placement. The next authorized update is
+iPad47 (`ecfd6ad0d1a4607efa88cf09e4c0f5764fb69e1d`): foreground Sharing is automatically
+ready to receive from its approved client, with image on/off controlled solely
+by the Mac/AVP transmitter. The iPad keeps intensity and zoom. An authenticated
+image lifetime controls shared proportional mapping; ending it restores the
+saved input-only mapping and Fit after retiring held input. The fresh signed
+candidate,17 bounded lifecycle cases and existing contact checks pass;
+installation is authorized while disconnected. New physical47 acceptance is
+separate, and senders/Host/network/pins are unchanged.
+
 Targeted Sharing qualification is complete for local 2× availability through Mac
 focus changes, clean Artist modifier release, Fit deferral until actual Pencil
 lift, and Hand navigation moving only the local view with drawing resuming.
@@ -141,6 +151,7 @@ Retarget these slices upstream in dependency order after their bases are accepte
 
 | Target | Compiled runtime source | State |
 | --- | --- | --- |
+| iPad47 | `ecfd6ad0d1a4607efa88cf09e4c0f5764fb69e1d` | Automatic foreground Sharing image readiness; transmitter-only image choice; authenticated image geometry/zoom lifetime with ordered input retirement; built/signed/verified, disconnected installation authorized; physical47 behavior pending |
 | Vision56 | `5fdf2d897f9324e8a40396c3012afd1bfebc9f7c` | Installed/open after disconnected authorization; image sharing moved into Session Controls > iPad image with unchanged consent/receiver and Mac-active UI; two native cases, artifact/dependency checks and exact installed app/process verification pass; no new physical image/latency acceptance claimed |
 | Vision55 | `6e8248816c6f1acb3230c24b04bd0a977d217321` | Installed/open under disconnected authorization; Show Workstations moved to Session Controls > Window and standalone button removed; production-menu native check and artifact/installation checks pass; user reports placement worked great; input/transport unchanged |
 | Vision54 | `2405b065ba0f679df432c29e9514e6245153a5f4` | Installed/open after disconnected authorization; explicit Workstations reopening, single preferred browser and secondary launch suppression; two native reopen cases and package/install checks pass; user accepts main-window reopening with the desktop session still available; no automatic reactivation or mouse/keyboard focus repair claimed |
