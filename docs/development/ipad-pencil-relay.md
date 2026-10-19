@@ -60,7 +60,9 @@ mapping. An authenticated image session selects proportional image/Pencil
 geometry; ending it restores the saved input-only mapping. Contact and Artist
 holds retire before either geometry change. Picture expiry alone does not
 remap. Sharing stop/background removes image authority. Exact lifecycle and
-contact fixtures pass; new physical47 acceptance remains open. See the
+contact fixtures pass. The user reports automatic reception working nicely,
+accepting that ordinary-use trial; sender transitions and duration were not
+separately described, and sustained image latency remains open. See the
 [automatic-reception boundary](ipad-live-image.md#automatic-reception--ipad47).
 
 ### October18 AVP trial and browser recovery

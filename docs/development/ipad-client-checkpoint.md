@@ -73,6 +73,15 @@ published checkpoint. Its 17 upstream Qt/Linux/test paths remain unchanged from
 main; the native recipe retains its explicitly reviewed common-C pin. No new
 rebase or dependency change is required at this snapshot.
 
+The user requests publication of the completed work and treats Flame-01's GPU
+exhaustion as an operational issue they can handle separately. It does not block
+this review checkpoint. The current iPad47, native Mac31 and Vision56 work is
+collected in [draft PR14](https://github.com/cnoellert/plank-client/pull/14), with
+the accepted controls checkpoint preserved in PR13. Recorded component/device
+checks and targeted user acceptance accompany the review; no CI status checks
+are listed at the publication snapshot. This remains a development review,
+with sustained reliability and the other explicit limits retained.
+
 ## Development history
 
 October10, 2026: the user accepted the installed iPad31 editor refinement and
@@ -135,8 +144,10 @@ view changes remain separate physical checks. See [the zoom feedback](ipad-live-
 
 On October15, the user reports native Mac Sharing hover, click/drag and basic
 zoom working, after a one-to-two-second startup delay. The current input question
-is resolved. Held-modifier/view-change behavior remains pending; the prior
-transport failure has no confirmed cause or repair. See [the current Mac result](native-mac-integration.md#october-15-targeted-input-recovery).
+is resolved. Later targeted checks accept clean Artist modifier release, Fit
+deferral until actual Pencil lift and local Hand pan with drawing resumption;
+the prior transport failure has no confirmed cause or repair. See
+[the current Mac result](native-mac-integration.md#october-15-targeted-input-recovery).
 
 ## Review order
 
@@ -148,7 +159,7 @@ display/wheel changes remain separate dependent reviews:
 2. [Mac displays and wheel](https://github.com/cnoellert/plank-client/pull/12).
 3. [iPad and Pencil controls](https://github.com/cnoellert/plank-client/pull/13),
    `codex/ios-ipados-readiness`, based on `codex/native-mac-displays`.
-4. Live reference image, operating zoom, editor refinements and diagnostics,
+4. [Live reference image, operating zoom, editor refinements and diagnostics](https://github.com/cnoellert/plank-client/pull/14),
    `codex/ipad-pencil-image-overlay`, based on `codex/ios-ipados-readiness`.
    This separate draft preserves PR13's accepted checkpoint and includes the
    upstream refresh described above.
@@ -165,7 +176,7 @@ Retarget these slices upstream in dependency order after their bases are accepte
 | Target | Compiled runtime source | State |
 | --- | --- | --- |
 | iPad47 | `ecfd6ad0d1a4607efa88cf09e4c0f5764fb69e1d` | Automatic foreground Sharing image readiness; transmitter-only image choice; authenticated image geometry/zoom lifetime with ordered input retirement; built/signed/verified and installed with exact47/0.1.0/container independently checked; exact running47 executable independently verified after unlock; user reports ordinary-use reception working nicely, without a separate sustained-latency result |
-| Vision56 | `5fdf2d897f9324e8a40396c3012afd1bfebc9f7c` | Installed/open after disconnected authorization; image sharing moved into Session Controls > iPad image with unchanged consent/receiver and Mac-active UI; two native cases, artifact/dependency checks and exact installed app/process verification pass; no new physical image/latency acceptance claimed |
+| Vision56 | `5fdf2d897f9324e8a40396c3012afd1bfebc9f7c` | Installed/open after disconnected authorization; image sharing moved into Session Controls > iPad image with unchanged consent/receiver and Mac-active UI; two native cases, artifact/dependency checks and exact installed app/process verification pass; user accepts menu placement; sustained image/latency remains separate |
 | Vision55 | `6e8248816c6f1acb3230c24b04bd0a977d217321` | Installed/open under disconnected authorization; Show Workstations moved to Session Controls > Window and standalone button removed; production-menu native check and artifact/installation checks pass; user reports placement worked great; input/transport unchanged |
 | Vision54 | `2405b065ba0f679df432c29e9514e6245153a5f4` | Installed/open after disconnected authorization; explicit Workstations reopening, single preferred browser and secondary launch suppression; two native reopen cases and package/install checks pass; user accepts main-window reopening with the desktop session still available; no automatic reactivation or mouse/keyboard focus repair claimed |
 | Mac31 | `f82c2a4dfdd37782ac4baeed46f313a1664c8baf` | Installed native client with Settings window pause lifetime correction and Input Details; focused AppKit and signed/runtime checks pass; targeted Sharing view checks accepted, controlled Settings repair and sustained transport reliability not established |
