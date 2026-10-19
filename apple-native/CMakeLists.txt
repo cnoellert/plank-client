@@ -3,7 +3,7 @@ set(CMAKE_Swift_LANGUAGE_VERSION 6)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "15.0" CACHE STRING "Minimum macOS version")
 project(PlankMac LANGUAGES Swift C CXX)
-set(PLANK_APPLE_BUILD_NUMBER "26" CACHE STRING "Native Apple pilot build")
+set(PLANK_APPLE_BUILD_NUMBER "31" CACHE STRING "Native Apple pilot build")
 set(PLANK_TRANSPORT_DIR "" CACHE PATH "Pinned plank-transport source")
 set(PLANK_FFMPEG_DIR "" CACHE PATH "Target-built FFmpeg prefix")
 set(PLANK_OPUS_DIR "" CACHE PATH "Pinned libopus 1.6.1 prefix")
@@ -27,6 +27,7 @@ add_executable(PlankMac MACOSX_BUNDLE
     ${VISION}/Bridge/PlankTransportBridge.c
     ${VISION}/Bridge/PlankRawHidFrame.c
     ${VISION}/Bridge/PlankVideoDecoder.c
+    ${VISION}/Bridge/PlankPencilImageConversion.c
     Sources/PlankMacApp.swift
     Sources/PlankMacBrowser.swift
     Sources/PlankMacDesktop.swift
@@ -48,6 +49,10 @@ add_executable(PlankMac MACOSX_BUNDLE
     ../app/streaming/input/macrawwacom.cpp
     Sources/PlankMacAudioOutput.swift
     Shared/PlankPencilCrypto.c
+    Shared/PlankPencilImageCrypto.c
+    Shared/PlankPencilImageWire.swift
+    Shared/PlankPencilImagePeer.swift
+    Shared/PlankPencilImageSession.swift
     Shared/PlankPencilRelayWire.swift
     Shared/PlankPencilModifiers.swift
     Shared/PlankControlKeyOwnership.swift
@@ -55,6 +60,8 @@ add_executable(PlankMac MACOSX_BUNDLE
     Shared/PlankPencilRelayPeer.swift
     ${VISION}/Sources/Views/PlankPencilRelaySettings.swift
     ${VISION}/PrivacyInfo.xcprivacy)
+set_source_files_properties(${VISION}/Bridge/PlankPencilImageConversion.c PROPERTIES
+    COMPILE_OPTIONS "-O2;-fno-fast-math;-ffp-contract=off")
 set_source_files_properties(${VISION}/PrivacyInfo.xcprivacy PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 set(mac_icon "${CMAKE_CURRENT_BINARY_DIR}/branding/PlankMac.icns")
 execute_process(COMMAND xcrun --sdk macosx swift
@@ -109,7 +116,8 @@ target_link_libraries(PlankMac PRIVATE ${rust_library} PlankMacRelayCrypto Plank
     "-framework Security" "-framework SystemConfiguration" "-framework GameController"
     "-framework AVFAudio" "-framework CoreAudio" "-framework CoreBluetooth"
     "-framework AudioToolbox" "-framework VideoToolbox" "-framework CoreFoundation"
-    "-framework IOKit" "-framework CoreMedia" "-framework CoreVideo" -lz -liconv)
+    "-framework IOKit" "-framework CoreMedia" "-framework CoreVideo"
+    "-framework CoreGraphics" "-framework ImageIO" "-framework UniformTypeIdentifiers" -lz -liconv)
 set_target_properties(PlankMac PROPERTIES
     MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/Info.plist
     XCODE_ATTRIBUTE_SWIFT_OBJC_BRIDGING_HEADER ${CMAKE_CURRENT_SOURCE_DIR}/Bridge/PlankMac-Bridging-Header.h
