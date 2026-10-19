@@ -1,7 +1,7 @@
 # iPad live reference image and magnification
 
-Current image senders are installed Vision53 from
-`fe965cf1d4f5c9a1502265ecea7ea8768425a30b` and native Mac31 from
+Current image senders are installed Vision54 from
+`2405b065ba0f679df432c29e9514e6245153a5f4` and native Mac31 from
 `f82c2a4dfdd37782ac4baeed46f313a1664c8baf`. Mac31 adds the local Settings
 pause-lifetime correction and Input Details; Mac29's image behavior is retained.
 The Mac is installed with the Qt client retained as a fallback. Current installed
@@ -30,6 +30,10 @@ exact installed executable. Its signature, profile, resources and current-source
 compatibility were rechecked before installation. It adds bounded diagnostics,
 not a latency fix. Signed Vision52 remains available for rollback. Mac31 and
 iPad46 were not changed or restarted, and no console was polled or signaled.
+The later Vision53 tablet trial is user-accepted; image toggle state and duration
+were not specified. Vision54 subsequently adds only browser-window recovery and
+launch selection. It is installed and independently verified, with the new
+physical browser-reopening check pending. Image and input behavior are unchanged.
 
 The October 11 artist trial confirms the picture appears and latency is better,
 but below the hoped responsiveness; image promotion remains held. Older

@@ -5,6 +5,34 @@ versioned records and physical comparison approval are implemented. Compilation,
 local protocol checks and physical device acceptance are separate gates.
 This is not yet a qualified drawing transport.
 
+### October18 AVP trial and browser recovery
+
+On installed Vision53, the user reports that the tablet worked perfectly in
+their trial. Reported interruptions involved losing window focus or accidentally
+disconnecting the iPad. Accept the reported tablet trial; its duration, image
+toggle state and final Host release receipt were not independently measured.
+This does not resolve the earlier Mac-to-workstation transport failures.
+
+The same report identifies a missing way to reopen the main workstation browser
+after closing it during a session. Vision54 adds a **Workstations** button above
+the desktop, alongside Session Controls. It opens the single browser window
+without starting, replacing or disconnecting the current session. The browser is
+the preferred launch scene and the desktop is suppressed from default launch.
+An explicit recovery control is still required: the isolated native trial found
+that reactivating an already-running app alone did not recreate a closed browser.
+Apple describes the distinction between launch selection and explicit scene
+reopening in its [window life cycle guidance](https://developer.apple.com/documentation/visionos/handling-the-window-life-cycle-with-multiple-scenes).
+
+Two focused native Simulator workflows pass repeated close/reopen with one
+browser and one stand-in session, and explicit reopening after Home/reactivation.
+Production input, focus, tablet and transport bodies remain unchanged. The fresh
+device build, unchanged recipe/dependencies, exact signature/profile/resources
+and independent installed app/process checks pass. Vision54 is installed under
+the user's disconnected authorization; physical browser reopening remains the
+only new requested check. The mouse/keyboard focus-return delay and disjoint
+settings/transparency controls are recorded follow-ups, with no system-wide
+cause or focus repair claimed.
+
 ### First device result and contact correction — October 9
 
 The user reports hover and squeeze right-click working on iPad 18 / Vision 47,

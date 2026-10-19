@@ -16,6 +16,11 @@ from `fe965cf1d4f5c9a1502265ecea7ea8768425a30b` was reverified, installed and
 launched. Independent app and process inventories confirm build53 and its exact
 executable. It adds diagnostics, not a latency fix. The Mac/iPad apps, Qt fallback,
 Host, network settings, dependency pins and identities were unchanged.
+The subsequent user-accepted AVP tablet trial also reports the closed-browser
+recovery gap and an occasional mouse/keyboard focus-return delay. Vision54 is now
+installed with an explicit Workstations reopening button; its physical recovery
+check is pending. Mac31 and iPad46 remain unchanged. See the
+[Vision browser recovery boundary](ipad-pencil-relay.md#october18-avp-trial-and-browser-recovery).
 
 ## Pencil Settings lifetime correction — installed31
 
