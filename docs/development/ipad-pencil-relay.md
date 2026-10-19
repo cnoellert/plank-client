@@ -47,8 +47,9 @@ new physical image delivery or latency acceptance.
 
 The user accepts Vision56's placement and requests automatic image readiness on
 the Sharing pad. iPad47 is built/signed, independently verified and installed after the user's
-disconnected authorization. Exact47/0.1.0/container inventory passes; launch is
-blocked by the locked iPad and awaits the requested unlock. The iPad's receive switch is
+disconnected authorization. Exact47/0.1.0/container inventory passes. After the
+user unlocked and opened PLANK, separate process inventory verifies the exact
+installed47 executable. The existing process was preserved. The iPad's receive switch is
 removed. The existing **Share desktop image with this iPad** choice on Mac/AVP
 is the sole image on/off control and remains default off. Dimming and local
 zoom/navigation remain on the iPad; installed senders need no update.

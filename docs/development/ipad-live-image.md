@@ -61,7 +61,9 @@ The user accepts Vision56's image control placement and requests one image
 switch on the transmitting client. iPad47 from `ecfd6ad0d1a4607efa88cf09e4c0f5764fb69e1d` is
 built, signed and independently checked for the new M5. The authorized in-place
 update is installed; independent app inventory verifies47/0.1.0 and its container.
-iPadOS denied launch while locked, so unlock/launch verification is pending.
+iPadOS initially denied launch while locked. After the user unlocked and opened
+PLANK, separate process inventory verifies the exact installed47 executable.
+The already-open process was preserved; no reinstall or relaunch was needed.
 Physical47 behavior is not yet accepted. Vision56 and native Mac31 require no
 update for this change.
 
