@@ -43,8 +43,18 @@ candidate,17 bounded lifecycle cases, native menu and existing contact checks
 pass. The authorized in-place update is installed with exact47/0.1.0 and its
 container independently verified. After the user unlocked and opened PLANK,
 independent process inventory verifies the exact installed47 executable. No
-reinstall or relaunch was needed. New physical47 acceptance is
-separate, and senders/Host/network/pins are unchanged.
+reinstall or relaunch was needed. The user reports the automatic reception is
+working nicely; this accepts that ordinary-use trial, without separately
+described sender transitions or sustained latency measurements.
+Senders/Host/network/pins are unchanged.
+
+A separate Flame-01 AVP startup failure reports the display layout not ready
+within 45 seconds. Captured Host startup logs show repeated
+`NV_ENC_ERR_OUT_OF_MEMORY` at 5120×2160 with zero video frames sent, alongside
+very low available GPU memory. The user changed the AVP virtual display to
+1920×1200 and confirms the desktop picture appears. This is a working
+lower-resolution workaround, not a restored 5K or sustained-stream gate. See
+[the startup assessment](native-mac-integration.md#october18-flame-01-avp-startup-and-lower-resolution-recovery).
 
 Targeted Sharing qualification is complete for local 2× availability through Mac
 focus changes, clean Artist modifier release, Fit deferral until actual Pencil
@@ -154,7 +164,7 @@ Retarget these slices upstream in dependency order after their bases are accepte
 
 | Target | Compiled runtime source | State |
 | --- | --- | --- |
-| iPad47 | `ecfd6ad0d1a4607efa88cf09e4c0f5764fb69e1d` | Automatic foreground Sharing image readiness; transmitter-only image choice; authenticated image geometry/zoom lifetime with ordered input retirement; built/signed/verified and installed with exact47/0.1.0/container independently checked; exact running47 executable independently verified after unlock; physical47 behavior pending |
+| iPad47 | `ecfd6ad0d1a4607efa88cf09e4c0f5764fb69e1d` | Automatic foreground Sharing image readiness; transmitter-only image choice; authenticated image geometry/zoom lifetime with ordered input retirement; built/signed/verified and installed with exact47/0.1.0/container independently checked; exact running47 executable independently verified after unlock; user reports ordinary-use reception working nicely, without a separate sustained-latency result |
 | Vision56 | `5fdf2d897f9324e8a40396c3012afd1bfebc9f7c` | Installed/open after disconnected authorization; image sharing moved into Session Controls > iPad image with unchanged consent/receiver and Mac-active UI; two native cases, artifact/dependency checks and exact installed app/process verification pass; no new physical image/latency acceptance claimed |
 | Vision55 | `6e8248816c6f1acb3230c24b04bd0a977d217321` | Installed/open under disconnected authorization; Show Workstations moved to Session Controls > Window and standalone button removed; production-menu native check and artifact/installation checks pass; user reports placement worked great; input/transport unchanged |
 | Vision54 | `2405b065ba0f679df432c29e9514e6245153a5f4` | Installed/open after disconnected authorization; explicit Workstations reopening, single preferred browser and secondary launch suppression; two native reopen cases and package/install checks pass; user accepts main-window reopening with the desktop session still available; no automatic reactivation or mouse/keyboard focus repair claimed |

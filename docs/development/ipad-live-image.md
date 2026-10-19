@@ -64,8 +64,10 @@ update is installed; independent app inventory verifies47/0.1.0 and its containe
 iPadOS initially denied launch while locked. After the user unlocked and opened
 PLANK, separate process inventory verifies the exact installed47 executable.
 The already-open process was preserved; no reinstall or relaunch was needed.
-Physical47 behavior is not yet accepted. Vision56 and native Mac31 require no
-update for this change.
+The user reports automatic reception working nicely. This accepts the reported
+ordinary-use trial; sender transitions and duration were not separately
+described, and sustained latency remains open. Vision56 and native Mac31 require
+no update for this change.
 
 Foreground Pencil Sharing automatically opens the image listener using the
 actual registered Pencil service name. There is no **Receive desktop image**

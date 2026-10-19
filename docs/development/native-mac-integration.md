@@ -29,6 +29,31 @@ The user accepts that placement. Installed Vision56 then moves image-sharing
 consent/status into Vision Session Controls; the Mac-active settings source is
 byte identical and no native Mac update is involved.
 
+### October18 Flame-01 AVP startup and lower-resolution recovery
+
+The AVP56 trial on Flame-01 reports **The workstation display layout did not
+become ready within 45 seconds**. This is the native display/stream startup
+deadline after PLANK authentication. The saved authentication timestamp and
+requested 5120×2160 at 60 fps correspond in time and geometry with a captured
+Host startup that repeatedly failed HEVC NVENC initialization with
+`NV_ENC_ERR_OUT_OF_MEMORY`. That session sent zero video frames. The correlation
+does not include an independently captured unique AVP peer identifier.
+
+A read-only GPU snapshot reports an RTX 5000 Ada with 32 GB, 687 MiB available,
+and Flame using 28,620 MiB. Together with the allocation errors, this strongly
+supports GPU memory pressure during encoder startup. The exact allocation
+mechanism and a memory leak are not established. The Host is the observed
+1.1.024; neither its service nor Flame was restarted, and network settings,
+packages and pins were unchanged. Bounded filtered Host log reads used the
+existing noninteractive read permission; no maintenance was performed.
+
+The user changed the AVP **Flame-01-ts → Virtual display → Resolution** to
+**1920×1200**, saved and reconnected, then confirmed the desktop picture appears.
+Retain that as the working recovery setting. A 5K retry should wait for GPU
+headroom; this trial does not qualify sustained performance or explain the two
+October15 Mac transport failures. No additional restart or resolution test is
+required for this checkpoint.
+
 ## Pencil Settings lifetime correction — installed31
 
 After iPad46, the user reports a live picture but no Pencil cursor motion,
