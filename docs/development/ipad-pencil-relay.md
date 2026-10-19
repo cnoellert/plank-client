@@ -21,7 +21,7 @@ the user's disconnected authorization. The user subsequently reports it worked
 great, accepting this placement. Input, focus, tablet and image/transport
 behavior are unchanged.
 
-### Staged image control placement — Vision56
+### Image control placement — Vision56
 
 At the user's request, Vision56 moves **Share desktop image with this iPad** and
 its sending status into **Session Controls → iPad image**. Vision's Apple Pencil
@@ -35,10 +35,12 @@ from connected setup, on/off consent, status updates and retention across menu
 reopening, with one stand-in peer/session and no disconnect. Show Workstations
 remains reachable. All receiver, image and input lifetime/protocol sources and
 425 protected native/recipe paths remain exact. Fresh device compilation and
-independent signature/profile/resources/dependency checks pass. Vision56 is
-signed and staged, not installed; a headset-only disconnected update question
-is pending. Native checks do not establish new physical image delivery or
-latency acceptance.
+independent signature/profile/resources/dependency checks pass. The user then
+confirmed the AVP desktop was disconnected and authorized installation. Vision56
+is installed and launched; separate app and process inventories verify56/0.1.0
+and the exact running executable. Signed55 remains available for rollback.
+Mac31 and iPad46 are unchanged. Native checks and installation do not establish
+new physical image delivery or latency acceptance.
 
 ### October18 AVP trial and browser recovery
 

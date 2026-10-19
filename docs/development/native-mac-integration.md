@@ -25,7 +25,7 @@ iPad46 remain unchanged. See the
 Vision55 subsequently moves that action into **Session Controls → Window → Show
 Workstations**, with the standalone button removed. It is installed and verified;
 Mac31, iPad46 and their input/transport behavior remain unchanged.
-The user accepts that placement. Staged Vision56 then moves image-sharing
+The user accepts that placement. Installed Vision56 then moves image-sharing
 consent/status into Vision Session Controls; the Mac-active settings source is
 byte identical and no native Mac update is involved.
 

@@ -1,7 +1,7 @@
 # iPad live reference image and magnification
 
-Current image senders are installed Vision55 from
-`6e8248816c6f1acb3230c24b04bd0a977d217321` and native Mac31 from
+Current image senders are installed Vision56 from
+`5fdf2d897f9324e8a40396c3012afd1bfebc9f7c` and native Mac31 from
 `f82c2a4dfdd37782ac4baeed46f313a1664c8baf`. Mac31 adds the local Settings
 pause-lifetime correction and Input Details; Mac29's image behavior is retained.
 The Mac is installed with the Qt client retained as a fallback. Current installed
@@ -40,13 +40,13 @@ Vision55 subsequently moves **Show Workstations** into **Session Controls →
 Window**, removing the standalone button. Its menu action closes the controls
 before opening the browser. The native menu and exact installed package checks
 pass; image/input behavior and the accepted54 browser policy are unchanged.
-The user accepts the55 menu placement. Staged Vision56 moves image-sharing
+The user accepts the55 menu placement. Vision56 moves image-sharing
 consent/status into **Session Controls → iPad image**, with selection and approval
 in setup. The toggle calls the same receiver setter and stays disabled without
 an iPad connection. Exact native menu checks pass off/on/reopen behavior without
 automatic consent or peer replacement; image protocol and all delivery bodies
-remain unchanged. It is signed and staged pending a disconnected headset update;
-Vision55 remains the latest independently installed build.
+remain unchanged. The user authorized the disconnected headset update; exact
+installed56/0.1.0 and its running executable are independently verified.
 
 The October 11 artist trial confirms the picture appears and latency is better,
 but below the hoped responsiveness; image promotion remains held. Older
