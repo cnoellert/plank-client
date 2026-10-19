@@ -15,17 +15,17 @@ struct PlankPencilRelaySettings: View {
                 if receiver.pads.isEmpty { Text("No Pencil pads found").foregroundStyle(.secondary) }
             }
             Text(receiver.status).font(.footnote).foregroundStyle(.secondary)
-            if receiver.connected {
 #if PLANK_NATIVE_MAC_WACOM
+            if receiver.connected {
                 DisclosureGroup("Input Details") {
                     Text(receiver.inputDetails).font(.caption).foregroundStyle(.secondary)
                     Text(receiver.inputCounts).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                 }
-#endif
                 Toggle("Share desktop image with this iPad",isOn:Binding(
                     get:{ receiver.imageSharingEnabled },set:{ receiver.setImageSharingEnabled($0) }))
                 PlankPencilImageStatus(sender:receiver.imageSender)
             }
+#endif
             if let code = receiver.verification {
                 Text(code).font(.title2.monospaced().bold())
                 Text("Compare the code on the iPad before approving on either device.").font(.footnote)
@@ -37,6 +37,32 @@ struct PlankPencilRelaySettings: View {
         .onDisappear { receiver.stopDiscovery(owner: discoveryOwner) }
     }
 }
+#if !PLANK_NATIVE_MAC_WACOM
+/// Live image consent belongs with the running desktop's controls. Peer
+/// selection and comparison approval remain in Apple Pencil setup.
+struct PlankPencilImageSessionControls: View {
+    @ObservedObject var receiver: PlankPencilRelayReceiver
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("iPad image").font(.headline)
+            Toggle("Share desktop image with this iPad", isOn: Binding(
+                get: { receiver.imageSharingEnabled },
+                set: { receiver.setImageSharingEnabled($0) }
+            ))
+            .disabled(!receiver.connected)
+            .accessibilityIdentifier("plank.share-ipad-image")
+            if receiver.connected {
+                PlankPencilImageStatus(sender: receiver.imageSender)
+            } else {
+                Text("Connect an iPad in Settings → Apple Pencil to share the desktop image.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+#endif
 private struct PlankPencilImageStatus: View {
     @ObservedObject var sender: PlankPencilImageSender
     var body: some View {

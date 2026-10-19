@@ -85,6 +85,10 @@ struct PlankSessionControls: View {
                     .foregroundStyle(.secondary)
             }
 
+#if PLANK_PENCIL_RELAY_RECEIVER
+            PlankPencilImageSessionControls(receiver: client.pencilRelay)
+#endif
+
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text("Mouse speed").font(.headline)
