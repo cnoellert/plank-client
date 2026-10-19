@@ -12,7 +12,8 @@ interruptions on lost focus or accidental iPad disconnection. It also identifies
 an unreachable main browser after closing it during a session. Vision54 adds an
 explicit Workstations button and a unique preferred browser window; native
 reopen workflows and exact signed/installed checks pass. It is installed under
-fresh disconnected authorization, with physical browser recovery pending. The
+fresh disconnected authorization; the user confirms the main window reopens
+and the desktop session stays available. The
 reported mouse/keyboard focus-return delay and settings organization remain
 follow-ups; input and transport behavior were not changed.
 
@@ -124,7 +125,7 @@ Retarget these slices upstream in dependency order after their bases are accepte
 
 | Target | Compiled runtime source | State |
 | --- | --- | --- |
-| Vision54 | `2405b065ba0f679df432c29e9514e6245153a5f4` | Installed/open after disconnected authorization; explicit Workstations reopening, single preferred browser and secondary launch suppression; two native reopen cases and package/install checks pass; physical browser recovery pending, no mouse/keyboard focus repair claimed |
+| Vision54 | `2405b065ba0f679df432c29e9514e6245153a5f4` | Installed/open after disconnected authorization; explicit Workstations reopening, single preferred browser and secondary launch suppression; two native reopen cases and package/install checks pass; user accepts main-window reopening with the desktop session still available; no automatic reactivation or mouse/keyboard focus repair claimed |
 | Mac31 | `f82c2a4dfdd37782ac4baeed46f313a1664c8baf` | Installed native client with Settings window pause lifetime correction and Input Details; focused AppKit and signed/runtime checks pass; targeted Sharing view checks accepted, controlled Settings repair and sustained transport reliability not established |
 | iPad46 | `4c7731272c68f53b4272f959ca695d1803b7080d` | Installed on M5; local Sharing zoom remains available while remote input is paused; user accepts preserved 2× selection, clean modifier release, held-contact Fit deferral and local Hand/resume |
 | Vision53 | `fe965cf1d4f5c9a1502265ecea7ea8768425a30b` | Installed and launched October18 after resumed authorization; exact signed package/current source and independent installed app/process checks pass; bounded diagnostics only, no latency repair or physical diagnostic qualification claimed |

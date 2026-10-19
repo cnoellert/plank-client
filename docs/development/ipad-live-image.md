@@ -33,7 +33,9 @@ iPad46 were not changed or restarted, and no console was polled or signaled.
 The later Vision53 tablet trial is user-accepted; image toggle state and duration
 were not specified. Vision54 subsequently adds only browser-window recovery and
 launch selection. It is installed and independently verified, with the new
-physical browser-reopening check pending. Image and input behavior are unchanged.
+physical browser-reopening check accepted: the user confirms the main window
+reopens and the desktop session stays available. Image and input behavior are
+unchanged.
 
 The October 11 artist trial confirms the picture appears and latency is better,
 but below the hoped responsiveness; image promotion remains held. Older

@@ -28,8 +28,10 @@ browser and one stand-in session, and explicit reopening after Home/reactivation
 Production input, focus, tablet and transport bodies remain unchanged. The fresh
 device build, unchanged recipe/dependencies, exact signature/profile/resources
 and independent installed app/process checks pass. Vision54 is installed under
-the user's disconnected authorization; physical browser reopening remains the
-only new requested check. The mouse/keyboard focus-return delay and disjoint
+the user's disconnected authorization. The user confirms that Workstations
+reopens the main window and the desktop session stays available, accepting this
+targeted recovery check. Automatic reactivation alone remains unqualified.
+The mouse/keyboard focus-return delay and disjoint
 settings/transparency controls are recorded follow-ups, with no system-wide
 cause or focus repair claimed.
 
