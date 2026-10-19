@@ -1,7 +1,7 @@
 # iPad live reference image and magnification
 
-Current image senders are installed Vision52 from
-`e8b928ffd8b253edc959c7669b2cc23b50aa99f2` and native Mac31 from
+Current image senders are installed Vision53 from
+`fe965cf1d4f5c9a1502265ecea7ea8768425a30b` and native Mac31 from
 `f82c2a4dfdd37782ac4baeed46f313a1664c8baf`. Mac31 adds the local Settings
 pause-lifetime correction and Input Details; Mac29's image behavior is retained.
 The Mac is installed with the Qt client retained as a fallback. Current installed
@@ -23,8 +23,13 @@ Two Mac workstation sessions subsequently documented in the native Mac guide
 lost their transport; one had zero Pencil samples. Discovery was separately
 restored when the previously missing USB link returned. Neither event proves a
 network, Host or client root cause. Image quality and end-to-end timing remain
-unqualified; optional image promotion stays held. Staged Vision53 is reverified
-as current for bounded diagnostics and is not yet installed.
+unqualified; optional image promotion stays held. On October18, the user resumed
+the deferred headset update. Vision53 was installed in place and launched;
+separate application and process inventories verify version53/0.1.0 and the
+exact installed executable. Its signature, profile, resources and current-source
+compatibility were rechecked before installation. It adds bounded diagnostics,
+not a latency fix. Signed Vision52 remains available for rollback. Mac31 and
+iPad46 were not changed or restarted, and no console was polled or signaled.
 
 The October 11 artist trial confirms the picture appears and latency is better,
 but below the hoped responsiveness; image promotion remains held. Older

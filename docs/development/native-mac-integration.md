@@ -2,6 +2,21 @@
 
 Tracking: [upstream coordination issue 9](https://github.com/instinctual/plank-client/issues/9).
 
+## October18 current checkpoint
+
+Native Mac31 and iPad46 retain the targeted Sharing operating-view acceptance
+recorded below: local 2× selection survives Mac focus changes, Artist modifiers
+release cleanly, Fit waits for actual Pencil lift, and Hand pans only the local
+view before drawing resumes. The two workstation transport failures remain
+unresolved; these checks do not establish sustained reliability or final Host
+release receipt.
+
+The user resumed the deferred AVP update on October18. Existing signed Vision53
+from `fe965cf1d4f5c9a1502265ecea7ea8768425a30b` was reverified, installed and
+launched. Independent app and process inventories confirm build53 and its exact
+executable. It adds diagnostics, not a latency fix. The Mac/iPad apps, Qt fallback,
+Host, network settings, dependency pins and identities were unchanged.
+
 ## Pencil Settings lifetime correction — installed31
 
 After iPad46, the user reports a live picture but no Pencil cursor motion,

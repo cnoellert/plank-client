@@ -1,5 +1,31 @@
 # Native iPad and Pencil sharing checkpoint
 
+## October18 current state
+
+The installed development stack is iPad46, native Mac31 and Vision53. The user
+resumed the deferred headset update; Vision53 was installed in place and its
+exact version/container/running executable independently verified. It adds
+bounded diagnostics, not a latency repair. Mac31 and iPad46 were not restarted.
+
+Targeted Sharing qualification is complete for local 2× availability through Mac
+focus changes, clean Artist modifier release, Fit deferral until actual Pencil
+lift, and Hand navigation moving only the local view with drawing resuming.
+Direct Pencil alignment and the optional movable map remain accepted. Two Mac
+workstation connection losses remain unexplained, including one session with
+zero Pencil samples. Sustained latency, genuine OS cancellation, final Host
+release receipt and the broader platform matrix remain open. Image promotion
+stays held; this is a development review checkpoint, not a release.
+
+Live upstream refs checked October18 remain main
+`58f4df097c1cdf11bf6b4b429701f156e2b10109` and Apple integration
+`e8d8536486bf2eb0d7080aab8965f12d7d87b0af`, both already ancestors of this branch.
+The unpublished suffix was previously rebased after merging main into the
+published checkpoint. Its 17 upstream Qt/Linux/test paths remain unchanged from
+main; the native recipe retains its explicitly reviewed common-C pin. No new
+rebase or dependency change is required at this snapshot.
+
+## Development history
+
 October10, 2026: the user accepted the installed iPad31 editor refinement and
 requested publication of the completed development work. This checkpoint is
 for review; it does not change the shipping platform matrix or release packages.
@@ -73,6 +99,10 @@ display/wheel changes remain separate dependent reviews:
 2. [Mac displays and wheel](https://github.com/cnoellert/plank-client/pull/12).
 3. [iPad and Pencil controls](https://github.com/cnoellert/plank-client/pull/13),
    `codex/ios-ipados-readiness`, based on `codex/native-mac-displays`.
+4. Live reference image, operating zoom, editor refinements and diagnostics,
+   `codex/ipad-pencil-image-overlay`, based on `codex/ios-ipados-readiness`.
+   This separate draft preserves PR13's accepted checkpoint and includes the
+   upstream refresh described above.
 
 The iPad branch was rebased onto the accepted upstream foundation during
 development. Publication also merges the original display review tip
@@ -85,9 +115,12 @@ Retarget these slices upstream in dependency order after their bases are accepte
 
 | Target | Compiled runtime source | State |
 | --- | --- | --- |
+| Mac31 | `f82c2a4dfdd37782ac4baeed46f313a1664c8baf` | Installed native client with Settings window pause lifetime correction and Input Details; focused AppKit and signed/runtime checks pass; targeted Sharing view checks accepted, controlled Settings repair and sustained transport reliability not established |
+| iPad46 | `4c7731272c68f53b4272f959ca695d1803b7080d` | Installed on M5; local Sharing zoom remains available while remote input is paused; user accepts preserved 2× selection, clean modifier release, held-contact Fit deferral and local Hand/resume |
+| Vision53 | `fe965cf1d4f5c9a1502265ecea7ea8768425a30b` | Installed and launched October18 after resumed authorization; exact signed package/current source and independent installed app/process checks pass; bounded diagnostics only, no latency repair or physical diagnostic qualification claimed |
 | Mac30 | `dd07decfa5f1a26a664cc699d3cfce2ba725b5ae` | Fresh native build with bounded shared diagnostics; signed and independently verified, installed/open alongside retained Qt client; user confirms targeted Pencil tap/drag and Artist modifier smoke check; reference-image sending and broader qualification pending |
 | iPad45 | `9dcde0af10dd11f6259d0d1bee088dff4f345466` | Optional movable zoom map with shared remembered preferences; focused persistence, native routing/menu and independent package gates pass; installed/open on M5 with exact45/running executable verified; targeted hide/button access/restore/header movement accepted in both modes |
-| iPad44 / Vision53 | `fe965cf1d4f5c9a1502265ecea7ea8768425a30b` | App-only bounded Pencil flow timing/count diagnostics; focused checks and fresh device compile/signing pass; staged, not installed; no latency repair or physical diagnostic qualification claimed |
+| iPad44 diagnostic candidate | `fe965cf1d4f5c9a1502265ecea7ea8768425a30b` | Focused checks and fresh device compile/signing pass; iPad44 remained staged and its diagnostics carry forward in installed46; the corresponding Vision53 is now installed as recorded above; no latency repair claimed |
 | iPad43 | `5a2ea686a3bab92df91af69c17a4ca4de1e31dca` | Shared local Fit/2× crop, matching image/cursor/input, Hand and fixed-footprint navigator in direct Desktop and Sharing; policy/contact, native rendering and independent signed package checks pass; installed/open on M5 with exact43/0.1.0 and matching running executable observed; physical zoom check pending |
 | iPad42 | `cdfbe5f004019c8e67102cc6d83a0cc6b3f76cbb` | Rebased after Alan main refresh; editor outline, keys, labels, guides and gesture inversion share the authored portrait/landscape canvas; whole rendered-editor checks, old41 tall-entry negative control and independent package review pass; installed/open on M5 with exact42/0.1.0 and running executable observed; user accepts requested physical outline/arrangement through window resize and selected control movement/resizing |
 | iPad41 | `910c52fff4264c42a5fb666b1ed01aedb2f346f9` | Installed/open on M5 after authorization, exact41/0.1.0 and running executable observed; physical fixed-canvas gate failed: tall editor window keeps a tall outline around fitted landscape keys; selected-edit gate not separately answered |
