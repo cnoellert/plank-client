@@ -40,6 +40,13 @@ Vision55 subsequently moves **Show Workstations** into **Session Controls →
 Window**, removing the standalone button. Its menu action closes the controls
 before opening the browser. The native menu and exact installed package checks
 pass; image/input behavior and the accepted54 browser policy are unchanged.
+The user accepts the55 menu placement. Staged Vision56 moves image-sharing
+consent/status into **Session Controls → iPad image**, with selection and approval
+in setup. The toggle calls the same receiver setter and stays disabled without
+an iPad connection. Exact native menu checks pass off/on/reopen behavior without
+automatic consent or peer replacement; image protocol and all delivery bodies
+remain unchanged. It is signed and staged pending a disconnected headset update;
+Vision55 remains the latest independently installed build.
 
 The October 11 artist trial confirms the picture appears and latency is better,
 but below the hoped responsiveness; image promotion remains held. Older

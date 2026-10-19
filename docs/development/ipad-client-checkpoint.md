@@ -21,8 +21,16 @@ The user then requested the action inside Session Controls. Vision55 moves
 **Show Workstations** into its **Window** section, closes the menu on selection
 and removes the separate desktop button. Native production-menu checks and fresh
 signed/device installation checks pass. The disconnected update is installed;
-no new physical placement acceptance is inferred. Vision54's browser and launch
-policy remain unchanged.
+the user subsequently reports the placement worked great. Vision54's browser
+and launch policy remain unchanged.
+
+Vision56 is signed/staged for the next requested UI refinement: image-sharing
+consent and status move from Vision setup to **Session Controls → iPad image**.
+The same receiver setter and explicit consent rules are retained, with the
+toggle disabled before iPad connection. Two native menu cases and exact signed
+artifact/source/dependency checks pass; the headset-only disconnected update
+question is pending. Installed55 remains unchanged and the Mac-active settings
+source is byte identical.
 
 Targeted Sharing qualification is complete for local 2× availability through Mac
 focus changes, clean Artist modifier release, Fit deferral until actual Pencil
@@ -132,7 +140,8 @@ Retarget these slices upstream in dependency order after their bases are accepte
 
 | Target | Compiled runtime source | State |
 | --- | --- | --- |
-| Vision55 | `6e8248816c6f1acb3230c24b04bd0a977d217321` | Installed/open under disconnected authorization; Show Workstations moved to Session Controls > Window and standalone button removed; production-menu native check and artifact/installation checks pass; input/transport unchanged, no new physical placement acceptance claimed |
+| Vision56 | `5fdf2d897f9324e8a40396c3012afd1bfebc9f7c` | Signed/staged, not installed; image sharing moved into Session Controls > iPad image with unchanged consent/receiver and Mac-active UI; two native cases and exact artifact/dependency checks pass; disconnected installation confirmation pending |
+| Vision55 | `6e8248816c6f1acb3230c24b04bd0a977d217321` | Installed/open under disconnected authorization; Show Workstations moved to Session Controls > Window and standalone button removed; production-menu native check and artifact/installation checks pass; user reports placement worked great; input/transport unchanged |
 | Vision54 | `2405b065ba0f679df432c29e9514e6245153a5f4` | Installed/open after disconnected authorization; explicit Workstations reopening, single preferred browser and secondary launch suppression; two native reopen cases and package/install checks pass; user accepts main-window reopening with the desktop session still available; no automatic reactivation or mouse/keyboard focus repair claimed |
 | Mac31 | `f82c2a4dfdd37782ac4baeed46f313a1664c8baf` | Installed native client with Settings window pause lifetime correction and Input Details; focused AppKit and signed/runtime checks pass; targeted Sharing view checks accepted, controlled Settings repair and sustained transport reliability not established |
 | iPad46 | `4c7731272c68f53b4272f959ca695d1803b7080d` | Installed on M5; local Sharing zoom remains available while remote input is paused; user accepts preserved 2× selection, clean modifier release, held-contact Fit deferral and local Hand/resume |

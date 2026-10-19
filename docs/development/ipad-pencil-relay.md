@@ -17,9 +17,28 @@ native Simulator check: the action is absent outside the menu, remains reachable
 inside it, closes the menu and reopens one browser while the stand-in session
 stays available. The fresh full device build, exact signed package/dependencies
 and independent installed app/process checks pass. Vision55 is installed under
-the user's disconnected authorization. The accepted Vision54 recovery is
-retained; this placement has native component evidence without a new physical
-interaction claim. Input, focus, tablet and image/transport behavior are unchanged.
+the user's disconnected authorization. The user subsequently reports it worked
+great, accepting this placement. Input, focus, tablet and image/transport
+behavior are unchanged.
+
+### Staged image control placement — Vision56
+
+At the user's request, Vision56 moves **Share desktop image with this iPad** and
+its sending status into **Session Controls → iPad image**. Vision's Apple Pencil
+setup retains discovery, selection and comparison approval. The session toggle
+is disabled until an iPad is connected and uses the existing consent setter;
+opening the menu does not enable sharing. Native Mac's active settings source
+is byte identical and its installed client is unchanged.
+
+Two exact-production-menu Simulator cases pass disconnected admission, absence
+from connected setup, on/off consent, status updates and retention across menu
+reopening, with one stand-in peer/session and no disconnect. Show Workstations
+remains reachable. All receiver, image and input lifetime/protocol sources and
+425 protected native/recipe paths remain exact. Fresh device compilation and
+independent signature/profile/resources/dependency checks pass. Vision56 is
+signed and staged, not installed; a headset-only disconnected update question
+is pending. Native checks do not establish new physical image delivery or
+latency acceptance.
 
 ### October18 AVP trial and browser recovery
 
