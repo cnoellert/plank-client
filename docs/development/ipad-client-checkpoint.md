@@ -2,7 +2,7 @@
 
 ## October18 current state
 
-The installed development stack is iPad46, native Mac31 and Vision56. The user
+The installed development stack is iPad47, native Mac31 and Vision56. The user
 resumed the deferred headset update; Vision53 was installed in place and its
 exact version/container/running executable independently verified. It adds
 bounded diagnostics, not a latency repair. Mac31 and iPad46 were not restarted.
@@ -39,8 +39,10 @@ ready to receive from its approved client, with image on/off controlled solely
 by the Mac/AVP transmitter. The iPad keeps intensity and zoom. An authenticated
 image lifetime controls shared proportional mapping; ending it restores the
 saved input-only mapping and Fit after retiring held input. The fresh signed
-candidate,17 bounded lifecycle cases and existing contact checks pass;
-installation is authorized while disconnected. New physical47 acceptance is
+candidate,17 bounded lifecycle cases, native menu and existing contact checks
+pass. The authorized in-place update is installed with exact47/0.1.0 and its
+container independently verified. iPadOS denied launch because the iPad is
+locked; unlock/launch verification is pending. New physical47 acceptance is
 separate, and senders/Host/network/pins are unchanged.
 
 Targeted Sharing qualification is complete for local 2× availability through Mac
@@ -151,7 +153,7 @@ Retarget these slices upstream in dependency order after their bases are accepte
 
 | Target | Compiled runtime source | State |
 | --- | --- | --- |
-| iPad47 | `ecfd6ad0d1a4607efa88cf09e4c0f5764fb69e1d` | Automatic foreground Sharing image readiness; transmitter-only image choice; authenticated image geometry/zoom lifetime with ordered input retirement; built/signed/verified, disconnected installation authorized; physical47 behavior pending |
+| iPad47 | `ecfd6ad0d1a4607efa88cf09e4c0f5764fb69e1d` | Automatic foreground Sharing image readiness; transmitter-only image choice; authenticated image geometry/zoom lifetime with ordered input retirement; built/signed/verified and installed with exact47/0.1.0/container independently checked; launch awaits iPad unlock; physical47 behavior pending |
 | Vision56 | `5fdf2d897f9324e8a40396c3012afd1bfebc9f7c` | Installed/open after disconnected authorization; image sharing moved into Session Controls > iPad image with unchanged consent/receiver and Mac-active UI; two native cases, artifact/dependency checks and exact installed app/process verification pass; no new physical image/latency acceptance claimed |
 | Vision55 | `6e8248816c6f1acb3230c24b04bd0a977d217321` | Installed/open under disconnected authorization; Show Workstations moved to Session Controls > Window and standalone button removed; production-menu native check and artifact/installation checks pass; user reports placement worked great; input/transport unchanged |
 | Vision54 | `2405b065ba0f679df432c29e9514e6245153a5f4` | Installed/open after disconnected authorization; explicit Workstations reopening, single preferred browser and secondary launch suppression; two native reopen cases and package/install checks pass; user accepts main-window reopening with the desktop session still available; no automatic reactivation or mouse/keyboard focus repair claimed |

@@ -59,9 +59,11 @@ and a separate loupe remain later work.
 
 The user accepts Vision56's image control placement and requests one image
 switch on the transmitting client. iPad47 from `ecfd6ad0d1a4607efa88cf09e4c0f5764fb69e1d` is
-built, signed and independently checked for the new M5. Installation follows the
-user's explicit disconnected authorization; physical47 behavior is not yet
-accepted. Vision56 and native Mac31 require no update for this change.
+built, signed and independently checked for the new M5. The authorized in-place
+update is installed; independent app inventory verifies47/0.1.0 and its container.
+iPadOS denied launch while locked, so unlock/launch verification is pending.
+Physical47 behavior is not yet accepted. Vision56 and native Mac31 require no
+update for this change.
 
 Foreground Pencil Sharing automatically opens the image listener using the
 actual registered Pencil service name. There is no **Receive desktop image**
